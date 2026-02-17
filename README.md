@@ -1,1 +1,1 @@
-Animation projects that created by Budax - AI App Generator
+Web projects that created by Budax - AI App Generator
