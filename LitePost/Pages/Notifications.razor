@@ -1,0 +1,101 @@
+@page "/notifications"
+@inject NotificationService NotificationService
+@inject AuthenticationStateProvider AuthStateProvider
+@using LitePost.Data.Models
+
+<h4 class="fw-bold mb-3">Notifications</h4>
+
+@if (notifications == null)
+{
+    <div class="d-flex justify-content-center">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (notifications.Count == 0)
+{
+    <div class="text-center mt-5">
+        <i class="bi bi-bell-slash fs-1 text-muted"></i>
+        <p class="text-muted mt-3">Nothing to see here yet.</p>
+    </div>
+}
+else
+{
+    <div class="list-group list-group-flush">
+        @foreach (var notif in notifications)
+        {
+            <div class="list-group-item list-group-item-action @(notif.IsRead ? "" : "bg-light")" @onclick="() => MarkRead(notif)">
+                <div class="d-flex w-100 justify-content-between">
+                    <div class="mb-1">
+                        @if (notif.Type == NotificationType.Like)
+                        {
+                            <i class="bi bi-heart-fill text-danger me-2"></i>
+                        }
+                        else if (notif.Type == NotificationType.Reply)
+                        {
+                            <i class="bi bi-chat-fill text-primary me-2"></i>
+                        }
+                        else
+                        {
+                            <i class="bi bi-person-fill text-info me-2"></i>
+                        }
+                        <img src="@(notif.Actor?.AvatarUrl ?? "https://github.com/mdo.png")" width="30" height="30" class="rounded-circle me-2">
+                        <span class="fw-bold">@notif.Actor?.DisplayName</span>
+                        <span>@GetActionText(notif.Type)</span>
+                    </div>
+                    <small class="text-muted">@GetTimeAgo(notif.CreatedAt)</small>
+                </div>
+                <p class="mb-1 ms-5 text-muted small">@notif.Message</p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Notification>? notifications;
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+                notifications = await NotificationService.GetUserNotifications(currentUserId);
+            }
+        }
+    }
+
+    private string GetActionText(NotificationType type)
+    {
+        return type switch
+        {
+            NotificationType.Like => "liked your post",
+            NotificationType.Reply => "replied to your post",
+            NotificationType.Follow => "followed you",
+            NotificationType.Mention => "mentioned you",
+            _ => "interacted with you"
+        };
+    }
+
+    private async Task MarkRead(Notification notification)
+    {
+        if (!notification.IsRead)
+        {
+            await NotificationService.MarkAsRead(notification.Id);
+            notification.IsRead = true;
+        }
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var span = DateTime.UtcNow - dateTime;
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h";
+        return dateTime.ToString("MMM dd");
+    }
+}

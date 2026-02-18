@@ -1,0 +1,102 @@
+@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@using LitePost.Auth
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+
+<PageTitle>LitePost</PageTitle>
+
+<div class="container-fluid">
+    <div class="row min-vh-100">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar border-end position-fixed h-100 overflow-auto">
+            <div class="d-flex flex-column h-100 pt-3">
+                <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto link-dark text-decoration-none px-3">
+                    <i class="bi bi-twitter-x fs-2 text-primary me-2"></i>
+                    <span class="fs-4 fw-bold">LitePost</span>
+                </a>
+                <hr>
+                <NavMenu />
+                
+                <div class="mt-auto px-3 py-3">
+                    <button class="btn btn-outline-secondary rounded-pill w-100 mb-3" @onclick="ToggleTheme">
+                        <i class="bi @(isDarkMode ? "bi-sun" : "bi-moon") me-2"></i> @(isDarkMode ? "Light Mode" : "Dark Mode")
+                    </button>
+
+                    <AuthorizeView>
+                        <Authorized>
+                            <div class="dropdown">
+                                <a href="#" class="d-flex align-items-center link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <img src="@(context.User.Claims.FirstOrDefault(c => c.Type == "AvatarUrl")?.Value ?? "https://github.com/mdo.png")" alt="mdo" width="32" height="32" class="rounded-circle me-2">
+                                    <strong>@context.User.Identity?.Name</strong>
+                                </a>
+                                <ul class="dropdown-menu text-small shadow" aria-labelledby="dropdownUser1">
+                                    <li><a class="dropdown-item" href="/profile/@context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value">Profile</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><button class="dropdown-item" @onclick="Logout">Sign out</button></li>
+                                </ul>
+                            </div>
+                        </Authorized>
+                        <NotAuthorized>
+                            <a href="/login" class="btn btn-primary w-100 mb-2">Login</a>
+                            <a href="/register" class="btn btn-outline-primary w-100">Register</a>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4 offset-md-3 offset-lg-2">
+            @Body
+        </main>
+    </div>
+</div>
+<AuthChecker></AuthChecker>
+@code {
+    private bool isDarkMode = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var theme = await JSRuntime.InvokeAsync<string>("window.getTheme");
+            isDarkMode = theme == "dark";
+            await JSRuntime.InvokeVoidAsync("window.setTheme", theme);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        isDarkMode = !isDarkMode;
+        var theme = isDarkMode ? "dark" : "light";
+        await JSRuntime.InvokeVoidAsync("window.setTheme", theme);
+    }
+
+    private async Task Logout()
+    {
+        var authProvider = (CustomAuthenticationStateProvider)AuthStateProvider;
+        await authProvider.UpdateAuthenticationState(null);
+        NavigationManager.NavigateTo("/", true);
+    }
+    int currentUserId;
+    protected override async Task OnInitializedAsync()
+    {
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity != null && user.Identity.IsAuthenticated)
+        // {
+        //     var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        //     if (userIdClaim != null)
+        //     {
+        //         currentUserId = int.Parse(userIdClaim.Value);
+        //     }
+        // }
+        // else
+        // {
+        //     NavigationManager.NavigateTo("/login");
+        // }
+    }
+}

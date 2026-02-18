@@ -1,0 +1,75 @@
+@inject NavigationManager NavMgr
+<ul class="nav nav-pills flex-column mb-auto">
+    <li class="nav-item">
+        <NavLink class="nav-link text-dark" href="/" Match="NavLinkMatch.All">
+            <i class="bi bi-house-door-fill me-2 fs-5"></i>
+            Home
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/explore">
+            <i class="bi bi-hash me-2 fs-5"></i>
+            Explore
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/notifications">
+            <i class="bi bi-bell me-2 fs-5"></i>
+            Notifications
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/messages">
+            <i class="bi bi-envelope me-2 fs-5"></i>
+            Messages
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/lists">
+            <i class="bi bi-card-list me-2 fs-5"></i>
+            Lists
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/bookmarks">
+            <i class="bi bi-bookmark me-2 fs-5"></i>
+            Bookmarks
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/communities">
+            <i class="bi bi-people me-2 fs-5"></i>
+            Communities
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/verified">
+            <i class="bi bi-patch-check-fill me-2 fs-5"></i>
+            Verified
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/profile">
+            <i class="bi bi-person me-2 fs-5"></i>
+            Profile
+        </NavLink>
+    </li>
+    <li>
+        <NavLink class="nav-link text-dark" href="/more">
+            <i class="bi bi-three-dots me-2 fs-5"></i>
+            More
+        </NavLink>
+    </li>
+</ul>
+
+<div class="mt-4">
+    <button @onclick="GoPost" class="btn btn-primary btn-lg rounded-pill w-100 fw-bold">Post</button>
+</div>
+
+@code{ 
+
+	async Task GoPost(){ 
+		NavMgr.NavigateTo("/");
+	}
+
+}

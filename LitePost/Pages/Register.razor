@@ -1,0 +1,75 @@
+@page "/register"
+@layout AuthLayout
+@inject UserService UserService
+@inject NavigationManager NavigationManager
+@using System.ComponentModel.DataAnnotations
+@using LitePost.Shared
+
+<h3 class="fw-bold mb-4">Create your account</h3>
+
+<EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
+    <DataAnnotationsValidator />
+    
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger py-2 mb-3 small">@errorMessage</div>
+    }
+
+    <div class="form-floating mb-3">
+        <InputText id="displayName" class="form-control" placeholder="Name" @bind-Value="registerModel.DisplayName" />
+        <label for="displayName">Name</label>
+        <ValidationMessage For="@(() => registerModel.DisplayName)" />
+    </div>
+
+    <div class="form-floating mb-3">
+        <InputText id="username" class="form-control" placeholder="Username" @bind-Value="registerModel.Username" />
+        <label for="username">Username</label>
+        <ValidationMessage For="@(() => registerModel.Username)" />
+    </div>
+    
+    <div class="form-floating mb-4">
+        <InputText id="password" type="password" class="form-control" placeholder="Password" @bind-Value="registerModel.Password" />
+        <label for="password">Password</label>
+        <ValidationMessage For="@(() => registerModel.Password)" />
+    </div>
+
+    <button type="submit" class="btn btn-dark rounded-pill w-100 fw-bold py-2 mb-3">Sign up</button>
+</EditForm>
+
+<div class="mt-4 text-center">
+    Already have an account? <a href="/login" class="text-primary text-decoration-none fw-bold">Sign in</a>
+</div>
+
+@code {
+    private RegisterModel registerModel = new();
+    private string errorMessage = string.Empty;
+
+    private async Task HandleRegister()
+    {
+        errorMessage = string.Empty;
+        var success = await UserService.Register(registerModel.Username, registerModel.Password, registerModel.DisplayName);
+        if (success)
+        {
+            NavigationManager.NavigateTo("/login");
+        }
+        else
+        {
+            errorMessage = "Username is already taken.";
+        }
+    }
+
+    public class RegisterModel
+    {
+        [Required]
+        [StringLength(50, MinimumLength = 3, ErrorMessage = "Username must be between 3 and 50 characters.")]
+        public string Username { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(50, ErrorMessage = "Name is too long.")]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

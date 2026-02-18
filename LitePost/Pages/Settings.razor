@@ -1,0 +1,129 @@
+@page "/settings"
+@inject UserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+@using LitePost.Auth
+@using System.ComponentModel.DataAnnotations
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h4 class="fw-bold mb-4">Settings</h4>
+
+        <div class="card mb-4">
+            <div class="card-header bg-white fw-bold">Change Password</div>
+            <div class="card-body">
+                <EditForm Model="@passwordModel" OnValidSubmit="HandleChangePassword">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    @if (showSuccess)
+                    {
+                        <div class="alert alert-success">Password changed successfully.</div>
+                    }
+                    @if (showError)
+                    {
+                        <div class="alert alert-danger">Incorrect old password.</div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label">Old Password</label>
+                        <InputText type="password" class="form-control" @bind-Value="passwordModel.OldPassword" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password</label>
+                        <InputText type="password" class="form-control" @bind-Value="passwordModel.NewPassword" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Confirm New Password</label>
+                        <InputText type="password" class="form-control" @bind-Value="passwordModel.ConfirmPassword" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update Password</button>
+                </EditForm>
+            </div>
+        </div>
+
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white fw-bold">Danger Zone</div>
+            <div class="card-body">
+                <p>Once you delete your account, there is no going back. Please be certain.</p>
+                @if (confirmDelete)
+                {
+                    <div class="alert alert-warning">
+                        Are you sure? All your data will be permanently deleted.
+                        <div class="mt-2">
+                            <button class="btn btn-danger btn-sm me-2" @onclick="DeleteAccount">Yes, Delete Account</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => confirmDelete = false">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button class="btn btn-outline-danger" @onclick="() => confirmDelete = true">Delete Account</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ChangePasswordModel passwordModel = new();
+    private bool showSuccess;
+    private bool showError;
+    private bool confirmDelete;
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+            }
+        }
+    }
+
+    private async Task HandleChangePassword()
+    {
+        showSuccess = false;
+        showError = false;
+
+        var result = await UserService.ChangePassword(currentUserId, passwordModel.OldPassword, passwordModel.NewPassword);
+        if (result)
+        {
+            showSuccess = true;
+            passwordModel = new();
+        }
+        else
+        {
+            showError = true;
+        }
+    }
+
+    private async Task DeleteAccount()
+    {
+        await UserService.DeleteAccount(currentUserId);
+        
+        // Force logout
+        var authProvider = (CustomAuthenticationStateProvider)AuthStateProvider;
+        await authProvider.UpdateAuthenticationState(null);
+        NavigationManager.NavigateTo("/", true);
+    }
+
+    public class ChangePasswordModel
+    {
+        [Required]
+        public string OldPassword { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters long.")]
+        public string NewPassword { get; set; } = string.Empty;
+
+        [Required]
+        [Compare(nameof(NewPassword), ErrorMessage = "Passwords do not match.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

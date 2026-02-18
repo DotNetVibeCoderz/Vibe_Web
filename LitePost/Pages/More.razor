@@ -1,0 +1,134 @@
+@page "/more"
+@inject IJSRuntime JSRuntime
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h4 class="fw-bold mb-4">More Options</h4>
+        <div class="list-group mb-4">
+            <a href="/settings" class="list-group-item list-group-item-action d-flex align-items-center">
+                <i class="bi bi-gear me-3 fs-5"></i> Settings and privacy
+            </a>
+            <a href="/help" class="list-group-item list-group-item-action d-flex align-items-center">
+                <i class="bi bi-question-circle me-3 fs-5"></i> Help Center
+            </a>
+            <button class="list-group-item list-group-item-action d-flex align-items-center" @onclick="() => showDisplayModal = true">
+                <i class="bi bi-palette me-3 fs-5"></i> Display
+            </button>
+            <button class="list-group-item list-group-item-action d-flex align-items-center" @onclick="() => showShortcutsModal = true">
+                <i class="bi bi-keyboard me-3 fs-5"></i> Keyboard shortcuts
+            </button>
+        </div>
+        
+        <hr />
+        <div class="text-center text-muted small mt-4">
+            LitePost v1.0.0
+            <br />
+            &copy; @DateTime.Now.Year LitePost, Inc.
+        </div>
+    </div>
+</div>
+
+<!-- Display Modal -->
+@if (showDisplayModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Display</h5>
+                    <button type="button" class="btn-close" @onclick="() => showDisplayModal = false"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="text-muted mb-4">Customize your view. These settings affect all the LitePost accounts on this browser.</p>
+                    
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <div class="p-3 border rounded cursor-pointer @(!isDarkMode ? "bg-primary text-white" : "")" @onclick="() => SetTheme(false)">
+                                <i class="bi bi-sun fs-2 mb-2"></i>
+                                <div>Light</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-3 border rounded cursor-pointer @(isDarkMode ? "bg-primary text-white" : "")" @onclick="() => SetTheme(true)">
+                                <i class="bi bi-moon fs-2 mb-2"></i>
+                                <div>Dark</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Keyboard Shortcuts Modal -->
+@if (showShortcutsModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Keyboard shortcuts</h5>
+                    <button type="button" class="btn-close" @onclick="() => showShortcutsModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold mb-3">Navigation</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Home</span> <kbd>g</kbd> <kbd>h</kbd>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Explore</span> <kbd>g</kbd> <kbd>e</kbd>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Notifications</span> <kbd>g</kbd> <kbd>n</kbd>
+                            </div>
+                             <div class="d-flex justify-content-between mb-2">
+                                <span>Profile</span> <kbd>g</kbd> <kbd>p</kbd>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold mb-3">Actions</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>New Tweet</span> <kbd>n</kbd>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Like</span> <kbd>l</kbd>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Reply</span> <kbd>r</kbd>
+                            </div>
+                             <div class="d-flex justify-content-between mb-2">
+                                <span>Search</span> <kbd>/</kbd>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool showDisplayModal = false;
+    private bool showShortcutsModal = false;
+    private bool isDarkMode = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var theme = await JSRuntime.InvokeAsync<string>("window.getTheme");
+            isDarkMode = theme == "dark";
+            StateHasChanged();
+        }
+    }
+
+    private async Task SetTheme(bool dark)
+    {
+        isDarkMode = dark;
+        var theme = isDarkMode ? "dark" : "light";
+        await JSRuntime.InvokeVoidAsync("window.setTheme", theme);
+    }
+}

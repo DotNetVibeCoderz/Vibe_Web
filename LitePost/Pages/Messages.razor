@@ -1,0 +1,222 @@
+@page "/messages"
+@inject MessageService MessageService
+@inject UserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@using LitePost.Data.Models
+
+<div class="row g-0 h-100" style="min-height: 80vh;">
+    <!-- Conversations List -->
+    <div class="col-md-4 border-end d-flex flex-column bg-light">
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">Messages</h5>
+            <button class="btn btn-primary btn-sm rounded-pill" @onclick="() => showNewMessageModal = true">
+                <i class="bi bi-envelope-plus"></i>
+            </button>
+        </div>
+        
+        <div class="list-group list-group-flush flex-grow-1 overflow-auto">
+            @if (conversations == null)
+            {
+                 <div class="text-center p-3">Loading...</div>
+            }
+            else if (!conversations.Any())
+            {
+                <div class="text-center p-3 text-muted">No conversations yet. Start one!</div>
+            }
+            else
+            {
+                @foreach (var user in conversations)
+                {
+                    <a href="javascript:void(0)" class="list-group-item list-group-item-action @(selectedUser?.Id == user.Id ? "active" : "")" @onclick="() => SelectConversation(user)">
+                        <div class="d-flex align-items-center">
+                            <img src="@(user.AvatarUrl ?? "https://github.com/mdo.png")" width="40" height="40" class="rounded-circle me-3">
+                            <div>
+                                <div class="fw-bold">@user.DisplayName</div>
+                                <div class="small text-muted">@@@user.Username</div>
+                            </div>
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Chat Window -->
+    <div class="col-md-8 d-flex flex-column bg-white">
+        @if (selectedUser == null)
+        {
+            <div class="d-flex flex-column justify-content-center align-items-center h-100 text-muted">
+                <h3>Select a message</h3>
+                <p>Choose from your existing conversations, start a new one, or just keep swimming.</p>
+                <button class="btn btn-primary rounded-pill fw-bold" @onclick="() => showNewMessageModal = true">New Message</button>
+            </div>
+        }
+        else
+        {
+            <!-- Header -->
+            <div class="p-3 border-bottom d-flex align-items-center bg-light sticky-top">
+                <img src="@(selectedUser.AvatarUrl ?? "https://github.com/mdo.png")" width="32" height="32" class="rounded-circle me-2">
+                <span class="fw-bold">@selectedUser.DisplayName</span>
+            </div>
+
+            <!-- Messages -->
+            <div class="flex-grow-1 p-3 overflow-auto d-flex flex-column" id="chatContainer">
+                @if (messages == null)
+                {
+                     <div class="text-center">Loading messages...</div>
+                }
+                else
+                {
+                    @foreach (var msg in messages)
+                    {
+                        <div class="d-flex mb-3 @(msg.SenderId == currentUserId ? "justify-content-end" : "justify-content-start")">
+                            <div class="p-3 rounded-3 @(msg.SenderId == currentUserId ? "bg-primary text-white" : "bg-light text-dark")" style="max-width: 75%;">
+                                <div>@msg.Content</div>
+                                <div class="small opacity-50 text-end mt-1">@msg.CreatedAt.ToString("HH:mm")</div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Input -->
+            <div class="p-3 border-top bg-light">
+                <div class="input-group">
+                    <input type="text" class="form-control" placeholder="Start a new message" @bind="newMessageContent" @onkeyup="HandleKeyUp">
+                    <button class="btn btn-primary" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(newMessageContent)">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- New Message Modal -->
+@if (showNewMessageModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">New Message</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-floating mb-3 pt-2">
+                        <input type="text" class="form-control" id="recipientUser" placeholder="Search people" @bind="recipientUsername" />
+                        <label for="recipientUser">To: @@username</label>
+                    </div>
+                    @if (!string.IsNullOrEmpty(newMsgError))
+                    {
+                        <div class="text-danger small mb-2">@newMsgError</div>
+                    }
+                    <div class="d-flex justify-content-end mt-3">
+                        <button class="btn btn-dark rounded-pill fw-bold" @onclick="StartNewConversation">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<User>? conversations;
+    private User? selectedUser;
+    private List<Message>? messages;
+    private int currentUserId;
+    private string newMessageContent = string.Empty;
+
+    // Modal
+    private bool showNewMessageModal = false;
+    private string recipientUsername = string.Empty;
+    private string newMsgError = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+                await LoadConversations();
+            }
+        }
+    }
+
+    private async Task LoadConversations()
+    {
+        conversations = await MessageService.GetConversations(currentUserId);
+    }
+
+    private async Task SelectConversation(User user)
+    {
+        selectedUser = user;
+        await LoadMessages();
+    }
+
+    private async Task LoadMessages()
+    {
+        if (selectedUser != null)
+        {
+            messages = await MessageService.GetMessages(currentUserId, selectedUser.Id);
+            // Scroll to bottom logic would be good here via JS
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(newMessageContent) || selectedUser == null) return;
+
+        await MessageService.SendMessage(currentUserId, selectedUser.Id, newMessageContent);
+        newMessageContent = string.Empty;
+        await LoadMessages();
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessage();
+        }
+    }
+
+    private void CloseModal()
+    {
+        showNewMessageModal = false;
+        recipientUsername = string.Empty;
+        newMsgError = string.Empty;
+    }
+
+    private async Task StartNewConversation()
+    {
+        newMsgError = string.Empty;
+        if (string.IsNullOrWhiteSpace(recipientUsername)) return;
+
+        var targetUser = await UserService.GetUserByUsername(recipientUsername);
+        if (targetUser == null)
+        {
+            newMsgError = "User not found.";
+            return;
+        }
+
+        if (targetUser.Id == currentUserId)
+        {
+             newMsgError = "You cannot message yourself.";
+             return;
+        }
+
+        selectedUser = targetUser;
+        await LoadMessages();
+        CloseModal();
+        
+        // Add to conversations list locally if not present
+        if (conversations != null && !conversations.Any(u => u.Id == targetUser.Id))
+        {
+            conversations.Insert(0, targetUser);
+        }
+    }
+}

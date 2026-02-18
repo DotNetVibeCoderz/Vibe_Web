@@ -1,0 +1,31 @@
+﻿@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+@inject NavigationManager NavigationManager
+
+<div style="display:none;">
+    User Login: @currentUserId
+</div>
+
+@code {
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var username = user.Identity.Name; // You can also check claims: var email = user.FindFirst(c => c.Type == "email")?.Value; }
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/login");
+        }
+    }
+
+}

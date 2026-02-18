@@ -1,0 +1,212 @@
+@page "/"
+@using LitePost.Data.Models
+@inject PostService PostService
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+
+<div class="border-bottom pb-3 mb-3">
+    <div class="d-flex align-items-center mb-3">
+        <img src="https://github.com/mdo.png" alt="mdo" width="48" height="48" class="rounded-circle me-3">
+        <div class="flex-grow-1">
+            <textarea class="form-control border-0 fs-5" rows="2" placeholder="What's happening?" @bind="newPostContent"></textarea>
+            
+            @if(selectedMediaUrl != null)
+            {
+                <div class="position-relative mt-2">
+                    <img src="@selectedMediaUrl" class="img-fluid rounded" style="max-height: 200px;" />
+                    <button class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2" @onclick="ClearMedia"><i class="bi bi-x"></i></button>
+                </div>
+            }
+            
+            @if(showPoll)
+            {
+                <div class="card mt-2 p-2">
+                    <input type="text" class="form-control mb-2" placeholder="Choice 1" @bind="pollOption1" />
+                    <input type="text" class="form-control mb-2" placeholder="Choice 2" @bind="pollOption2" />
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => showPoll = false">Cancel Poll</button>
+                </div>
+            }
+            
+            @if(showSchedule)
+            {
+                <div class="mt-2">
+                    <label>Schedule for:</label>
+                    <input type="datetime-local" class="form-control" @bind="scheduledDate" />
+                    <button class="btn btn-sm btn-outline-danger mt-1" @onclick="() => showSchedule = false">Cancel Schedule</button>
+                </div>
+            }
+            
+            @if(showLocation)
+            {
+                <div class="input-group mt-2">
+                    <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                    <input type="text" class="form-control" placeholder="Add location" @bind="location" />
+                    <button class="btn btn-outline-danger" @onclick="() => showLocation = false"><i class="bi bi-x"></i></button>
+                </div>
+            }
+        </div>
+    </div>
+    
+    <div class="d-flex justify-content-between align-items-center px-5">
+        <div class="text-primary d-flex align-items-center gap-3">
+            <label class="btn btn-link text-primary p-0 m-0" title="Media">
+                <InputFile OnChange="HandleFileSelected" style="display:none;" accept="image/*" />
+                <i class="bi bi-image fs-5"></i>
+            </label>
+            
+            <button class="btn btn-link text-primary p-0 m-0" title="GIF" @onclick="AddGifMock">
+                <i class="bi bi-filetype-gif fs-5"></i>
+            </button>
+            
+            <button class="btn btn-link text-primary p-0 m-0" title="Poll" @onclick="() => showPoll = !showPoll">
+                <i class="bi bi-list-ul fs-5"></i>
+            </button>
+            
+            <button class="btn btn-link text-primary p-0 m-0" title="Emoji" @onclick="AddEmojiMock">
+                <i class="bi bi-emoji-smile fs-5"></i>
+            </button>
+            
+            <button class="btn btn-link text-primary p-0 m-0" title="Schedule" @onclick="() => showSchedule = !showSchedule">
+                <i class="bi bi-calendar-event fs-5"></i>
+            </button>
+            
+            <button class="btn btn-link text-primary p-0 m-0" title="Location" @onclick="() => showLocation = !showLocation">
+                <i class="bi bi-geo-alt fs-5"></i>
+            </button>
+        </div>
+        <button class="btn btn-primary rounded-pill px-4 fw-bold" @onclick="PostTweet" disabled="@(string.IsNullOrWhiteSpace(newPostContent) && string.IsNullOrEmpty(selectedMediaUrl))">
+            @(showSchedule ? "Schedule" : "Post")
+        </button>
+    </div>
+</div>
+
+@if (posts == null)
+{
+    <div class="d-flex justify-content-center">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    @foreach (var post in posts)
+    {
+        <PostItem Post="@post" OnLike="LikePost" />
+    }
+}
+
+@code {
+    private List<Post>? posts;
+    private string newPostContent = string.Empty;
+    private int currentUserId;
+    
+    // Feature States
+    private string? selectedMediaUrl;
+    private bool showPoll;
+    private string pollOption1 = string.Empty;
+    private string pollOption2 = string.Empty;
+    
+    private bool showSchedule;
+    private DateTime scheduledDate = DateTime.Now.AddHours(1);
+    
+    private bool showLocation;
+    private string location = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+            }
+        }
+        await LoadPosts();
+    }
+
+    private async Task LoadPosts()
+    {
+        posts = await PostService.GetFeed();
+    }
+    
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            // Create uploads folder if not exists
+            var uploadsFolder = Path.Combine("wwwroot", "uploads");
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+            
+            await using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 5); // 5MB max
+            await using var fs = new FileStream(filePath, FileMode.Create);
+            await stream.CopyToAsync(fs);
+            
+            selectedMediaUrl = $"/uploads/{fileName}";
+        }
+    }
+    
+    private void ClearMedia() => selectedMediaUrl = null;
+    
+    private void AddGifMock()
+    {
+        // Mock GIF insertion
+        selectedMediaUrl = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXNxdmJxcG15YnZ5YnZ5YnZ5YnZ5YnZ5YnZ5YnZ5YnZ5/3o7TKSjRrfIPjeiVyM/giphy.gif";
+    }
+    
+    private void AddEmojiMock()
+    {
+        newPostContent += " 😊";
+    }
+
+    private async Task PostTweet()
+    {
+        if (!string.IsNullOrWhiteSpace(newPostContent) || !string.IsNullOrEmpty(selectedMediaUrl))
+        {
+            List<string>? pollOptions = null;
+            if (showPoll && !string.IsNullOrWhiteSpace(pollOption1) && !string.IsNullOrWhiteSpace(pollOption2))
+            {
+                pollOptions = new List<string> { pollOption1, pollOption2 };
+            }
+
+            await PostService.CreatePost(
+                currentUserId, 
+                newPostContent, 
+                PostType.Tweet, 
+                selectedMediaUrl, 
+                showLocation ? location : null,
+                showSchedule ? scheduledDate : null,
+                pollOptions,
+                showPoll ? DateTime.UtcNow.AddDays(1) : null
+            );
+            
+            // Reset Form
+            newPostContent = string.Empty;
+            selectedMediaUrl = null;
+            showPoll = false;
+            pollOption1 = string.Empty;
+            pollOption2 = string.Empty;
+            showSchedule = false;
+            showLocation = false;
+            location = string.Empty;
+            
+            await LoadPosts();
+        }
+    }
+
+    private async Task LikePost(int postId)
+    {
+        await PostService.LikePost(currentUserId, postId);
+        await LoadPosts();
+    }
+}

@@ -1,0 +1,191 @@
+@using LitePost.Data.Models
+@using LitePost.Data.Services
+@inject PostService PostService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="card mb-3 border-0 border-bottom">
+    <div class="card-body">
+        <div class="d-flex">
+            <img src="@(Post.User?.AvatarUrl ?? "https://github.com/mdo.png")" alt="mdo" width="48" height="48" class="rounded-circle me-3">
+            <div class="flex-grow-1">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div>
+                        <span class="fw-bold">@Post.User?.DisplayName</span>
+                        @if(Post.User?.IsVerified == true)
+                        {
+                            <i class="bi bi-patch-check-fill text-primary ms-1"></i>
+                        }
+                        <span class="text-muted ms-1">@@@Post.User?.Username</span>
+                        <span class="text-muted ms-1">· @GetTimeAgo(Post.CreatedAt)</span>
+                        @if(Post.ScheduledFor.HasValue)
+                        {
+                            <span class="badge bg-secondary ms-2">Scheduled</span>
+                        }
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-three-dots"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><button class="dropdown-item" @onclick="HandleBookmark">@(isBookmarked ? "Remove Bookmark" : "Bookmark")</button></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="#">Report</a></li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <p class="card-text mb-2">@Post.Content</p>
+                
+                @if (!string.IsNullOrEmpty(Post.MediaUrl))
+                {
+                    <img src="@Post.MediaUrl" class="img-fluid rounded mb-2" alt="Post media">
+                }
+                
+                @if(!string.IsNullOrEmpty(Post.Location))
+                {
+                    <div class="text-muted small mb-2"><i class="bi bi-geo-alt-fill text-danger"></i> @Post.Location</div>
+                }
+
+                @if(Post.QuotePost != null)
+                {
+                    <div class="card mt-2 mb-2">
+                        <div class="card-body">
+                             <div class="d-flex justify-content-between align-items-center mb-1">
+                                <div>
+                                    <span class="fw-bold">@Post.QuotePost.User?.DisplayName</span>
+                                    <span class="text-muted ms-1">@@@Post.QuotePost.User?.Username</span>
+                                    <span class="text-muted ms-1">· @GetTimeAgo(Post.QuotePost.CreatedAt)</span>
+                                </div>
+                            </div>
+                            <p class="card-text">@Post.QuotePost.Content</p>
+                            @if (!string.IsNullOrEmpty(Post.QuotePost.MediaUrl))
+                            {
+                                <img src="@Post.QuotePost.MediaUrl" class="img-fluid rounded mb-2" style="max-height: 200px;" alt="Post media">
+                            }
+                        </div>
+                    </div>
+                }
+                
+                <!-- Poll Display -->
+                @if(Post.Poll != null)
+                {
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            @foreach(var option in Post.Poll.Options)
+                            {
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between">
+                                        <span>@option.Text</span>
+                                        <span>@option.Votes.Count votes</span>
+                                    </div>
+                                    <div class="progress" style="cursor: pointer;" @onclick="() => Vote(option.Id)">
+                                        <div class="progress-bar" role="progressbar" style="width: @(GetVotePercentage(option))%" aria-valuenow="@(GetVotePercentage(option))" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                </div>
+                            }
+                            <div class="text-muted small mt-2">@Post.Poll.Options.Sum(o => o.Votes.Count) total votes • Ends @GetTimeAgo(Post.Poll.EndsAt)</div>
+                        </div>
+                    </div>
+                }
+
+                <div class="d-flex justify-content-between text-muted mt-3" style="max-width: 400px;">
+                    <div class="d-flex align-items-center post-action" title="Reply">
+                        <i class="bi bi-chat me-2 fs-5"></i>
+                        <span>@Post.ReplyCount</span>
+                    </div>
+                    <div class="d-flex align-items-center post-action @(isReposted ? "text-success" : "")" title="Repost" @onclick="HandleRepost">
+                        <i class="bi bi-arrow-repeat me-2 fs-5"></i>
+                        <span>@repostCount</span>
+                    </div>
+                    <div class="d-flex align-items-center post-action @(IsLiked ? "text-danger" : "")" title="Like" @onclick="HandleLike" style="cursor: pointer;">
+                        <i class="bi @(IsLiked ? "bi-heart-fill" : "bi-heart") me-2 fs-5"></i>
+                        <span>@Post.LikeCount</span>
+                    </div>
+                    <div class="d-flex align-items-center post-action @(isBookmarked ? "text-primary" : "")" title="Bookmark" @onclick="HandleBookmark" style="cursor: pointer;">
+                        <i class="bi @(isBookmarked ? "bi-bookmark-fill" : "bi-bookmark") me-2 fs-5"></i>
+                    </div>
+                    <div class="d-flex align-items-center post-action" title="Share">
+                        <i class="bi bi-upload me-2 fs-5"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Post Post { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<int> OnLike { get; set; }
+
+    private bool IsLiked { get; set; }
+    private bool isBookmarked { get; set; }
+    private bool isReposted { get; set; }
+    private int currentUserId;
+    private int repostCount;
+
+    protected override async Task OnParametersSetAsync()
+    {
+         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null)
+            {
+                currentUserId = int.Parse(userIdClaim.Value);
+                // Check states
+                isBookmarked = await PostService.IsBookmarked(currentUserId, Post.Id);
+                isReposted = await PostService.IsReposted(currentUserId, Post.Id);
+                // Ideally check IsLiked too
+            }
+        }
+        repostCount = 0; // In real app, count from DB
+    }
+
+    private async Task HandleLike()
+    {
+        IsLiked = !IsLiked;
+        if (OnLike.HasDelegate)
+        {
+            await OnLike.InvokeAsync(Post.Id);
+        }
+    }
+
+    private async Task HandleBookmark()
+    {
+        isBookmarked = !isBookmarked;
+        await PostService.ToggleBookmark(currentUserId, Post.Id);
+    }
+    
+    private async Task HandleRepost()
+    {
+        isReposted = !isReposted;
+        await PostService.Repost(currentUserId, Post.Id);
+    }
+    
+    private async Task Vote(int optionId)
+    {
+        await PostService.VotePoll(currentUserId, optionId);
+        // Refresh?
+    }
+    
+    private int GetVotePercentage(PollOption option)
+    {
+        var total = Post.Poll?.Options.Sum(o => o.Votes.Count) ?? 0;
+        if (total == 0) return 0;
+        return (int)((double)option.Votes.Count / total * 100);
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var span = DateTime.UtcNow - dateTime;
+        if (span.TotalSeconds < 0) return "In future"; // Scheduled
+        if (span.TotalSeconds < 60) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h";
+        return dateTime.ToString("MMM dd");
+    }
+}
