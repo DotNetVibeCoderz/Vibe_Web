@@ -1,0 +1,107 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Web
+@namespace SimpleDMS.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="~/" />
+    <link rel="stylesheet" href="css/site.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #000000;
+            --accent: #ffeb3b;
+            --border: 4px;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .brutalist-card {
+            border: var(--border) solid var(--fg);
+            padding: 20px;
+            background-color: var(--bg);
+            box-shadow: 10px 10px 0px var(--fg);
+            margin-bottom: 20px;
+        }
+
+        .brutalist-btn {
+            background-color: var(--accent);
+            color: var(--fg);
+            border: var(--border) solid var(--fg);
+            padding: 10px 20px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 5px 5px 0px var(--fg);
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .brutalist-btn:active {
+            box-shadow: 2px 2px 0px var(--fg);
+            transform: translate(3px, 3px);
+        }
+
+        .brutalist-input {
+            border: var(--border) solid var(--fg);
+            padding: 10px;
+            width: 100%;
+            font-family: inherit;
+            margin-bottom: 10px;
+        }
+
+        h1, h2, h3 {
+            text-transform: uppercase;
+            letter-spacing: -1px;
+            background: var(--fg);
+            color: var(--bg);
+            padding: 5px 10px;
+            display: inline-block;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        th, td {
+            border: 2px solid var(--fg);
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: var(--fg);
+            color: var(--bg);
+        }
+    </style>
+</head>
+<body>
+    <component type="typeof(App)" render-mode="ServerPrerendered" />
+
+    <div id="blazor-error-ui">
+        <environment include="Staging,Production">
+            An error has occurred. This application may no longer respond until reloaded.
+        </environment>
+        <environment include="Development">
+            An unhandled exception has occurred. See browser dev tools for details.
+        </environment>
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="_framework/blazor.server.js"></script>
+</body>
+</html>

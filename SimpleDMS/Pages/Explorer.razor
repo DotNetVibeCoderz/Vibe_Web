@@ -1,0 +1,250 @@
+@page "/explorer"
+@page "/explorer/{FolderId:guid}"
+@using SimpleDMS.Data
+@using SimpleDMS.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@inject DocumentService DocService
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<div class="brutalist-card">
+    <h2>DOCUMENT EXPLORER</h2>
+    
+    <div style="margin: 20px 0; display: flex; gap: 10px;">
+        <button class="brutalist-btn" @onclick="ShowUpload">UPLOAD DOCUMENT</button>
+        <button class="brutalist-btn" style="background-color: #9c27b0; color: white;" @onclick="ShowNewFolder">NEW FOLDER</button>
+        @if (FolderId != null && currentFolder?.ParentFolderId != null)
+        {
+            <button class="brutalist-btn" style="background-color: #607d8b; color: white;" @onclick="GoUp">GO UP</button>
+        }
+    </div>
+
+    @if (currentFolder != null)
+    {
+        <div class="brutalist-card" style="background: #eee; padding: 10px; box-shadow: 5px 5px 0px #000;">
+            <strong>LOCATION:</strong> / @(currentFolder.ParentFolder?.Name != null ? "..." + currentFolder.ParentFolder.Name + " / " : "") @currentFolder.Name
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>TYPE</th>
+                    <th>NAME</th>
+                    <th>INFO</th>
+                    <th>ACTIONS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var sub in subFolders)
+                {
+                    <tr style="cursor: pointer;" @onclick="() => NavigateToFolder(sub.Id)">
+                        <td style="width: 50px; text-align: center;">📁</td>
+                        <td><strong>@sub.Name</strong></td>
+                        <td>Folder</td>
+                        <td>
+                             <button class="brutalist-btn" style="padding: 5px; font-size: 0.8em;" @onclick:stopPropagation="true" @onclick="() => NavigateToFolder(sub.Id)">OPEN</button>
+                        </td>
+                    </tr>
+                }
+                @foreach (var doc in documents)
+                {
+                    var latest = doc.Versions.OrderByDescending(v => v.CreatedAt).FirstOrDefault();
+                    <tr>
+                        <td style="width: 50px; text-align: center;">📄</td>
+                        <td>
+                            @doc.Title <br/>
+                            <small style="color: #666;">@latest?.FileName</small>
+                        </td>
+                        <td>
+                            v@(latest?.VersionLabel ?? "1.0") | @doc.CurrentStatus <br/>
+                            @if (doc.CheckedOutByUserId != null) {
+                                <span style="color: red; font-weight: bold;">[Checked Out]</span>
+                            }
+                        </td>
+                        <td>
+                            @if (latest != null)
+                            {
+                                <a href="/api/download/@latest.Id" target="_blank" class="brutalist-btn" style="padding: 5px; font-size: 0.8em; background: #2196f3; color: white;">DOWNLOAD</a>
+                            }
+                            
+                            @if (doc.CheckedOutByUserId == null)
+                            {
+                                <button class="brutalist-btn" style="padding: 5px; font-size: 0.8em; background: #ff9800;" @onclick="() => CheckOut(doc.Id)">CHECK-OUT</button>
+                            }
+                            else if (doc.CheckedOutByUserId == currentUserId)
+                            {
+                                <button class="brutalist-btn" style="padding: 5px; font-size: 0.8em; background: #4caf50;" @onclick="() => ShowCheckIn(doc.Id)">CHECK-IN</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (!subFolders.Any() && !documents.Any())
+                {
+                    <tr>
+                        <td colspan="4" style="text-align: center; padding: 40px;">THIS FOLDER IS EMPTY</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@* MODALS *@
+
+@if (isUploadOpen)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 999;">
+        <div class="brutalist-card" style="width: 400px; background: white;">
+            <h3>UPLOAD NEW FILE</h3>
+            <label>Title:</label>
+            <input type="text" placeholder="Document Title" class="brutalist-input" @bind="uploadTitle" />
+            
+            <label>File:</label>
+            <InputFile OnChange="HandleFileSelected" class="brutalist-input" />
+            
+            @if (isProcessing) { <p>Uploading...</p> }
+
+            <div style="margin-top: 20px;">
+                <button class="brutalist-btn" @onclick="() => isUploadOpen = false">CANCEL</button>
+                <button class="brutalist-btn" style="background: #4caf50;" @onclick="PerformUpload" disabled="@(selectedFile == null || string.IsNullOrEmpty(uploadTitle))">UPLOAD</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (isNewFolderOpen)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 999;">
+        <div class="brutalist-card" style="width: 400px; background: white;">
+            <h3>NEW FOLDER</h3>
+            <input type="text" placeholder="Folder Name" class="brutalist-input" @bind="newFolderName" />
+            
+            <div style="margin-top: 20px;">
+                <button class="brutalist-btn" @onclick="() => isNewFolderOpen = false">CANCEL</button>
+                <button class="brutalist-btn" style="background: #4caf50;" @onclick="CreateFolder">CREATE</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (isCheckInOpen)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 999;">
+        <div class="brutalist-card" style="width: 400px; background: white;">
+            <h3>CHECK-IN DOCUMENT</h3>
+            <label>Change Note:</label>
+            <input type="text" class="brutalist-input" @bind="checkInNote" />
+            
+            <label>New Version (Optional):</label>
+            <InputFile OnChange="HandleFileSelected" class="brutalist-input" />
+
+            <div style="margin-top: 20px;">
+                <button class="brutalist-btn" @onclick="() => isCheckInOpen = false">CANCEL</button>
+                <button class="brutalist-btn" style="background: #4caf50;" @onclick="PerformCheckIn">CHECK-IN</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? FolderId { get; set; }
+
+    private Folder? currentFolder;
+    private List<Folder> subFolders = new();
+    private List<Document> documents = new();
+    
+    private string? currentUserId;
+    private bool isProcessing = false;
+
+    // Upload State
+    private bool isUploadOpen = false;
+    private string uploadTitle = "";
+    private IBrowserFile? selectedFile;
+
+    // Folder State
+    private bool isNewFolderOpen = false;
+    private string newFolderName = "";
+
+    // Check-in State
+    private bool isCheckInOpen = false;
+    private Guid activeDocId;
+    private string checkInNote = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadFolderData();
+    }
+
+    private async Task LoadFolderData()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "system";
+
+        if (FolderId == null)
+        {
+            currentFolder = await DocService.GetOrCreateRootFolder();
+            FolderId = currentFolder.Id;
+        }
+        else
+        {
+            currentFolder = await DocService.GetFolderAsync(FolderId.Value);
+        }
+
+        if (currentFolder != null)
+        {
+            subFolders = await DocService.GetSubFoldersAsync(currentFolder.Id);
+            documents = await DocService.GetDocumentsAsync(currentFolder.Id);
+        }
+    }
+
+    private void NavigateToFolder(Guid id) => Nav.NavigateTo($"/explorer/{id}");
+    private void GoUp() => Nav.NavigateTo($"/explorer/{currentFolder?.ParentFolderId}");
+
+    // --- UPLOAD ---
+    private void ShowUpload() { isUploadOpen = true; selectedFile = null; uploadTitle = ""; }
+    private void HandleFileSelected(InputFileChangeEventArgs e) => selectedFile = e.File;
+
+    private async Task PerformUpload()
+    {
+        if (selectedFile == null || currentFolder == null) return;
+        isProcessing = true;
+        try 
+        {
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 50); // 50MB
+            await DocService.UploadDocumentAsync(uploadTitle, stream, selectedFile.Name, selectedFile.ContentType, currentUserId!, currentFolder.Id);
+            isUploadOpen = false;
+            await LoadFolderData();
+        }
+        finally { isProcessing = false; }
+    }
+
+    // --- FOLDER ---
+    private void ShowNewFolder() { isNewFolderOpen = true; newFolderName = ""; }
+    private async Task CreateFolder()
+    {
+        if (string.IsNullOrWhiteSpace(newFolderName)) return;
+        await DocService.CreateFolderAsync(newFolderName, currentFolder?.Id);
+        isNewFolderOpen = false;
+        await LoadFolderData();
+    }
+
+    // --- CHECK OUT / IN ---
+    private async Task CheckOut(Guid docId)
+    {
+        await DocService.CheckOutAsync(docId, currentUserId!);
+        await LoadFolderData();
+    }
+
+    private void ShowCheckIn(Guid docId) { activeDocId = docId; isCheckInOpen = true; checkInNote = ""; selectedFile = null; }
+    private async Task PerformCheckIn()
+    {
+        Stream? stream = null;
+        if (selectedFile != null) stream = selectedFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 50);
+        
+        await DocService.CheckInAsync(activeDocId, currentUserId!, stream, selectedFile?.Name, selectedFile?.ContentType, checkInNote);
+        isCheckInOpen = false;
+        await LoadFolderData();
+    }
+}

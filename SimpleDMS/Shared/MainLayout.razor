@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+
+<div class="page">
+    <header class="brutalist-card" style="margin-bottom: 40px; background-color: #ff5722; color: white;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1 style="background: white; color: black; margin: 0;">SIMPLE DMS</h1>
+                <p style="margin: 10px 0 0 0; font-weight: bold;">[Document Management System]</p>
+            </div>
+            <div class="brutalist-card" style="background: black; color: white; padding: 10px; margin: 0; box-shadow: 5px 5px 0px white;">
+                <AuthorizeView>
+                    <Authorized>
+                        <span>USER: <strong>@context.User.Identity?.Name</strong></span> | 
+                        <a href="Identity/Account/Logout" style="color: #ffeb3b; font-weight: bold;">LOGOUT</a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a href="Identity/Account/Login" style="color: #ffeb3b; font-weight: bold;">LOGIN</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+        
+        <nav style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+            <NavLink href="/" Match="NavLinkMatch.All" class="brutalist-btn" style="background: #00bcd4;">DASHBOARD</NavLink>
+            <NavLink href="/explorer" class="brutalist-btn" style="background: #4caf50;">EXPLORER</NavLink>
+            <NavLink href="/search" class="brutalist-btn" style="background: #e91e63;">SEARCH</NavLink>
+            <a href="/swagger" target="_blank" class="brutalist-btn" style="background: #ffc107;">API DOCS</a>
+        </nav>
+    </header>
+
+    <main>
+        @Body
+    </main>
+
+    <footer class="brutalist-card" style="margin-top: 40px; font-size: 0.8em; text-align: center;">
+        JACKY THE CODE BENDER &copy; 2023 - POWERED BY GRAVICODE STUDIOS
+        <br/>
+        <a href="https://studios.gravicode.com/products/budax" target="_blank" style="color: inherit; font-weight: bold;">SUPPORT US / TRAKTIR PULSA</a>
+    </footer>
+</div>

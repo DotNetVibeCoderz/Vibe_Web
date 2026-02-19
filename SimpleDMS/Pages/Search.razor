@@ -1,0 +1,83 @@
+@page "/search"
+@using SimpleDMS.Data
+@using SimpleDMS.Services
+@inject DocumentService DocService
+
+<div class="brutalist-card">
+    <h2>SEARCH DOCUMENTS</h2>
+    <div style="display: flex; gap: 10px; margin: 20px 0;">
+        <input type="text" @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Type name, category, or tag..." class="brutalist-input" style="flex-grow: 1; margin-bottom: 0;" />
+        <button class="brutalist-btn" @onclick="PerformSearch">SEARCH</button>
+    </div>
+
+    @if (isSearching)
+    {
+        <p>Searching the archives...</p>
+    }
+    else if (results != null)
+    {
+        @if (!results.Any())
+        {
+            <div class="brutalist-card" style="background: #ffc107;">
+                <p>NO DOCUMENTS FOUND MATCHING "@searchQuery"</p>
+            </div>
+        }
+        else
+        {
+            <p>FOUND @results.Count DOCUMENT(S)</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>NAME</th>
+                        <th>CATEGORY</th>
+                        <th>VERSION</th>
+                        <th>ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in results)
+                    {
+                        var latest = doc.Versions.OrderByDescending(v => v.CreatedAt).FirstOrDefault();
+                        <tr>
+                            <td>
+                                <strong>@doc.Title</strong> <br/>
+                                <small>@latest?.FileName</small>
+                            </td>
+                            <td>@doc.Category</td>
+                            <td>v@(latest?.VersionLabel ?? "1.0")</td>
+                            <td>
+                                <a href="/explorer/@doc.FolderId" class="brutalist-btn" style="padding: 5px; font-size: 0.8em; background: #9c27b0; color: white;">LOCATE</a>
+                                @if (latest != null)
+                                {
+                                    <a href="/api/download/@latest.Id" target="_blank" class="brutalist-btn" style="padding: 5px; font-size: 0.8em; background: #2196f3; color: white;">DOWNLOAD</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</div>
+
+@code {
+    private string searchQuery = "";
+    private List<Document>? results;
+    private bool isSearching = false;
+
+    private async Task PerformSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery)) return;
+        isSearching = true;
+        results = await DocService.SearchDocumentsAsync(searchQuery);
+        isSearching = false;
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await PerformSearch();
+        }
+    }
+}

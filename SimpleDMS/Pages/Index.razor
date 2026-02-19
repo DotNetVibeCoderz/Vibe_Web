@@ -1,0 +1,108 @@
+@page "/"
+@using SimpleDMS.Data
+@using SimpleDMS.Services
+@inject DocumentService DocService
+@inject IConfiguration Config
+
+<div class="brutalist-card">
+    <h2>DASHBOARD STATS</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 20px;">
+        <div class="brutalist-card" style="background-color: #f44336; color: white;">
+            <h3>DOCUMENTS</h3>
+            <p style="font-size: 3em; margin: 0; font-weight: 900;">@docCount</p>
+        </div>
+        <div class="brutalist-card" style="background-color: #2196f3; color: white;">
+            <h3>USERS</h3>
+            <p style="font-size: 3em; margin: 0; font-weight: 900;">@userCount</p>
+        </div>
+        <div class="brutalist-card" style="background-color: #ffeb3b; color: black;">
+            <h3>STORAGE</h3>
+            <p style="font-size: 1.5em; margin: 10px 0; font-weight: bold;">@storageType</p>
+            <small>System: ACTIVE</small>
+        </div>
+    </div>
+</div>
+
+<div class="brutalist-card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>RECENT ACTIVITY</h2>
+        <button class="brutalist-btn" @onclick="LoadStats" style="padding: 5px 10px; font-size: 0.8em;">REFRESH</button>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        @if (activities == null)
+        {
+            <p>Scanning logs...</p>
+        }
+        else if (!activities.Any())
+        {
+            <p>No activity recorded yet.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>TIME</th>
+                        <th>USER</th>
+                        <th>ACTION</th>
+                        <th>DETAILS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var log in activities)
+                    {
+                        <tr>
+                            <td style="white-space: nowrap;">@log.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><strong>@(log.User?.FullName ?? log.User?.UserName ?? "System")</strong></td>
+                            <td>
+                                <span style="background: @GetActionColor(log.Action); color: white; padding: 2px 5px; font-weight: bold; border: 1px solid black;">
+                                    @log.Action.ToUpper()
+                                </span>
+                            </td>
+                            <td>@log.Details</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<div class="brutalist-card" style="background: #000; color: #fff;">
+    <h3>SYSTEM STATUS: OPTIMAL</h3>
+    <p>Database: SQLite | Framework: .NET 10.0 | UI: Brutalist Blazor</p>
+</div>
+
+@code {
+    private int docCount = 0;
+    private int userCount = 0;
+    private string storageType = "FILE SYSTEM";
+    private List<AuditLog>? activities;
+
+    protected override async Task OnInitializedAsync()
+    {
+        storageType = Config["StorageType"]?.ToUpper() ?? "FILE SYSTEM";
+        await LoadStats();
+    }
+
+    private async Task LoadStats()
+    {
+        docCount = await DocService.GetDocumentCountAsync();
+        userCount = await DocService.GetUserCountAsync();
+        activities = await DocService.GetRecentAuditLogsAsync(10);
+        StateHasChanged();
+    }
+
+    private string GetActionColor(string action)
+    {
+        return action.ToLower() switch
+        {
+            "upload" => "#4caf50",
+            "check-out" => "#ff9800",
+            "check-in" => "#2196f3",
+            "delete" => "#f44336",
+            _ => "#607d8b"
+        };
+    }
+}
