@@ -1,0 +1,185 @@
+@page "/settings"
+@using MediaMonitoring.Services
+@using MediaMonitoring.Models
+@using MediaMonitoring.Data
+@using Microsoft.EntityFrameworkCore
+@inject ConfigService ConfigService
+@inject MediaMonitoringContext DbContext
+
+<PageTitle>Settings - Media Monitoring</PageTitle>
+
+<h1>SYSTEM CONFIGURATION</h1>
+
+<div class="grid grid-2">
+    <!-- Main Configuration -->
+    <div class="card">
+        <div class="card-header">
+            <span>GENERAL SETTINGS</span>
+        </div>
+        
+        @if (configurations.Any())
+        {
+            <form @onsubmit="SaveChanges">
+                @foreach (var config in configurations)
+                {
+                    <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+                        <label>@config.ConfigKey</label>
+                        
+                        @if (config.IsSensitive)
+                        {
+                            <input type="password" value="@config.ConfigValue" 
+                                   @onchange="@(e => UpdateConfigValue(config.Id, e.Value?.ToString() ?? ""))" />
+                            <div style="font-size: 0.75rem; color: #666; margin-top: 4px;">⚠️ Sensitive data</div>
+                        }
+                        else if (config.ConfigKey.Contains("Interval") || config.ConfigKey.Contains("Max"))
+                        {
+                            <input type="number" value="@config.ConfigValue" 
+                                   @onchange="@(e => UpdateConfigValue(config.Id, e.Value?.ToString() ?? ""))" />
+                        }
+                        else if (config.ConfigKey.Contains("Enable"))
+                        {
+                            <select value="@config.ConfigValue" 
+                                    @onchange="@(e => UpdateConfigValue(config.Id, e.Value?.ToString() ?? ""))">
+                                <option value="true">Enabled</option>
+                                <option value="false">Disabled</option>
+                            </select>
+                        }
+                        else
+                        {
+                            <input type="text" value="@config.ConfigValue" 
+                                   @onchange="@(e => UpdateConfigValue(config.Id, e.Value?.ToString() ?? ""))" />
+                        }
+                        
+                        <div style="font-size: 0.85rem; color: #555; margin-top: 8px;">@config.Description</div>
+                    </div>
+                }
+                
+                <button type="submit" class="btn" style="margin-top: 16px;">[ SAVE CHANGES ]</button>
+            </form>
+        }
+    </div>
+
+    <!-- Alert Rules Management -->
+    <div class="card">
+        <div class="card-header">
+            <span>ALERT RULES</span>
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+            <h3 style="font-size: 1rem; margin-bottom: 12px;">ADD NEW ALERT</h3>
+            <input type="text" @bind="newAlertKeyword" placeholder="Keyword to monitor" />
+            <select @bind="newAlertSeverity" style="margin-bottom: 12px;">
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+            </select>
+            <button class="btn btn-secondary" @onclick="AddAlertRule" style="width: 100%;">[ ADD ALERT ]</button>
+        </div>
+
+        <hr style="border: 1px solid #1a1a1a; margin: 20px 0;" />
+
+        @if (alertRules.Any())
+        {
+            <table class="table-brutal" style="font-size: 0.85rem;">
+                <thead>
+                    <tr><th>KEYWORD</th><th>SEVERITY</th><th>TRIGGERS</th><th>ACTION</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var rule in alertRules)
+                    {
+                        <tr>
+                            <td><strong>@rule.Keyword</strong></td>
+                            <td>@rule.Severity</td>
+                            <td>@rule.TriggerCount</td>
+                            <td>
+                                <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.7rem;" 
+                                        @onclick="() => DeleteAlertRule(rule.Id)">DELETE</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="text-align: center; color: #666;">No alert rules configured.</p>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div style="margin-top: 24px; padding: 16px; background: #00cc66; color: white; border: 2px solid #00994d; font-weight: bold;">
+        ✓ @successMessage
+    </div>
+}
+
+@code {
+    private List<SystemConfiguration> configurations = new();
+    private List<AlertRule> alertRules = new();
+    private string newAlertKeyword = "";
+    private string newAlertSeverity = "Medium";
+    private string successMessage = "";
+    private Dictionary<int, string> editedValues = new();
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        configurations = await ConfigService.GetAllConfigurationsAsync();
+        alertRules = await DbContext.AlertRules.OrderByDescending(r => r.CreatedAt).ToListAsync();
+    }
+
+    private void UpdateConfigValue(int id, string value)
+    {
+        if (editedValues.ContainsKey(id)) editedValues[id] = value;
+        else editedValues.Add(id, value);
+    }
+
+    private async Task SaveChanges()
+    {
+        foreach (var edited in editedValues)
+        {
+            var config = configurations.First(c => c.Id == edited.Key);
+            await ConfigService.SetValueAsync(config.ConfigKey, edited.Value, config.Description, config.IsSensitive);
+        }
+        
+        editedValues.Clear();
+        successMessage = "Configuration saved!";
+        await LoadData();
+        _ = Task.Delay(3000).ContinueWith(_ => { successMessage = ""; InvokeAsync(StateHasChanged); });
+    }
+
+    private async Task AddAlertRule()
+    {
+        if (string.IsNullOrWhiteSpace(newAlertKeyword)) return;
+
+        var newRule = new AlertRule
+        {
+            Keyword = newAlertKeyword,
+            Severity = newAlertSeverity,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        DbContext.AlertRules.Add(newRule);
+        await DbContext.SaveChangesAsync();
+
+        newAlertKeyword = "";
+        successMessage = $"Alert for '{newRule.Keyword}' created!";
+        await LoadData();
+        _ = Task.Delay(3000).ContinueWith(_ => { successMessage = ""; InvokeAsync(StateHasChanged); });
+    }
+
+    private async Task DeleteAlertRule(int id)
+    {
+        var rule = await DbContext.AlertRules.FindAsync(id);
+        if (rule != null)
+        {
+            DbContext.AlertRules.Remove(rule);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

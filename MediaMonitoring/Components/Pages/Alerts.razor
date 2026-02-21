@@ -1,0 +1,204 @@
+@page "/alerts"
+@using MediaMonitoring.Data
+@using MediaMonitoring.Models
+@using Microsoft.EntityFrameworkCore
+@inject MediaMonitoringContext DbContext
+
+<PageTitle>Alerts - Media Monitoring</PageTitle>
+
+<h1>ALERT MANAGEMENT</h1>
+
+<div class="grid grid-2">
+    <!-- Active Alert Rules -->
+    <div class="card">
+        <div class="card-header">
+            <span>ACTIVE ALERT RULES</span>
+        </div>
+        
+        @if (alertRules.Any())
+        {
+            <table class="table-brutal">
+                <thead>
+                    <tr>
+                        <th>KEYWORD</th>
+                        <th>SEVERITY</th>
+                        <th>STATUS</th>
+                        <th>TOTAL TRIGGERS</th>
+                        <th>CREATED</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rule in alertRules)
+                    {
+                        <tr>
+                            <td><strong>@rule.Keyword</strong></td>
+                            <td>
+                                @{
+                                    var badgeClass = rule.Severity switch
+                                    {
+                                        "Critical" => "badge-negative",
+                                        "High" => "",
+                                        "Medium" => "badge-info",
+                                        _ => "badge-neutral"
+                                    };
+                                    var customStyle = rule.Severity == "High" ? "background: orange; color: white;" : "";
+                                }
+                                <span class="badge @badgeClass" style="@customStyle">@rule.Severity</span>
+                            </td>
+                            <td>
+                                @if (rule.IsActive)
+                                {
+                                    <span class="badge badge-positive">ACTIVE</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-neutral">INACTIVE</span>
+                                }
+                            </td>
+                            <td style="text-align: center; font-weight: bold;">@rule.TriggerCount</td>
+                            <td>@rule.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p>No alert rules configured. Go to Settings to add one.</p>
+        }
+    </div>
+
+    <!-- Recent Triggered Alerts -->
+    <div class="card">
+        <div class="card-header">
+            <span>RECENT MATCHES</span>
+            <span style="font-size: 0.8rem;">Last 50 matches across all rules</span>
+        </div>
+        
+        @if (recentMatches.Any())
+        {
+            <table class="table-brutal" style="font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th>TIME</th>
+                        <th>MATCHED KEYWORD</th>
+                        <th>SOURCE</th>
+                        <th>CONTENT PREVIEW</th>
+                        <th>SENTIMENT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var match in recentMatches)
+                    {
+                        <tr>
+                            <td>@match.Time.ToString("HH:mm dd/MM")</td>
+                            <td><strong class="text-negative">@match.Keyword</strong></td>
+                            <td>@match.Source</td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                @match.Content
+                            </td>
+                            <td>
+                                @{
+                                    var sentBadge = match.Sentiment switch
+                                    {
+                                        "Positive" => "badge-positive",
+                                        "Negative" => "badge-negative",
+                                        _ => "badge-neutral"
+                                    };
+                                }
+                                <span class="badge @sentBadge">@match.Sentiment</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="text-align: center; padding: 40px; color: #666;">
+                No alerts triggered yet.<br/>
+                Run crawling to start monitoring.
+            </p>
+        }
+    </div>
+</div>
+
+<!-- Alert Statistics -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <span>ALERT STATISTICS (LAST 7 DAYS)</span>
+    </div>
+    
+    <div class="grid grid-4">
+        @foreach (var stat in alertStats)
+        {
+            <div style="text-align: center; border-right: 1px solid #e0e0e0; padding: 16px;">
+                <div style="font-size: 2rem; font-weight: 900;">@stat.Value</div>
+                <div style="text-transform: uppercase; font-size: 0.8rem; color: #666;">@stat.Key</div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<AlertRule> alertRules = new();
+    private List<AlertMatch> recentMatches = new();
+    private Dictionary<string, int> alertStats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        // Load alert rules
+        alertRules = await DbContext.AlertRules.OrderByDescending(r => r.CreatedAt).ToListAsync();
+        
+        // For demo purposes, generate some fake recent matches based on existing posts and rules
+        var posts = await DbContext.MediaPosts
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(100)
+            .ToListAsync();
+        
+        var matches = new List<AlertMatch>();
+        foreach (var post in posts)
+        {
+            foreach (var rule in alertRules.Where(r => r.IsActive))
+            {
+                if (post.Content.Contains(rule.Keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (post.Tags != null && post.Tags.Contains(rule.Keyword, StringComparison.OrdinalIgnoreCase)))
+                {
+                    matches.Add(new AlertMatch
+                    {
+                        Time = post.CreatedAt,
+                        Keyword = rule.Keyword,
+                        Source = post.Source,
+                        Content = post.Content,
+                        Sentiment = post.Sentiment
+                    });
+                }
+            }
+        }
+        
+        recentMatches = matches.OrderByDescending(m => m.Time).Take(50).ToList();
+        
+        // Calculate stats
+        alertStats = new Dictionary<string, int>
+        {
+            { "Total Alerts Today", matches.Count(m => m.Time.Date == DateTime.UtcNow.Date) },
+            { "Critical Alerts", matches.Count(m => alertRules.FirstOrDefault(r => r.Keyword == m.Keyword)?.Severity == "Critical") },
+            { "High Priority", matches.Count(m => alertRules.FirstOrDefault(r => r.Keyword == m.Keyword)?.Severity == "High") },
+            { "Unique Keywords Triggered", matches.Select(m => m.Keyword).Distinct().Count() }
+        };
+    }
+
+    public class AlertMatch
+    {
+        public DateTime Time { get; set; }
+        public string Keyword { get; set; } = "";
+        public string Source { get; set; } = "";
+        public string Content { get; set; } = "";
+        public string Sentiment { get; set; } = "";
+    }
+}

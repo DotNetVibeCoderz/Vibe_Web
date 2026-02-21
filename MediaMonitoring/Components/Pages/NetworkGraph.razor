@@ -1,0 +1,291 @@
+@page "/network"
+@using MediaMonitoring.Data
+@using Microsoft.EntityFrameworkCore
+@inject MediaMonitoringContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Network Analysis</PageTitle>
+
+<h1>NETWORK ANALYSIS</h1>
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-header">
+            <span>SOURCE-AUTHOR NETWORK</span>
+            <span style="font-size: 0.8rem;">D3.js Force-Directed Graph</span>
+        </div>
+        
+        @if (isLoading)
+        {
+            <div style="display:flex;justify-content:center;align-items:center;height:400px;">
+                <div class="loading"></div>
+                <p style="margin-left:16px;">Loading network visualization...</p>
+            </div>
+        }
+        else
+        {
+            <div id="networkGraph" style="width: 100%; height: 400px;"></div>
+        }
+        
+        <div style="margin-top: 16px; display: flex; gap: 16px; font-size: 0.85rem;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:20px;height:20px;border-radius:50%;background:#000;border:2px solid #fff;"></div>
+                <span>Media Sources</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:15px;height:15px;border-radius:50%;background:#666;border:2px solid #fff;"></div>
+                <span>Authors</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:15px;height:15px;border-radius:50%;background:#ff3333;border:2px solid #fff;"></div>
+                <span>High Activity</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <span>NETWORK STATISTICS</span>
+        </div>
+        
+        @if (!isLoading)
+        {
+            <div class="grid grid-2" style="gap: 16px;">
+                <div class="stat-box" style="border: 2px solid #000; padding: 16px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold;">@totalNodes</div>
+                    <div style="text-transform: uppercase; font-size: 0.8rem;">Total Nodes</div>
+                </div>
+                <div class="stat-box" style="border: 2px solid #000; padding: 16px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold;">@totalEdges</div>
+                    <div style="text-transform: uppercase; font-size: 0.8rem;">Connections</div>
+                </div>
+                <div class="stat-box" style="border: 2px solid #000; padding: 16px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold;">@topInfluencerPosts</div>
+                    <div style="text-transform: uppercase; font-size: 0.8rem;">Top Influencer Posts</div>
+                </div>
+                <div class="stat-box" style="border: 2px solid #000; padding: 16px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold;">@uniqueSources</div>
+                    <div style="text-transform: uppercase; font-size: 0.8rem;">Unique Sources</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 24px;">
+                <h3 style="font-size: 1rem; margin-bottom: 12px;">TOP INFLUENCERS</h3>
+                @if (topInfluencers.Any())
+                {
+                    <table class="table-brutal" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Author</th>
+                                <th>Posts</th>
+                                <th>Sources Used</th>
+                                <th>Influence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var inf in topInfluencers.Take(5))
+                            {
+                                <tr>
+                                    <td><strong>@inf.Author</strong></td>
+                                    <td>@inf.PostCount</td>
+                                    <td>@inf.SourceCount</td>
+                                    <td>
+                                        <div style="background: #e0e0e0; height: 12px; border: 1px solid #000; position: relative;">
+                                            <div style="background: #000; height: 100%; width: @inf.InfluenceScore%;"></div>
+                                        </div>
+                                        <span style="font-size: 0.75rem;">@inf.InfluenceScore%</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p style="text-align:center;color:#666;padding:20px;">No influencer data available</p>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <span>CATEGORY CO-OCCURRENCE</span>
+    </div>
+    
+    @if (categories.Any() && !isLoading)
+    {
+        <div style="overflow-x: auto;">
+            <table class="table-brutal" style="font-size: 0.75rem; min-width: 600px;">
+                <thead>
+                    <tr>
+                        <th></th>
+                        @foreach (var cat in categories)
+                        {
+                            <th style="text-align: center; min-width: 60px;">@(cat.Length > 8 ? cat.Substring(0, 8) : cat)</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rowCat in categories)
+                    {
+                        <tr>
+                            <td><strong>@(rowCat.Length > 10 ? rowCat.Substring(0, 10) : rowCat)</strong></td>
+                            @foreach (var colCat in categories)
+                            {
+                                var key = $"{rowCat}-{colCat}";
+                                var coOccur = categoryCoOccurrence.GetValueOrDefault(key, 0);
+                                var intensity = Math.Min(100, coOccur * 15);
+                                <td style="text-align: center; background: rgba(0,0,0,@(intensity / 100.0)); color: @(intensity > 50 ? "#fff" : "#000"); font-weight: bold;">
+                                    @coOccur
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <p style="text-align:center;color:#666;padding:20px;">No category data available</p>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int totalNodes = 0;
+    private int totalEdges = 0;
+    private int topInfluencerPosts = 0;
+    private int uniqueSources = 0;
+    private List<InfluencerStat> topInfluencers = new();
+    private List<string> categories = new();
+    private Dictionary<string, int> categoryCoOccurrence = new();
+    private List<NetworkLink> networkData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNetworkData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isLoading && networkData.Any())
+        {
+            await RenderNetworkGraph();
+        }
+    }
+
+    private async Task LoadNetworkData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var posts = await DbContext.MediaPosts.ToListAsync();
+
+            // Build network data (source-author relationships)
+            var sourceAuthorGroups = posts
+                .GroupBy(p => new { p.Source, p.Author })
+                .Select(g => new NetworkLink
+                {
+                    source = g.Key.Source,
+                    author = g.Key.Author,
+                    count = g.Count()
+                })
+                .OrderByDescending(x => x.count)
+                .Take(50) // Limit to top 50 for performance
+                .ToList();
+
+            networkData = sourceAuthorGroups;
+
+            // Calculate statistics
+            var uniqueAuthors = posts.Select(p => p.Author).Distinct().Count();
+            uniqueSources = posts.Select(p => p.Source).Distinct().Count();
+            totalNodes = uniqueAuthors + uniqueSources;
+            totalEdges = sourceAuthorGroups.Count;
+
+            // Top influencers
+            var authorStats = posts
+                .GroupBy(p => p.Author)
+                .Select(g => new InfluencerStat
+                {
+                    Author = g.Key,
+                    PostCount = g.Count(),
+                    SourceCount = g.Select(x => x.Source).Distinct().Count()
+                })
+                .OrderByDescending(a => a.PostCount)
+                .Take(10)
+                .ToList();
+
+            var maxPosts = authorStats.FirstOrDefault()?.PostCount ?? 1;
+            foreach (var stat in authorStats)
+            {
+                stat.InfluenceScore = (int)((double)stat.PostCount / maxPosts * 100);
+            }
+
+            topInfluencers = authorStats;
+            topInfluencerPosts = topInfluencers.FirstOrDefault()?.PostCount ?? 0;
+
+            // Category analysis
+            categories = posts.Select(p => p.Category).Distinct().OrderBy(c => c).ToList();
+            
+            var authorCategories = posts
+                .GroupBy(p => p.Author)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Category).Distinct().ToList());
+
+            foreach (var kvp in authorCategories)
+            {
+                var cats = kvp.Value;
+                for (int i = 0; i < cats.Count; i++)
+                {
+                    for (int j = i; j < cats.Count; j++)
+                    {
+                        var key = $"{cats[i]}-{cats[j]}";
+                        if (!categoryCoOccurrence.ContainsKey(key))
+                            categoryCoOccurrence[key] = 0;
+                        categoryCoOccurrence[key]++;
+                    }
+                }
+            }
+
+            isLoading = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading network data: {ex.Message}");
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RenderNetworkGraph()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("initializeNetworkGraph", networkData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error rendering network graph: {ex.Message}");
+        }
+    }
+
+    public class NetworkLink
+    {
+        public string source { get; set; } = "";
+        public string author { get; set; } = "";
+        public int count { get; set; }
+    }
+
+    public class InfluencerStat
+    {
+        public string Author { get; set; } = "";
+        public int PostCount { get; set; }
+        public int SourceCount { get; set; }
+        public int InfluenceScore { get; set; }
+    }
+}

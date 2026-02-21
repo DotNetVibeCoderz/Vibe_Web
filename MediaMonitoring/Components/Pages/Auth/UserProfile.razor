@@ -1,0 +1,281 @@
+@page "/profile"
+@using MediaMonitoring.Models.Auth
+@using MediaMonitoring.Services
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>User Profile</PageTitle>
+
+<h1>USER PROFILE</h1>
+
+@if (AuthService.CurrentUserId == null)
+{
+    <div class="card">
+        <div style="text-align: center; padding: 40px;">
+            <h2>Please Login First</h2>
+            <p>You need to be logged in to view your profile.</p>
+            <a href="/login" class="btn">[ LOGIN ]</a>
+        </div>
+    </div>
+}
+else if (userProfile == null)
+{
+    <div style="text-align: center; padding: 40px;">
+        <div class="loading" style="margin: 0 auto;"></div>
+        <p>Loading profile...</p>
+    </div>
+}
+else
+{
+    <div class="grid grid-2">
+        <!-- User Information -->
+        <div class="card">
+            <div class="card-header">
+                <span>👤 USER INFORMATION</span>
+            </div>
+
+            <div style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 30px; padding: 20px; background: #f9f9f9; border: 2px solid #000;">
+                    <div style="width: 80px; height: 80px; background: #000; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold;">
+                        @(userProfile.Username.Substring(0, 1).ToUpper())
+                    </div>
+                    <div>
+                        <h2 style="margin: 0;">@userProfile.Username</h2>
+                        <p style="margin: 4px 0 0 0; color: #666;">@userProfile.Email</p>
+                        <span class="badge badge-info" style="margin-top: 8px;">@userProfile.Role</span>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 0.85rem; color: #666; text-transform: uppercase;">Full Name</label>
+                    <p style="margin: 0; font-size: 1.1rem;">@(userProfile.FullName ?? "Not set")</p>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 0.85rem; color: #666; text-transform: uppercase;">Organization</label>
+                    <p style="margin: 0; font-size: 1.1rem;">@(userProfile.Organization ?? "Not set")</p>
+                </div>
+
+                <div class="grid grid-2" style="gap: 16px;">
+                    <div>
+                        <label style="font-size: 0.85rem; color: #666; text-transform: uppercase;">Member Since</label>
+                        <p style="margin: 0;">@userProfile.CreatedAt.ToString("dd MMM yyyy")</p>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.85rem; color: #666; text-transform: uppercase;">Last Login</label>
+                        <p style="margin: 0;">@(userProfile.LastLogin?.ToString("dd MMM yyyy HH:mm") ?? "Never")</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Password Form -->
+        <div class="card">
+            <div class="card-header">
+                <span>🔒 CHANGE PASSWORD</span>
+            </div>
+
+            @if (!string.IsNullOrEmpty(passwordMessage))
+            {
+                <div style="background: @passwordMessageColor; border: 2px solid @(passwordMessage.StartsWith("✓") ? "#00cc66" : "#ff3333"); padding: 12px; margin: 20px; font-weight: bold;">
+                    @passwordMessage
+                </div>
+            }
+
+            <EditForm Model="@changePasswordModel" OnValidSubmit="handleChangePassword">
+                <DataAnnotationsValidator />
+                
+                <div style="padding: 20px;">
+                    <div style="margin-bottom: 20px;">
+                        <label for="currentPassword">Current Password *</label>
+                        <InputText id="currentPassword" 
+                                   type="password"
+                                   @bind-Value="changePasswordModel.CurrentPassword" 
+                                   placeholder="Enter current password"
+                                   style="width: 100%;" />
+                        <ValidationMessage For="@(() => changePasswordModel.CurrentPassword)" 
+                                           style="color: #ff3333; font-size: 0.85rem;" />
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label for="newPassword">New Password *</label>
+                        <InputText id="newPassword" 
+                                   type="password"
+                                   @bind-Value="changePasswordModel.NewPassword" 
+                                   placeholder="Min. 6 characters"
+                                   style="width: 100%;" />
+                        <ValidationMessage For="@(() => changePasswordModel.NewPassword)" 
+                                           style="color: #ff3333; font-size: 0.85rem;" />
+                        <small style="color: #666; font-size: 0.75rem;">Must be at least 6 characters</small>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label for="confirmNewPassword">Confirm New Password *</label>
+                        <InputText id="confirmNewPassword" 
+                                   type="password"
+                                   @bind-Value="changePasswordModel.ConfirmNewPassword" 
+                                   placeholder="Re-enter new password"
+                                   style="width: 100%;" />
+                        <ValidationMessage For="@(() => changePasswordModel.ConfirmNewPassword)" 
+                                           style="color: #ff3333; font-size: 0.85rem;" />
+                    </div>
+
+                    <button type="submit" class="btn" style="width: 100%;" disabled="@isChangingPassword">
+                        @(isChangingPassword ? "CHANGING..." : "[ CHANGE PASSWORD ]")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+
+    <!-- Edit Profile Section -->
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header">
+            <span>✏️ EDIT PROFILE</span>
+        </div>
+
+        <div style="padding: 20px;">
+            <div class="grid grid-2" style="gap: 20px;">
+                <div>
+                    <label for="editFullName">Full Name</label>
+                    <InputText id="editFullName" 
+                               @bind-Value="editFullName" 
+                               placeholder="Your full name"
+                               style="width: 100%;" />
+                </div>
+                <div>
+                    <label for="editOrganization">Organization</label>
+                    <InputText id="editOrganization" 
+                               @bind-Value="editOrganization" 
+                               placeholder="Your organization"
+                               style="width: 100%;" />
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" @onclick="handleUpdateProfile" style="margin-top: 20px;" disabled="@isUpdatingProfile">
+                @(isUpdatingProfile ? "SAVING..." : "[ SAVE CHANGES ]")
+            </button>
+
+            @if (profileUpdated)
+            {
+                <span style="margin-left: 16px; color: #00cc66; font-weight: bold;">✓ Profile updated!</span>
+            }
+        </div>
+    </div>
+
+    <!-- Logout Button -->
+    <div style="margin-top: 24px; text-align: right;">
+        <button class="btn btn-danger" @onclick="HandleLogout">[ LOGOUT ]</button>
+    </div>
+}
+
+@code {
+    private UserProfileModel? userProfile;
+    private ChangePasswordModel changePasswordModel = new();
+    private string editFullName = "";
+    private string editOrganization = "";
+    private string? passwordMessage;
+    private bool isChangingPassword = false;
+    private bool isUpdatingProfile = false;
+    private bool profileUpdated = false;
+    private string passwordMessageColor = "#e6ffe6";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthService.CurrentUserId.HasValue)
+        {
+            await LoadUserProfile();
+        }
+    }
+
+    private async Task LoadUserProfile()
+    {
+        try
+        {
+            userProfile = await AuthService.GetUserProfileAsync(AuthService.CurrentUserId.Value);
+            if (userProfile != null)
+            {
+                editFullName = userProfile.FullName ?? "";
+                editOrganization = userProfile.Organization ?? "";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading profile: {ex.Message}");
+        }
+    }
+
+    private async Task handleChangePassword()
+    {
+        if (AuthService.CurrentUserId == null) return;
+
+        isChangingPassword = true;
+        passwordMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AuthService.ChangePasswordAsync(AuthService.CurrentUserId.Value, changePasswordModel);
+
+            if (result.Success)
+            {
+                passwordMessage = "✓ " + result.Message;
+                passwordMessageColor = "#e6ffe6";
+                changePasswordModel = new(); // Reset form
+            }
+            else
+            {
+                passwordMessage = "⚠️ " + result.Message;
+                passwordMessageColor = "#ffe6e6";
+            }
+        }
+        catch (Exception ex)
+        {
+            passwordMessage = $"⚠️ Error: {ex.Message}";
+            passwordMessageColor = "#ffe6e6";
+        }
+        finally
+        {
+            isChangingPassword = false;
+            profileUpdated = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task handleUpdateProfile()
+    {
+        if (AuthService.CurrentUserId == null) return;
+
+        isUpdatingProfile = true;
+        StateHasChanged();
+
+        try
+        {
+            await AuthService.UpdateUserProfileAsync(AuthService.CurrentUserId.Value, editFullName, editOrganization);
+            profileUpdated = true;
+            await LoadUserProfile();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating profile: {ex.Message}");
+        }
+        finally
+        {
+            isUpdatingProfile = false;
+            StateHasChanged();
+            
+            if (profileUpdated)
+            {
+                await Task.Delay(3000);
+                profileUpdated = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task HandleLogout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/login");
+    }
+}

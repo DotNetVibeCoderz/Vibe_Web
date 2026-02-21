@@ -1,0 +1,203 @@
+@page "/monitoring"
+@using MediaMonitoring.Data
+@using MediaMonitoring.Models
+@using Microsoft.EntityFrameworkCore
+@inject MediaMonitoringContext DbContext
+
+<PageTitle>Live Monitoring - Media Monitoring</PageTitle>
+
+<h1>LIVE MONITORING</h1>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: end;">
+        <div style="flex: 1; min-width: 200px;">
+            <label>Search Keyword</label>
+            <input type="text" @bind="searchKeyword" placeholder="Enter keyword to filter..." />
+        </div>
+        <div style="flex: 1; min-width: 200px;">
+            <label>Filter by Sentiment</label>
+            <select @bind="selectedSentiment">
+                <option value="">All Sentiments</option>
+                <option value="Positive">Positive</option>
+                <option value="Negative">Negative</option>
+                <option value="Neutral">Neutral</option>
+            </select>
+        </div>
+        <div style="flex: 1; min-width: 200px;">
+            <label>Filter by Category</label>
+            <select @bind="selectedCategory">
+                <option value="">All Categories</option>
+                <option value="Politik">Politik</option>
+                <option value="Ekonomi">Ekonomi</option>
+                <option value="Keamanan">Keamanan</option>
+                <option value="Teknologi">Teknologi</option>
+                <option value="Sosial">Sosial</option>
+                <option value="Bencana">Bencana</option>
+                <option value="Kesehatan">Kesehatan</option>
+            </select>
+        </div>
+        <div>
+            <button class="btn" @onclick="ApplyFilters">[ Filter ]</button>
+            <button class="btn btn-secondary" @onclick="ResetFilters" style="margin-left: 8px;">[ Reset ]</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span>DATA STREAM (@totalCount posts)</span>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="text-align: center; padding: 40px;">
+            <div class="loading" style="margin: 0 auto;"></div>
+            <p>LOADING DATA...</p>
+        </div>
+    }
+    else if (posts.Any())
+    {
+        <table class="table-brutal">
+            <thead>
+                <tr>
+                    <th style="width: 150px;">TIME (UTC)</th>
+                    <th style="width: 120px;">SOURCE</th>
+                    <th>AUTHOR</th>
+                    <th>CONTENT</th>
+                    <th style="width: 100px;">SENTIMENT</th>
+                    <th style="width: 120px;">CATEGORY</th>
+                    <th style="width: 100px;">LOCATION</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var post in posts)
+                {
+                    <tr>
+                        <td>@post.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td><strong>@post.Source</strong></td>
+                        <td>@post.Author</td>
+                        <td>
+                            <div style="max-width: 400px; word-wrap: break-word;">@post.Content</div>
+                        </td>
+                        <td>
+                            @{
+                                var badgeClass = post.Sentiment switch
+                                {
+                                    "Positive" => "badge-positive",
+                                    "Negative" => "badge-negative",
+                                    _ => "badge-neutral"
+                                };
+                            }
+                            <span class="badge @badgeClass">@post.Sentiment</span>
+                        </td>
+                        <td>@post.Category</td>
+                        <td>@post.Location</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn btn-secondary" disabled="@(currentPage == 1)" @onclick="PreviousPage">&lt;&lt; PREV</button>
+            <span>Page @currentPage of @totalPages (@totalCount total posts)</span>
+            <button class="btn btn-secondary" disabled="@(currentPage >= totalPages)" @onclick="NextPage">NEXT &gt;&gt;</button>
+        </div>
+    }
+    else
+    {
+        <div style="text-align: center; padding: 40px;">
+            <h3>NO DATA FOUND</h3>
+            <p>Try adjusting your filters or run crawling first.</p>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isLoading = false;
+    private List<MediaPost> posts = new();
+    private int totalCount = 0;
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalPages = 1;
+    
+    private string searchKeyword = "";
+    private string selectedSentiment = "";
+    private string selectedCategory = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        var query = DbContext.MediaPosts.OrderByDescending(p => p.CreatedAt).AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchKeyword))
+        {
+            query = query.Where(p => p.Content.Contains(searchKeyword) || 
+                                     p.Author.Contains(searchKeyword) ||
+                                     (p.Tags != null && p.Tags.Contains(searchKeyword)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedSentiment))
+        {
+            query = query.Where(p => p.Sentiment == selectedSentiment);
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedCategory))
+        {
+            query = query.Where(p => p.Category == selectedCategory);
+        }
+
+        totalCount = await query.CountAsync();
+        totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+        
+        if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        posts = await query
+            .Skip((currentPage - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private void ApplyFilters()
+    {
+        currentPage = 1;
+        _ = LoadData();
+    }
+
+    private void ResetFilters()
+    {
+        searchKeyword = "";
+        selectedSentiment = "";
+        selectedCategory = "";
+        currentPage = 1;
+        _ = LoadData();
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            _ = LoadData();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            _ = LoadData();
+        }
+    }
+}

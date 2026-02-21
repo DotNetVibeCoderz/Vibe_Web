@@ -1,0 +1,288 @@
+/* 
+ * BRUTALIST MODERN THEME FOR MEDIA MONITORING
+ * Desain: Tegas, Kontras Tinggi, Fungsional, Minimalis tapi Kuat.
+ */
+
+:root {
+    --bg-color: #f0f0f0;
+    --surface-color: #ffffff;
+    --text-main: #1a1a1a;
+    --text-muted: #555555;
+    --accent-color: #000000; /* Hitam pekat sebagai aksen */
+    --border-color: #1a1a1a;
+    --border-width: 2px;
+    
+    /* Warna Status */
+    --color-positive: #00cc66;
+    --color-negative: #ff3333;
+    --color-neutral: #cccccc;
+    --color-warning: #ffcc00;
+    --color-info: #0099ff;
+
+    /* Spacing */
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 40px;
+
+    /* Fonts */
+    --font-mono: 'Courier New', Courier, monospace;
+    --font-sans: 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+    font-weight: 400;
+}
+
+/* TYPOGRAPHY */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -1px;
+    margin-bottom: var(--spacing-md);
+    border-bottom: var(--border-width) solid var(--border-color);
+    padding-bottom: var(--spacing-sm);
+}
+
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.5rem; }
+
+p {
+    margin-bottom: var(--spacing-md);
+}
+
+code, pre {
+    font-family: var(--font-mono);
+    background: #e0e0e0;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+}
+
+/* LAYOUT UTILS */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--spacing-lg);
+}
+
+.grid {
+    display: grid;
+    gap: var(--spacing-lg);
+}
+
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+@media (max-width: 768px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+}
+
+/* COMPONENTS: CARDS */
+.card {
+    background: var(--surface-color);
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: 6px 6px 0px var(--border-color); /* Shadow keras khas brutalist */
+    padding: var(--spacing-lg);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0px var(--border-color);
+}
+
+.card-header {
+    font-weight: bold;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* COMPONENTS: BUTTONS */
+.btn {
+    display: inline-block;
+    background: var(--accent-color);
+    color: white;
+    padding: 12px 24px;
+    text-decoration: none;
+    font-weight: bold;
+    text-transform: uppercase;
+    border: var(--border-width) solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--font-sans);
+}
+
+.btn:hover {
+    background: var(--text-main);
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text-main);
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: 4px 4px 0px var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-color);
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+.btn-danger {
+    background: var(--color-negative);
+    border-color: #990000;
+}
+
+/* COMPONENTS: TABLES */
+.table-brutal {
+    width: 100%;
+    border-collapse: collapse;
+    border: var(--border-width) solid var(--border-color);
+}
+
+.table-brutal th, .table-brutal td {
+    border: 1px solid var(--border-color);
+    padding: var(--spacing-sm);
+    text-align: left;
+}
+
+.table-brutal th {
+    background: var(--text-main);
+    color: white;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+
+.table-brutal tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+/* BADGES */
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    border: 1px solid var(--border-color);
+}
+
+.badge-positive { background: var(--color-positive); color: white; border-color: #00994d; }
+.badge-negative { background: var(--color-negative); color: white; border-color: #cc0000; }
+.badge-neutral { background: var(--color-neutral); color: black; border-color: #999999; }
+.badge-info { background: var(--color-info); color: white; }
+
+/* NAVBAR */
+.navbar {
+    background: var(--accent-color);
+    color: white;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: var(--border-width) solid black;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-brand {
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: white;
+    text-decoration: none;
+    letter-spacing: 2px;
+}
+
+.nav-links a {
+    color: white;
+    text-decoration: none;
+    margin-left: var(--spacing-lg);
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+}
+
+.nav-links a:hover {
+    text-decoration: underline;
+    color: var(--color-warning);
+}
+
+/* FORMS */
+input[type="text"], input[type="email"], input[type="password"], select, textarea {
+    width: 100%;
+    padding: 12px;
+    border: var(--border-width) solid var(--border-color);
+    background: white;
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    margin-bottom: var(--spacing-md);
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    background: #ffffcc;
+    border-color: var(--color-warning);
+}
+
+label {
+    display: block;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+}
+
+/* DASHBOARD WIDGETS */
+.stat-card {
+    text-align: center;
+}
+.stat-value {
+    font-size: 3rem;
+    font-weight: 900;
+    display: block;
+    margin: var(--spacing-md) 0;
+}
+.stat-label {
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* LOADING SPINNER (Simple Brutalist) */
+.loading {
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--color-info);
+    border-radius: 0; /* Kotak, bukan bulat */
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* UTILITY COLORS */
+.text-positive { color: var(--color-positive); font-weight: bold; }
+.text-negative { color: var(--color-negative); font-weight: bold; }
+.text-muted { color: var(--text-muted); }

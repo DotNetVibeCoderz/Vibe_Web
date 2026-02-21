@@ -1,0 +1,173 @@
+@page "/register"
+@using MediaMonitoring.Models.Auth
+@using MediaMonitoring.Services
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Register - Media Monitoring</PageTitle>
+
+<div style="max-width: 550px; margin: 60px auto;">
+    <div class="card">
+        <div class="card-header">
+            <span>👤 USER REGISTRATION</span>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div style="background: #ffe6e6; border: 2px solid #ff3333; padding: 12px; margin-bottom: 20px; font-weight: bold;">
+                ⚠️ @errorMessage
+            </div>
+        }
+
+        @if (registrationSuccess)
+        {
+            <div style="background: #e6ffe6; border: 2px solid #00cc66; padding: 12px; margin-bottom: 20px; font-weight: bold;">
+                ✓ Registration successful! Redirecting to login...
+            </div>
+        }
+
+        <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
+            <DataAnnotationsValidator />
+            
+            <div class="grid grid-2" style="gap: 16px;">
+                <div style="margin-bottom: 20px;">
+                    <label for="username">Username *</label>
+                    <InputText id="username" 
+                               @bind-Value="registerModel.Username" 
+                               placeholder="Choose username"
+                               style="width: 100%;" />
+                    <ValidationMessage For="@(() => registerModel.Username)" 
+                                       style="color: #ff3333; font-size: 0.85rem;" />
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="email">Email *</label>
+                    <InputText id="email" 
+                               type="email"
+                               @bind-Value="registerModel.Email" 
+                               placeholder="your@email.com"
+                               style="width: 100%;" />
+                    <ValidationMessage For="@(() => registerModel.Email)" 
+                                       style="color: #ff3333; font-size: 0.85rem;" />
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="fullName">Full Name (Optional)</label>
+                <InputText id="fullName" 
+                           @bind-Value="registerModel.FullName" 
+                           placeholder="Your full name"
+                           style="width: 100%;" />
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="organization">Organization (Optional)</label>
+                <InputText id="organization" 
+                           @bind-Value="registerModel.Organization" 
+                           placeholder="Your organization/company"
+                           style="width: 100%;" />
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="password">Password *</label>
+                <InputText id="password" 
+                           type="password"
+                           @bind-Value="registerModel.Password" 
+                           placeholder="Min. 6 characters"
+                           style="width: 100%;" />
+                <ValidationMessage For="@(() => registerModel.Password)" 
+                                   style="color: #ff3333; font-size: 0.85rem;" />
+                <small style="color: #666; font-size: 0.75rem;">Must be at least 6 characters</small>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="confirmPassword">Confirm Password *</label>
+                <InputText id="confirmPassword" 
+                           type="password"
+                           @bind-Value="registerModel.ConfirmPassword" 
+                           placeholder="Re-enter password"
+                           style="width: 100%;" />
+                <ValidationMessage For="@(() => registerModel.ConfirmPassword)" 
+                                   style="color: #ff3333; font-size: 0.85rem;" />
+            </div>
+
+            <div style="margin-bottom: 20px; padding: 12px; background: #f9f9f9; border: 1px solid #e0e0e0;">
+                <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin: 0;">
+                    <InputCheckbox @bind-Value="agreeToTerms" />
+                    <span style="font-size: 0.85rem;">
+                        I agree to the <a href="#" style="color: #0066cc;">Terms of Service</a> and 
+                        <a href="#" style="color: #0066cc;">Privacy Policy</a>
+                    </span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn" style="width: 100%;" disabled="@isRegistering || !agreeToTerms">
+                @(isRegistering ? "REGISTERING..." : "[ CREATE ACCOUNT ]")
+            </button>
+        </EditForm>
+
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+            <p style="margin: 0 0 12px 0; font-size: 0.9rem;">Already have an account?</p>
+            <a href="/login" class="btn btn-secondary" style="font-size: 0.9rem;">[ LOGIN ]</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private RegisterModel registerModel = new();
+    private bool agreeToTerms = false;
+    private string? errorMessage;
+    private bool isRegistering = false;
+    private bool registrationSuccess = false;
+
+    protected override void OnInitialized()
+    {
+        if (AuthService.CurrentUserId.HasValue)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        if (!agreeToTerms)
+        {
+            errorMessage = "You must agree to the terms and conditions";
+            return;
+        }
+
+        isRegistering = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AuthService.RegisterAsync(registerModel);
+
+            if (result.Success)
+            {
+                registrationSuccess = true;
+                errorMessage = null;
+                StateHasChanged();
+                
+                // Redirect to login after delay
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/login");
+            }
+            else
+            {
+                errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Registration failed: {ex.Message}";
+            Console.WriteLine($"Registration error: {ex}");
+        }
+        finally
+        {
+            isRegistering = false;
+            StateHasChanged();
+        }
+    }
+}

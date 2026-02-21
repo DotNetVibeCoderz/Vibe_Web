@@ -1,0 +1,249 @@
+@page "/"
+@using MediaMonitoring.Services
+@using MediaMonitoring.Data
+@using MediaMonitoring.Models
+@using Microsoft.EntityFrameworkCore
+@inject OsintEngineService OsintService
+@inject IJSRuntime JS
+
+<PageTitle>Dashboard - Media Monitoring</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1>DASHBOARD OSINT</h1>
+    <button class="btn btn-secondary" @onclick="RunCrawling" disabled="@isRunning">
+        @(isRunning ? "RUNNING..." : "[ RUN CRAWLING ]")
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div style="text-align: center; padding: 50px;">
+        <div class="loading" style="margin: 0 auto;"></div>
+        <p>LOADING DATA...</p>
+    </div>
+}
+else
+{
+    <!-- STAT CARDS -->
+    <div class="grid grid-4" style="margin-bottom: 32px;">
+        <div class="card stat-card">
+            <div class="stat-label">Total Posts</div>
+            <span class="stat-value">@totalPosts</span>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">Positive</div>
+            <span class="stat-value text-positive">@positiveCount</span>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">Negative</div>
+            <span class="stat-value text-negative">@negativeCount</span>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">Neutral</div>
+            <span class="stat-value">@neutralCount</span>
+        </div>
+    </div>
+
+    <!-- CHARTS AREA -->
+    <div class="grid grid-2" style="margin-bottom: 32px;">
+        <!-- Time Series Chart -->
+        <div class="card">
+            <div class="card-header">
+                <span>TREND ANALYSIS (24 HOURS)</span>
+            </div>
+            <div id="timeSeriesChart" style="width: 100%; height: 300px;"></div>
+        </div>
+
+        <!-- Category Distribution -->
+        <div class="card">
+            <div class="card-header">
+                <span>CATEGORY DISTRIBUTION</span>
+            </div>
+            <div id="categoryChart" style="width: 100%; height: 300px;"></div>
+        </div>
+    </div>
+
+    <!-- RECENT POSTS TABLE -->
+    <div class="card">
+        <div class="card-header">
+            <span>LATEST INTELLIGENCE</span>
+            <a href="/monitoring" style="font-size: 0.8rem; color: black;">VIEW ALL >></a>
+        </div>
+        
+        <table class="table-brutal">
+            <thead>
+                <tr>
+                    <th>TIME</th>
+                    <th>SOURCE</th>
+                    <th>CONTENT</th>
+                    <th>SENTIMENT</th>
+                    <th>CATEGORY</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (recentPosts.Any())
+                {
+                    @foreach (var post in recentPosts)
+                    {
+                        <tr>
+                            <td>@post.CreatedAt.ToString("HH:mm dd/MM")</td>
+                            <td><strong>@post.Source</strong></td>
+                            <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@post.Content</td>
+                            <td>
+                                @if (post.Sentiment == "Positive")
+                                {
+                                    <span class="badge badge-positive">@post.Sentiment</span>
+                                }
+                                else if (post.Sentiment == "Negative")
+                                {
+                                    <span class="badge badge-negative">@post.Sentiment</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-neutral">@post.Sentiment</span>
+                                }
+                            </td>
+                            <td>@post.Category</td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 20px;">NO DATA AVAILABLE. CLICK "RUN CRAWLING" TO START.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isRunning = false;
+
+    private int totalPosts = 0;
+    private int positiveCount = 0;
+    private int negativeCount = 0;
+    private int neutralCount = 0;
+
+    private List<MediaPost> recentPosts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isLoading)
+        {
+            // Render charts after data is loaded and DOM is ready
+            await RenderCharts();
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        try 
+        {
+            var stats = await OsintService.GetDashboardStatsAsync();
+
+            totalPosts = (int)stats["TotalPosts"]!;
+            positiveCount = (int)stats["Positive"]!;
+            negativeCount = (int)stats["Negative"]!;
+            neutralCount = (int)stats["Neutral"]!;
+
+            // Ambil 10 posting terbaru
+            recentPosts = await OsintService.GetRecentPostsAsync(10);
+
+            isLoading = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard: {ex.Message}");
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunCrawling()
+    {
+        isRunning = true;
+        StateHasChanged();
+
+        try
+        {
+            var count = await OsintService.RunCrawlingCycleAsync();
+            await LoadDashboardData(); // Refresh data
+
+            // Re-render charts after new data
+            await RenderCharts();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Crawling error: {ex.Message}");
+        }
+        finally
+        {
+            isRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RenderCharts()
+    {
+        try
+        {
+            // Get fresh stats for charts
+            var stats = await OsintService.GetDashboardStatsAsync();
+
+            // Extract categories safely
+            if (stats.TryGetValue("Categories", out var categoriesObj) && categoriesObj != null)
+            {
+                // Cast to list of dynamic objects
+                var categoriesList = categoriesObj as System.Collections.IEnumerable;
+                if (categoriesList != null)
+                {
+                    var categoryData = new List<object>();
+                    foreach (dynamic dict in categoriesList)
+                    {
+                        //var dict = item as System.Dynamic.ExpandoObject;
+                        if (dict != null)
+                        {
+                            categoryData.Add(new
+                            {
+                                category = dict.Category ?? "",
+                                count = dict.Count?? 0
+                            });
+                            /*   
+                            var kvp = dict as IDictionary<string, object>;
+                            if (kvp != null)
+                            {
+                                categoryData.Add(new { 
+                                    category = kvp.ContainsKey("Category") ? kvp["Category"] : "",
+                                    count = kvp.ContainsKey("Count") ? kvp["Count"] : 0
+                                });
+                            }*/
+                        }
+                    }
+                    
+                    if (categoryData.Any())
+                    {
+                        await JS.InvokeVoidAsync("renderCategoryChart", categoryData);
+                    }
+                }
+            }
+
+            // Render time series chart
+            var timeData = await OsintService.GetTimeSeriesDataAsync(24);
+            await JS.InvokeVoidAsync("renderTimeSeriesChart", timeData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error rendering charts: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        }
+    }
+}

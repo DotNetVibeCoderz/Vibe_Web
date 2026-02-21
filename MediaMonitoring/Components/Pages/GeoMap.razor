@@ -1,0 +1,183 @@
+@page "/geomap"
+@using MediaMonitoring.Data
+@using Microsoft.EntityFrameworkCore
+@inject MediaMonitoringContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Geospatial Analysis</PageTitle>
+
+<h1>GEOSPATIAL ANALYSIS</h1>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <span>LIVE THREAT MAP</span>
+        <span style="font-size: 0.8rem;">Real-time location-based intelligence</span>
+    </div>
+    
+    <div id="map" style="width: 100%; height: 500px; border: 2px solid #000;"></div>
+</div>
+
+<div class="grid grid-3" style="margin-top: 24px;">
+    <div class="card stat-card">
+        <div class="stat-label">Total Locations</div>
+        <span class="stat-value">@totalLocations</span>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">High Risk Areas</div>
+        <span class="stat-value text-negative">@highRiskAreas</span>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">Active Regions</div>
+        <span class="stat-value">@activeRegions</span>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header"><span>LOCATION BREAKDOWN</span></div>
+    
+    <table class="table-brutal">
+        <thead>
+            <tr><th>Location</th><th>Post Count</th><th>Dominant Sentiment</th><th>Risk Level</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var loc in locationStats)
+            {
+                var riskLevel = loc.RiskScore > 70 ? "HIGH" : loc.RiskScore > 40 ? "MEDIUM" : "LOW";
+                var badgeClass = loc.RiskScore > 70 ? "badge-negative" : loc.RiskScore > 40 ? "badge-info" : "badge-neutral";
+                <tr>
+                    <td><strong>@loc.Location</strong></td>
+                    <td>@loc.Count</td>
+                    <td>
+                        <span class="badge badge-@loc.DominantSentiment.ToLower()">@loc.DominantSentiment</span>
+                    </td>
+                    <td>
+                        <span class="badge @badgeClass">@riskLevel (@loc.RiskScore%)</span>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int totalLocations = 0;
+    private int highRiskAreas = 0;
+    private int activeRegions = 0;
+    private List<LocationStat> locationStats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGeoData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && locationStats.Any())
+        {
+            await InitializeMap();
+        }
+    }
+
+    private async Task LoadGeoData()
+    {
+        var posts = await DbContext.MediaPosts.ToListAsync();
+        
+        var locationGroups = posts
+            .Where(p => !string.IsNullOrEmpty(p.Location))
+            .GroupBy(p => p.Location)
+            .Select(g => new LocationStat
+            {
+                Location = g.Key,
+                Count = g.Count(),
+                DominantSentiment = g.GroupBy(x => x.Sentiment)
+                    .OrderByDescending(x => x.Count())
+                    .FirstOrDefault()?.Key ?? "Neutral",
+                RiskScore = CalculateRiskScore(g),
+                LastActivity = g.Max(x => x.CreatedAt)
+            })
+            .OrderByDescending(l => l.Count)
+            .ToList();
+
+        locationStats = locationGroups;
+        totalLocations = locationGroups.Count;
+        highRiskAreas = locationGroups.Count(l => l.RiskScore > 70);
+        activeRegions = locationGroups.Count(l => l.LastActivity > DateTime.UtcNow.AddHours(-24));
+        
+        StateHasChanged();
+    }
+
+    private int CalculateRiskScore(IGrouping<string, MediaPost> posts)
+    {
+        var negativeCount = posts.Count(p => p.Sentiment == "Negative");
+        var totalCount = posts.Count();
+        if (totalCount == 0) return 0;
+        
+        var negativeRatio = (double)negativeCount / totalCount;
+        var securityBoost = posts.Any(p => 
+            p.Category == "Keamanan" || 
+            p.Content.Contains("leak", StringComparison.OrdinalIgnoreCase) ||
+            p.Content.Contains("attack", StringComparison.OrdinalIgnoreCase)) ? 20 : 0;
+
+        return Math.Min(100, (int)(negativeRatio * 100 + securityBoost));
+    }
+
+    private async Task InitializeMap()
+    {
+        try
+        {
+            var cityCoords = new Dictionary<string, (double Lat, double Lng)>
+            {
+                { "Jakarta", (-6.2088, 106.8456) },
+                { "Bandung", (-6.9175, 107.6191) },
+                { "Surabaya", (-7.2575, 112.7521) },
+                { "Medan", (3.5952, 98.6722) },
+                { "Makassar", (-5.1477, 119.4327) },
+                { "Semarang", (-6.9667, 110.4167) },
+                { "Palembang", (-2.9761, 104.7754) },
+                { "Tangerang", (-6.1783, 106.6319) },
+                { "Depok", (-6.4025, 106.7942) },
+                { "Bekasi", (-6.2383, 106.9756) },
+                { "Yogyakarta", (-7.7956, 110.3695) },
+                { "Malang", (-7.9666, 112.5967) },
+                { "Padang", (-0.9471, 100.4172) },
+                { "Denpasar", (-8.6705, 115.2126) },
+                { "Manado", (1.4748, 124.8421) },
+                { "Balikpapan", (-1.2379, 116.8529) },
+                { "Pontianak", (-0.0263, 109.3425) },
+                { "Banjarmasin", (-3.3194, 114.5906) },
+                { "Pekanbaru", (0.5071, 101.4478) },
+                { "Jayapura", (-2.5489, 140.7017) }
+            };
+
+            var mapData = locationStats.Select(loc => {
+                if (cityCoords.TryGetValue(loc.Location, out var coords))
+                {
+                    return new {
+                        location = loc.Location,
+                        lat = coords.Lat,
+                        lng = coords.Lng,
+                        count = loc.Count,
+                        riskScore = loc.RiskScore,
+                        sentiment = loc.DominantSentiment
+                    };
+                }
+                return null;
+            }).Where(x => x != null).ToList();
+
+            await JS.InvokeVoidAsync("initializeLeafletMap", mapData);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing map: {ex.Message}");
+        }
+    }
+
+    public class LocationStat
+    {
+        public string Location { get; set; } = "";
+        public int Count { get; set; }
+        public string DominantSentiment { get; set; } = "";
+        public int RiskScore { get; set; }
+        public DateTime LastActivity { get; set; }
+    }
+}

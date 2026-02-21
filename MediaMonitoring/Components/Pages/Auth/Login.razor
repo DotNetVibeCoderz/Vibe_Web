@@ -1,0 +1,132 @@
+@page "/login"
+@using MediaMonitoring.Models.Auth
+@using MediaMonitoring.Services
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Login - Media Monitoring</PageTitle>
+
+<div style="max-width: 450px; margin: 60px auto;">
+    <div class="card">
+        <div class="card-header">
+            <span>🔐 USER LOGIN</span>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div style="background: #ffe6e6; border: 2px solid #ff3333; padding: 12px; margin-bottom: 20px; font-weight: bold;">
+                ⚠️ @errorMessage
+            </div>
+        }
+
+        @if (successMessage != null)
+        {
+            <div style="background: #e6ffe6; border: 2px solid #00cc66; padding: 12px; margin-bottom: 20px; font-weight: bold;">
+                ✓ @successMessage
+            </div>
+        }
+
+        <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+            
+            <div style="margin-bottom: 20px;">
+                <label for="username">Username or Email</label>
+                <InputText id="username" 
+                           @bind-Value="loginModel.UsernameOrEmail" 
+                           placeholder="Enter username or email"
+                           style="width: 100%;" />
+                <ValidationMessage For="@(() => loginModel.UsernameOrEmail)" 
+                                   style="color: #ff3333; font-size: 0.85rem;" />
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="password">Password</label>
+                <InputText id="password" 
+                           type="password"
+                           @bind-Value="loginModel.Password" 
+                           placeholder="Enter password"
+                           style="width: 100%;" />
+                <ValidationMessage For="@(() => loginModel.Password)" 
+                                   style="color: #ff3333; font-size: 0.85rem;" />
+            </div>
+
+            <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+                <InputCheckbox @bind-Value="loginModel.RememberMe" />
+                <label style="margin: 0; cursor: pointer;">Remember me</label>
+            </div>
+
+            <button type="submit" class="btn" style="width: 100%; margin-bottom: 16px;" disabled="@isLoggingIn">
+                @(isLoggingIn ? "LOGGING IN..." : "[ LOGIN ]")
+            </button>
+        </EditForm>
+
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+            <p style="margin: 0 0 12px 0; font-size: 0.9rem;">Don't have an account?</p>
+            <a href="/register" class="btn btn-secondary" style="font-size: 0.9rem;">[ REGISTER ]</a>
+        </div>
+    </div>
+
+    @if (isLoggedIn)
+    {
+        <div class="card" style="margin-top: 24px; background: #e6ffe6; border-color: #00cc66;">
+            <div style="text-align: center; padding: 20px;">
+                <h3 style="color: #00cc66; margin-bottom: 12px;">✓ Login Successful!</h3>
+                <p>Redirecting to dashboard...</p>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private LoginModel loginModel = new();
+    private string? errorMessage;
+    private string? successMessage;
+    private bool isLoggingIn = false;
+    private bool isLoggedIn = false;
+
+    protected override void OnInitialized()
+    {
+        // Check if already logged in
+        if (AuthService.CurrentUserId.HasValue)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        isLoggingIn = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AuthService.LoginAsync(loginModel.UsernameOrEmail, loginModel.Password);
+
+            if (result.Success)
+            {
+                isLoggedIn = true;
+                successMessage = result.Message;
+                StateHasChanged();
+                
+                // Redirect after short delay
+                await Task.Delay(1000);
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Login failed: {ex.Message}";
+            Console.WriteLine($"Login error: {ex}");
+        }
+        finally
+        {
+            isLoggingIn = false;
+            StateHasChanged();
+        }
+    }
+}
