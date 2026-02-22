@@ -1,0 +1,147 @@
+@page "/library"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Library - NetTube</PageTitle>
+
+<div class="glass-panel" style="padding: 20px;">
+    <h2><i class="fas fa-folder"></i> Your Library</h2>
+    <hr style="border-color: var(--glass-border); margin: 20px 0;" />
+
+    <AuthorizeView>
+        <Authorized>
+            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                <div style="flex: 2;">
+                    <!-- History Section -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4><i class="fas fa-history"></i> History</h4>
+                        <a href="/history" style="color: var(--primary-color); text-decoration: none;">See all</a>
+                    </div>
+                    <div style="display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px;">
+                        @if (WatchHistories == null)
+                        {
+                            <p>Loading...</p>
+                        }
+                        else if (!WatchHistories.Any())
+                        {
+                            <p>No watch history.</p>
+                        }
+                        else
+                        {
+                            @foreach (var history in WatchHistories.Take(4))
+                            {
+                                <div style="min-width: 200px; cursor: pointer;" class="glass-panel" @onclick="() => WatchVideo(history.Video?.Id ?? 0)">
+                                    <img src="@history.Video?.ThumbnailUrl" style="width: 100%; height: 110px; object-fit: cover; border-radius: 10px;" />
+                                    <p style="margin: 10px 0 0; font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@history.Video?.Title</p>
+                                    <p style="margin: 0; font-size: 12px; opacity: 0.7;">@history.Video?.Uploader?.Username</p>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <hr style="border-color: var(--glass-border); margin: 30px 0;" />
+
+                    <!-- Playlists Section -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4><i class="fas fa-list"></i> Playlists</h4>
+                        <a href="/playlists" style="color: var(--primary-color); text-decoration: none;">See all</a>
+                    </div>
+                    <div style="display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px;">
+                        @if (Playlists == null)
+                        {
+                            <p>Loading...</p>
+                        }
+                        else if (!Playlists.Any())
+                        {
+                            <p>No playlists yet.</p>
+                        }
+                        else
+                        {
+                            @foreach (var playlist in Playlists.Take(4))
+                            {
+                                <div style="min-width: 200px; cursor: pointer;" class="glass-panel" @onclick="() => GoToPlaylist()">
+                                    <div style="position: relative;">
+                                        <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80" style="width: 100%; height: 110px; object-fit: cover; border-radius: 10px;" />
+                                        <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 40%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; border-top-right-radius: 10px; border-bottom-right-radius: 10px;">
+                                            <span style="color: white; font-weight: bold;"><i class="fas fa-play"></i> @playlist.PlaylistVideos.Count</span>
+                                        </div>
+                                    </div>
+                                    <p style="margin: 10px 0 0; font-weight: bold; font-size: 14px;">@playlist.Title</p>
+                                    <p style="margin: 0; font-size: 12px; opacity: 0.7;">Updated @playlist.CreatedAt.ToString("MMM dd")</p>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+
+                <!-- User Stats Profile Section -->
+                <div style="flex: 1; border-left: 1px solid var(--glass-border); padding-left: 20px;">
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <img src="@(CurrentUser?.ProfilePictureUrl ?? "https://i.pravatar.cc/150?img=11")" style="width: 80px; height: 80px; border-radius: 50%;" />
+                        <h4 style="margin-top: 10px;">@CurrentUser?.Username</h4>
+                    </div>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                            <span>Subscriptions</span>
+                            <strong>@CurrentUser?.Subscriptions?.Count</strong>
+                        </li>
+                        <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                            <span>Uploads</span>
+                            <strong>@CurrentUser?.Videos?.Count</strong>
+                        </li>
+                        <li style="display: flex; justify-content: space-between; padding: 10px 0;">
+                            <span>Playlists</span>
+                            <strong>@CurrentUser?.Playlists?.Count</strong>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div style="text-align: center; padding: 40px;">
+                <i class="fas fa-folder fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+                <h3>Enjoy your favorite videos</h3>
+                <p style="opacity: 0.7;">Sign in to access videos that you've liked or saved</p>
+                <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 10px;">
+                    <i class="fas fa-user-circle"></i> Sign In
+                </a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private List<WatchHistory>? WatchHistories;
+    private List<Playlist>? Playlists;
+    private User? CurrentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                CurrentUser = customAuth.CurrentUserModel;
+                if (CurrentUser != null)
+                {
+                    WatchHistories = await VideoService.GetUserHistoryAsync(CurrentUser.Id);
+                    Playlists = await VideoService.GetUserPlaylistsAsync(CurrentUser.Id);
+                }
+            }
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        if (id > 0) Navigation.NavigateTo($"/watch/{id}");
+    }
+
+    private void GoToPlaylist()
+    {
+        Navigation.NavigateTo("/playlists");
+    }
+}

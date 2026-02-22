@@ -1,0 +1,82 @@
+@page "/"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+
+<PageTitle>NetTube - Home</PageTitle>
+
+<div class="category-filters" style="margin-bottom: 20px; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px;">
+    @foreach(var cat in Categories)
+    {
+        <button class="btn-primary" style="background: @(SelectedCategory == cat ? "var(--primary-color)" : "var(--glass-bg)"); color: var(--text-color); border: 1px solid var(--glass-border); border-radius: 20px; white-space: nowrap; padding: 5px 15px;" @onclick="() => FilterByCategory(cat)">
+            @cat
+        </button>
+    }
+</div>
+
+@if (Videos == null)
+{
+    <p><em>Loading videos...</em></p>
+}
+else if (!Videos.Any())
+{
+    <p>No videos found.</p>
+}
+else
+{
+    <div class="video-grid">
+        @if (DisplayedVideos != null)
+        {
+            @foreach (var video in DisplayedVideos)
+            {
+                <div class="video-card glass-panel" @onclick="() => WatchVideo(video.Id)">
+                    <img src="@video.ThumbnailUrl" alt="@video.Title" class="video-thumbnail" />
+                    <div class="video-info" style="display: flex; gap: 10px; margin-top: 10px;">
+                        <img src="https://i.pravatar.cc/150?img=@(video.UserId + 10)" style="width: 36px; height: 36px; border-radius: 50%;" />
+                        <div>
+                            <div class="video-title">@video.Title</div>
+                            <div class="video-meta">@video.Uploader?.Username</div>
+                            <div class="video-meta">@video.Views views • @video.UploadedAt.ToString("MMM dd, yyyy")</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    public NavigationManager Navigation { get; set; } = default!;
+
+    private List<Video>? Videos;
+    private List<Video>? DisplayedVideos;
+    private string SelectedCategory = "All";
+    private string[] Categories = { "All", "Music", "Gaming", "News", "Movies", "Live", "Sports", "Learning" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Videos = await VideoService.GetAllVideosAsync();
+        DisplayedVideos = Videos;
+    }
+
+    private void FilterByCategory(string category)
+    {
+        SelectedCategory = category;
+        if (Videos == null) return;
+        
+        if (category == "All")
+        {
+            DisplayedVideos = Videos;
+        }
+        else
+        {
+            DisplayedVideos = Videos.Where(v => v.Category == category).ToList();
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        Navigation.NavigateTo($"/watch/{id}");
+    }
+}

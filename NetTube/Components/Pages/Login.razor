@@ -1,0 +1,81 @@
+@page "/login"
+
+<PageTitle>Login - NetTube</PageTitle>
+
+<div style="display: flex; justify-content: center; align-items: center; min-height: 80vh;">
+    <div class="glass-panel" style="width: 100%; max-width: 400px; padding: 40px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h2 style="color: var(--primary-color); font-weight: bold;">
+                <i class="fas fa-play-circle"></i> NetTube
+            </h2>
+            <p>Sign in to continue to NetTube</p>
+            @if (errorMessage != null)
+            {
+                <p style="color: #ff4444; font-size: 14px; margin-top: 10px;">@errorMessage</p>
+            }
+        </div>
+
+        <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Email or Username</label>
+                <InputText @bind-Value="loginModel.UsernameOrEmail" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" placeholder="username" />
+            </div>
+
+            <div style="margin-bottom: 25px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Password</label>
+                    <a href="/change-password" style="font-size: 12px; color: var(--primary-color); text-decoration: none;">Forgot password?</a>
+                </div>
+                <InputText @bind-Value="loginModel.Password" placeholder="password" type="password" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" />
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 16px; font-weight: bold;">Sign In</button>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <span style="opacity: 0.8;">Not your computer? Use Guest mode to sign in privately.</span>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="/register" style="color: var(--primary-color); text-decoration: none; font-weight: bold;">Create account</a>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Inject]
+    public NavigationManager Navigation { get; set; } = default!;
+
+    [Inject]
+    public AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+
+    private LoginModel loginModel = new();
+    private string? errorMessage;
+
+    private async Task HandleLogin()
+    {
+        errorMessage = null;
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var result = await customAuth.LoginAsync(loginModel.UsernameOrEmail, loginModel.Password);
+            if (result)
+            {
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = "Invalid username or password.";
+            }
+        }
+    }
+
+    public class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string UsernameOrEmail { get; set; } = string.Empty;
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Password { get; set; } = string.Empty;
+    }
+}

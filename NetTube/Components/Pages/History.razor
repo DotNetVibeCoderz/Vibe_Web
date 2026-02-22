@@ -1,0 +1,143 @@
+@page "/history"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>History - NetTube</PageTitle>
+
+<h2><i class="fas fa-history"></i> Watch History</h2>
+
+<AuthorizeView>
+    <Authorized>
+        <div style="display: flex; gap: 30px; margin-top: 20px;">
+            <div style="flex: 3;">
+                @if (Histories == null)
+                {
+                    <p><em>Loading...</em></p>
+                }
+                else if (!FilteredHistories.Any())
+                {
+                    <p>No watch history available.</p>
+                }
+                else
+                {
+                    @foreach (var history in FilteredHistories)
+                    {
+                        var video = history.Video;
+                        if (video != null)
+                        {
+                            <div class="glass-panel" style="display: flex; gap: 15px; margin-bottom: 20px; cursor: pointer; transition: transform 0.2s; position: relative;" @onclick="() => WatchVideo(video.Id)">
+                                <img src="@video.ThumbnailUrl" style="width: 240px; height: 135px; object-fit: cover; border-radius: 10px;" />
+                                <div style="flex-grow: 1;">
+                                    <h4 style="margin-bottom: 5px;">@video.Title</h4>
+                                    <p style="font-size: 14px; opacity: 0.7; margin-bottom: 5px;">@video.Uploader?.Username • @video.Views views</p>
+                                    <p style="font-size: 14px; opacity: 0.8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">@video.Description</p>
+                                    <p style="font-size: 12px; color: var(--primary-color); margin-top: 5px;">Watched @history.WatchedAt.ToString("g")</p>
+                                </div>
+                                <div style="position: absolute; right: 10px; top: 10px;">
+                                    <button class="btn-secondary" style="background: transparent; border: none; color: var(--text-color); width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;" @onclick="() => RemoveHistoryItem(history.Id)" @onclick:stopPropagation>
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+
+            <div style="flex: 1;" class="glass-panel">
+                <div style="position: sticky; top: 20px;">
+                    <div class="search-container" style="margin-bottom: 20px; display: flex; gap: 5px;">
+                        <input type="text" placeholder="Search watch history" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--glass-border); color: var(--text-color); border-radius: 20px; outline: none;" @bind="SearchQuery" @bind:event="oninput" />
+                    </div>
+                    
+                    <button class="btn-secondary" style="width: 100%; text-align: left; padding: 10px; background: transparent; border: none; color: var(--text-color); border-bottom: 1px solid var(--glass-border);" @onclick="ClearHistory"><i class="fas fa-trash"></i> Clear all watch history</button>
+                    <button class="btn-secondary" style="width: 100%; text-align: left; padding: 10px; background: transparent; border: none; color: var(--text-color);" @onclick="TogglePauseHistory">
+                        <i class="fas @(IsPaused ? "fa-play" : "fa-pause")"></i> @(IsPaused ? "Turn on watch history" : "Pause watch history")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="glass-panel" style="text-align: center; padding: 40px; margin-top: 20px;">
+            <i class="fas fa-history fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+            <h3>Keep track of what you watch</h3>
+            <p style="opacity: 0.7;">Watch history isn't viewable when signed out.</p>
+            <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 10px;">
+                <i class="fas fa-user-circle"></i> Sign In
+            </a>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<WatchHistory>? Histories;
+    private int CurrentUserId;
+    private string _searchQuery = "";
+    private bool IsPaused = false;
+
+    private string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            _searchQuery = value;
+        }
+    }
+
+    private IEnumerable<WatchHistory> FilteredHistories => 
+        string.IsNullOrWhiteSpace(SearchQuery) 
+            ? (Histories ?? new List<WatchHistory>())
+            : (Histories ?? new List<WatchHistory>()).Where(h => h.Video?.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) == true);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                CurrentUserId = customAuth.CurrentUserModel.Id;
+                await LoadHistory();
+            }
+        }
+    }
+
+    private async Task LoadHistory()
+    {
+        Histories = await VideoService.GetUserHistoryAsync(CurrentUserId);
+    }
+
+    private void WatchVideo(int id)
+    {
+        Navigation.NavigateTo($"/watch/{id}");
+    }
+
+    private async Task ClearHistory()
+    {
+        if (CurrentUserId > 0)
+        {
+            await VideoService.ClearHistoryAsync(CurrentUserId);
+            Histories?.Clear();
+        }
+    }
+
+    private async Task RemoveHistoryItem(int id)
+    {
+        await VideoService.RemoveHistoryItemAsync(id);
+        var item = Histories?.FirstOrDefault(h => h.Id == id);
+        if (item != null)
+        {
+            Histories?.Remove(item);
+        }
+    }
+
+    private void TogglePauseHistory()
+    {
+        IsPaused = !IsPaused;
+        // In a real app, this would save a setting to the user's profile in DB
+    }
+}

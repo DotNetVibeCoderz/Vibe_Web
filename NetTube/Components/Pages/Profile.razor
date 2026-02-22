@@ -1,0 +1,160 @@
+@page "/profile"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>User Profile - NetTube</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @if (CurrentUser != null)
+        {
+            <div class="glass-panel" style="padding: 0; border-radius: 20px; overflow: hidden; margin-bottom: 30px;">
+                <!-- Cover Banner -->
+                <div style="width: 100%; height: 200px; background-image: url('https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=1200&q=80'); background-size: cover; background-position: center;"></div>
+
+                <!-- Profile Info -->
+                <div style="padding: 20px; display: flex; gap: 20px; align-items: flex-end; margin-top: -60px;">
+                    <img src="@(CurrentUser.ProfilePictureUrl ?? $"https://i.pravatar.cc/150?u={CurrentUser.Username}")" style="width: 120px; height: 120px; border-radius: 50%; border: 4px solid var(--bg-color); object-fit: cover; background: white;" />
+                    <div style="flex-grow: 1; padding-bottom: 10px;">
+                        <h1 style="margin: 0;">@CurrentUser.Username</h1>
+                        <p style="margin: 5px 0 10px; opacity: 0.7;">@($"@{CurrentUser.Username}") • @(SubscriberCount.ToString("N0")) subscribers • @(UserVideos?.Count ?? 0) videos</p>
+                        <p style="margin: 0; font-size: 14px; opacity: 0.9;">Member since @CurrentUser.CreatedAt.ToString("MMM yyyy")</p>
+                    </div>
+                    <div style="padding-bottom: 10px; display: flex; gap: 10px;">
+                        <button class="btn-primary" style="padding: 10px 20px; font-weight: bold;" @onclick="NavigateToDashboard">
+                            <i class="fas fa-chart-line"></i> Dashboard
+                        </button>
+                        <button class="btn-secondary glass-panel" style="padding: 10px 20px; font-weight: bold;" @onclick="ToggleManageMode">
+                            <i class="fas fa-cog"></i> @(IsManageMode ? "Done Managing" : "Manage Videos")
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Navigation -->
+            <div style="border-bottom: 1px solid var(--glass-border); margin-bottom: 20px; display: flex; gap: 30px;">
+                <span style="font-weight: bold; border-bottom: 3px solid var(--primary-color); padding-bottom: 10px; cursor: pointer;">HOME / VIDEOS</span>
+                <span style="font-weight: bold; opacity: 0.7; padding-bottom: 10px; cursor: pointer;" @onclick="NavigateToPlaylists">PLAYLISTS</span>
+            </div>
+
+            <!-- Video Content -->
+            @if (UserVideos == null)
+            {
+                <p>Loading channel videos...</p>
+            }
+            else if (!UserVideos.Any())
+            {
+                <div style="text-align: center; padding: 40px; opacity: 0.7;">
+                    <i class="fas fa-video-slash fa-3x" style="margin-bottom: 15px;"></i>
+                    <p>You haven't uploaded any videos yet.</p>
+                    <a href="/upload" class="btn-primary" style="text-decoration: none; margin-top: 10px; display: inline-block;">Upload a Video</a>
+                </div>
+            }
+            else
+            {
+                <div class="video-grid">
+                    @foreach (var video in UserVideos)
+                    {
+                        <div class="video-card glass-panel" style="position: relative;">
+                            <div style="cursor: pointer;" @onclick="() => WatchVideo(video.Id)">
+                                <img src="@video.ThumbnailUrl" class="video-thumbnail" style="width: 100%; height: 160px; object-fit: cover; border-radius: 10px;" />
+                                <div class="video-info" style="margin-top: 10px;">
+                                    <div class="video-title" style="font-weight: bold;">@video.Title</div>
+                                    <div class="video-meta">@video.Views.ToString("N0") views • @video.UploadedAt.ToString("MMM dd, yyyy")</div>
+                                </div>
+                            </div>
+                            
+                            @if (IsManageMode)
+                            {
+                                <div style="position: absolute; top: 10px; right: 10px;">
+                                    <button class="btn-primary" style="background: rgba(255,0,0,0.8); border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;" @onclick="() => DeleteVideo(video.Id)">
+                                        <i class="fas fa-trash"></i> Delete
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div class="glass-panel" style="text-align: center; padding: 40px;">
+            <i class="fas fa-user-circle fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+            <h3>Access your channel</h3>
+            <p style="opacity: 0.7;">Sign in to view your channel profile and manage your videos.</p>
+            <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 10px;">
+                <i class="fas fa-user-circle"></i> Sign In
+            </a>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<Video>? UserVideos;
+    private User? CurrentUser;
+    private int SubscriberCount = 0;
+    private bool IsManageMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfileData();
+    }
+
+    private async Task LoadProfileData()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                CurrentUser = customAuth.CurrentUserModel;
+                
+                SubscriberCount = await VideoService.GetSubscriberCountAsync(CurrentUser.Id);
+                
+                var allVideos = await VideoService.GetAllVideosAsync();
+                UserVideos = allVideos
+                    .Where(v => v.UserId == CurrentUser.Id)
+                    .OrderByDescending(v => v.UploadedAt)
+                    .ToList();
+            }
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        if (!IsManageMode)
+        {
+            Navigation.NavigateTo($"/watch/{id}");
+        }
+    }
+
+    private void ToggleManageMode()
+    {
+        IsManageMode = !IsManageMode;
+    }
+
+    private async Task DeleteVideo(int id)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to permanently delete this video? This action cannot be undone.");
+        if (confirmed)
+        {
+            await VideoService.DeleteVideoAsync(id);
+            await LoadProfileData(); // Reload grid
+        }
+    }
+
+    private void NavigateToDashboard()
+    {
+        Navigation.NavigateTo("/dashboard");
+    }
+
+    private void NavigateToPlaylists()
+    {
+        Navigation.NavigateTo("/playlists");
+    }
+}

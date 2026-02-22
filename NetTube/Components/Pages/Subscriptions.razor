@@ -1,0 +1,77 @@
+@page "/subscriptions"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Subscriptions - NetTube</PageTitle>
+
+<h2 style="margin-bottom: 20px;">Latest from your Subscriptions</h2>
+
+<AuthorizeView>
+    <Authorized>
+        @if (Videos == null)
+        {
+            <p><em>Loading...</em></p>
+        }
+        else if (!Videos.Any())
+        {
+            <div style="text-align: center; padding: 40px;" class="glass-panel">
+                <i class="fas fa-video fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+                <h3>No new videos</h3>
+                <p style="opacity: 0.7;">The channels you subscribed to haven't uploaded any new videos.</p>
+            </div>
+        }
+        else
+        {
+            <div class="video-grid">
+                @foreach (var video in Videos)
+                {
+                    <div class="video-card glass-panel" @onclick="() => WatchVideo(video.Id)">
+                        <img src="@video.ThumbnailUrl" alt="@video.Title" class="video-thumbnail" />
+                        <div class="video-info" style="display: flex; gap: 10px; margin-top: 10px;">
+                            <img src="@(video.Uploader?.ProfilePictureUrl ?? $"https://i.pravatar.cc/150?img={video.UserId + 10}")" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;" />
+                            <div>
+                                <div class="video-title">@video.Title</div>
+                                <div class="video-meta">@video.Uploader?.Username</div>
+                                <div class="video-meta">@video.Views views • @video.UploadedAt.ToString("MMM dd, yyyy")</div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div style="text-align: center; padding: 40px;" class="glass-panel">
+            <i class="fas fa-users fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+            <h3>Don't miss new videos</h3>
+            <p style="opacity: 0.7;">Sign in to see updates from your favorite YouTube channels</p>
+            <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 10px;">
+                <i class="fas fa-user-circle"></i> Sign In
+            </a>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<Video>? Videos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                Videos = await VideoService.GetSubscribedVideosAsync(customAuth.CurrentUserModel.Id);
+            }
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        Navigation.NavigateTo($"/watch/{id}");
+    }
+}

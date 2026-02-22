@@ -1,0 +1,65 @@
+@page "/shorts"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+
+<PageTitle>Shorts - NetTube</PageTitle>
+
+<div style="display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 20px;">
+    @if (ShortVideos == null)
+    {
+        <p><em>Loading Shorts...</em></p>
+    }
+    else if (!ShortVideos.Any())
+    {
+        <p>No shorts available.</p>
+    }
+    else
+    {
+        @foreach (var video in ShortVideos)
+        {
+            <div class="glass-panel" style="width: 350px; height: 600px; position: relative; border-radius: 20px; overflow: hidden; margin-bottom: 20px;">
+                <video src="@video.VideoUrl" autoplay loop muted style="width: 100%; height: 100%; object-fit: cover; border-radius: 20px;"></video>
+                
+                <div style="position: absolute; bottom: 20px; left: 20px; right: 60px; color: white; text-shadow: 1px 1px 2px black;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <img src="https://i.pravatar.cc/150?img=@(video.UserId + 10)" style="width: 36px; height: 36px; border-radius: 50%;" />
+                        <span style="font-weight: bold;">@video.Uploader?.Username</span>
+                        <button class="btn-primary" style="padding: 5px 10px; font-size: 12px; border-radius: 20px;">Subscribe</button>
+                    </div>
+                    <p style="margin: 0; font-size: 14px;">@video.Title</p>
+                </div>
+                
+                <div style="position: absolute; right: 15px; bottom: 50px; display: flex; flex-direction: column; gap: 20px; color: white;">
+                    <div style="text-align: center; cursor: pointer;">
+                        <i class="fas fa-thumbs-up fa-2x"></i>
+                        <span style="display: block; font-size: 12px; margin-top: 5px;">12K</span>
+                    </div>
+                    <div style="text-align: center; cursor: pointer;">
+                        <i class="fas fa-thumbs-down fa-2x"></i>
+                        <span style="display: block; font-size: 12px; margin-top: 5px;">Dislike</span>
+                    </div>
+                    <div style="text-align: center; cursor: pointer;">
+                        <i class="fas fa-comment-dots fa-2x"></i>
+                        <span style="display: block; font-size: 12px; margin-top: 5px;">1.2K</span>
+                    </div>
+                    <div style="text-align: center; cursor: pointer;">
+                        <i class="fas fa-share fa-2x"></i>
+                        <span style="display: block; font-size: 12px; margin-top: 5px;">Share</span>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<Video>? ShortVideos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var allVideos = await VideoService.GetAllVideosAsync();
+        // Since we don't have a specific shorts field, let's just use regular videos as a placeholder for Shorts
+        ShortVideos = allVideos.Take(3).ToList(); 
+    }
+}

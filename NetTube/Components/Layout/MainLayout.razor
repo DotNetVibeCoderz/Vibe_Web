@@ -1,0 +1,126 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JSRuntime
+@using System.Security.Claims
+@using NetTube.Components.Layout
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NetTube.Services.VideoService VideoService
+@inject NavigationManager NavMgr
+<PageTitle>NetTube</PageTitle>
+
+<div class="page">
+    <NavMenu />
+
+    <main class="main-content">
+        <!-- Added position: relative and high z-index to the header -->
+        <div class="header-top glass-panel" style="margin-bottom: 20px; position: relative; z-index: 9999;">
+            <div class="search-container" style="display: flex; gap: 5px;">
+                <input type="text" class="search-bar" placeholder="Search videos..." @bind="SearchQuery" @onkeyup="HandleKeyPress" />
+                <button class="btn-primary" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;" @onclick="PerformSearch">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            
+            <div class="user-actions" style="display: flex; gap: 15px; align-items: center;">
+                <button class="theme-toggle" @onclick="ToggleTheme">
+                    <i class="fas @(IsDarkMode ? "fa-sun" : "fa-moon")"></i>
+                </button>
+                <AuthorizeView>
+                    <Authorized>
+                        <a href="/upload" class="btn-primary" style="text-decoration: none;">
+                            <i class="fas fa-video"></i> Create
+                        </a>
+                        <div style="position: relative;">
+                            <img src="@CurrentUserPicture" alt="Profile" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer;" @onclick="ToggleDropdown" @onclick:preventDefault />
+                            @if (IsDropdownOpen)
+                            {
+                                <!-- Increased z-index dramatically and ensured it has a background -->
+                                <div class="glass-panel" style="position: absolute; right: 0; top: 50px; width: 220px; display: flex; flex-direction: column; gap: 5px; z-index: 99999; padding: 10px; background: var(--bg-color);">
+                                    <div style="padding: 10px; border-bottom: 1px solid var(--glass-border); margin-bottom: 5px;">
+                                        <strong>@context.User.Identity?.Name</strong>
+                                        <div style="font-size: 12px; opacity: 0.7;">@context.User.FindFirst(ClaimTypes.Email)?.Value</div>
+                                    </div>
+                                    <a href="" @onclick='()=>Goto("/profile")' class="nav-link" style="margin: 0;"><i class="fas fa-user"></i> Profile</a>
+                                    <a href="" @onclick='() => Goto("/change-password")' class="nav-link" style="margin: 0;"><i class="fas fa-key"></i> Change Password</a>
+                                    <hr style="margin: 5px 0; border-color: var(--glass-border);" />
+                                    <button class="nav-link" style="background: none; border: none; text-align: left; cursor: pointer; width: 100%; margin: 0; color: var(--text-color);" @onclick="Logout"><i class="fas fa-sign-out-alt"></i> Log Out</button>
+                                </div>
+                            }
+                        </div>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a href="/login" class="btn-primary" style="text-decoration: none;">
+                            <i class="fas fa-user-circle"></i> Sign In
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+
+        <article class="content" style="position: relative; z-index: 1;">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    private bool IsDarkMode = true;
+    private bool IsDropdownOpen = false;
+    private string SearchQuery = string.Empty;
+    private string CurrentUserPicture = "https://i.pravatar.cc/150?img=11";
+
+    async Task Goto(string Url)
+    {
+        NavMgr.NavigateTo(Url);
+        IsDropdownOpen = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is NetTube.Services.CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                CurrentUserPicture = customAuth.CurrentUserModel.ProfilePictureUrl ?? CurrentUserPicture;
+            }
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        var theme = await JSRuntime.InvokeAsync<string>("toggleTheme");
+        IsDarkMode = theme == "dark";
+    }
+
+    private void ToggleDropdown()
+    {
+        IsDropdownOpen = !IsDropdownOpen;
+    }
+
+    private void Logout()
+    {
+        IsDropdownOpen = false;
+        if (AuthStateProvider is NetTube.Services.CustomAuthStateProvider customAuth)
+        {
+            customAuth.Logout();
+            Navigation.NavigateTo("/", true);
+        }
+    }
+
+    private void PerformSearch()
+    {
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            Navigation.NavigateTo($"/results?search_query={Uri.EscapeDataString(SearchQuery)}");
+        }
+    }
+
+    private void HandleKeyPress(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            PerformSearch();
+        }
+    }
+}

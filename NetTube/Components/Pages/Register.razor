@@ -1,0 +1,107 @@
+@page "/register"
+
+<PageTitle>Register - NetTube</PageTitle>
+
+<div style="display: flex; justify-content: center; align-items: center; min-height: 80vh;">
+    <div class="glass-panel" style="width: 100%; max-width: 400px; padding: 40px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h2 style="color: var(--primary-color); font-weight: bold;">
+                <i class="fas fa-play-circle"></i> NetTube
+            </h2>
+            <p>Create your NetTube Account</p>
+            @if (errorMessage != null)
+            {
+                <p style="color: #ff4444; font-size: 14px; margin-top: 10px;">@errorMessage</p>
+            }
+        </div>
+
+        <EditForm Model="registerModel" OnValidSubmit="HandleRegister">
+            <DataAnnotationsValidator />
+            <ValidationSummary style="color: red; font-size: 14px;" />
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Username</label>
+                <InputText @bind-Value="registerModel.Username" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" />
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Email</label>
+                <InputText @bind-Value="registerModel.Email" type="email" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" />
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Password</label>
+                <InputText @bind-Value="registerModel.Password" type="password" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" />
+            </div>
+
+            <div style="margin-bottom: 25px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Confirm Password</label>
+                <InputText @bind-Value="registerModel.ConfirmPassword" type="password" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border); outline: none;" />
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 16px; font-weight: bold;">Sign Up</button>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <span style="opacity: 0.8;">Already have an account? </span>
+                <a href="/login" style="color: var(--primary-color); text-decoration: none; font-weight: bold;">Sign in instead</a>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Inject]
+    public NavigationManager Navigation { get; set; } = default!;
+
+    [Inject]
+    public AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+
+    private RegisterModel registerModel = new();
+    private string? errorMessage;
+
+    private async Task HandleRegister()
+    {
+        errorMessage = null;
+
+        if (registerModel.Password != registerModel.ConfirmPassword)
+        {
+            errorMessage = "Passwords do not match.";
+            return;
+        }
+
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var newUser = new User 
+            {
+                Username = registerModel.Username,
+                Email = registerModel.Email,
+                PasswordHash = registerModel.Password
+            };
+
+            var success = await customAuth.RegisterAsync(newUser);
+            if (success)
+            {
+                Navigation.NavigateTo("/login");
+            }
+            else
+            {
+                errorMessage = "Username or Email already exists.";
+            }
+        }
+    }
+
+    public class RegisterModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Username { get; set; } = string.Empty;
+        
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.MinLength(6)]
+        public string Password { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

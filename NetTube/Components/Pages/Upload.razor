@@ -1,0 +1,216 @@
+@page "/upload"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Environment
+
+<PageTitle>Upload Video - NetTube</PageTitle>
+
+<div class="glass-panel" style="max-width: 800px; margin: 0 auto; padding: 30px;">
+    <h2 style="margin-bottom: 20px;">Upload Video</h2>
+    
+    <AuthorizeView Context="AuthContext">
+        <Authorized>
+            @if (newVideo != null)
+            {
+                <EditForm Model="@newVideo" OnValidSubmit="HandleSubmit" style="display: flex; flex-direction: column; gap: 20px;" FormName="uploadForm">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary style="color: red;" />
+
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Title *</label>
+                        <InputText @bind-Value="newVideo.Title" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border);" />
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Description</label>
+                        <InputTextArea @bind-Value="newVideo.Description" class="form-control glass-panel" style="width: 100%; height: 100px; color: var(--text-color); border: 1px solid var(--glass-border);" />
+                    </div>
+
+                    <!-- File Upload Section -->
+                    <div style="border: 2px dashed var(--glass-border); padding: 30px; text-align: center; border-radius: 10px; margin-bottom: 10px; background: rgba(0,0,0,0.1);">
+                        <i class="fas fa-cloud-upload-alt fa-3x" style="color: var(--primary-color); margin-bottom: 15px;"></i>
+                        <h4 style="margin-bottom: 10px;">Select video file to upload</h4>
+                        <p style="opacity: 0.7; font-size: 14px; margin-bottom: 20px;">Your videos will be private until you publish them.</p>
+                        
+                        <div style="position: relative; overflow: hidden; display: inline-block;">
+                            <button class="btn-primary" type="button" style="padding: 10px 20px;">Choose File</button>
+                            <InputFile OnChange="HandleFileSelected" accept="video/*" style="position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; width: 100%;" />
+                        </div>
+                        
+                        @if (!string.IsNullOrEmpty(selectedFileName))
+                        {
+                            <div style="margin-top: 15px; color: #4caf50; font-weight: bold;">
+                                <i class="fas fa-check-circle"></i> @selectedFileName
+                            </div>
+                        }
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Video URL</label>
+                            <InputText @bind-Value="newVideo.VideoUrl" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border);" placeholder="Auto-filled after upload or enter URL manually" />
+                        </div>
+
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Thumbnail URL</label>
+                            <InputText @bind-Value="newVideo.ThumbnailUrl" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border);" placeholder="Auto-generated or enter manually" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Category</label>
+                        <InputSelect @bind-Value="newVideo.Category" class="form-control glass-panel" style="width: 100%; color: var(--text-color); border: 1px solid var(--glass-border);">
+                            @foreach(var cat in Categories)
+                            {
+                                <option value="@cat">@cat</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <button type="submit" class="btn-primary" style="margin-top: 20px; padding: 12px; font-size: 16px; font-weight: bold;" disabled="@isUploading">
+                        @if(isUploading)
+                        {
+                            <span><i class="fas fa-spinner fa-spin"></i> Uploading...</span>
+                        }
+                        else
+                        {
+                            <span><i class="fas fa-paper-plane"></i> Publish Video</span>
+                        }
+                    </button>
+                    
+                    @if (errorMessage != null)
+                    {
+                        <p style="color: #ff4444; font-size: 14px; margin-top: 10px; text-align: center;">@errorMessage</p>
+                    }
+                </EditForm>
+            }
+        </Authorized>
+        <NotAuthorized>
+            <div style="text-align: center; padding: 40px;">
+                <i class="fas fa-upload fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+                <h3>Upload your videos</h3>
+                <p style="opacity: 0.7;">Sign in to upload videos, add comments, and more.</p>
+                <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 10px;">
+                    <i class="fas fa-user-circle"></i> Sign In
+                </a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private Video? newVideo { get; set; }
+
+    private string[] Categories = { "Music", "Gaming", "News", "Movies", "Live", "Sports", "Learning" };
+    private int? CurrentUserId;
+    private IBrowserFile? selectedFile;
+    private string? selectedFileName;
+    private bool isUploading = false;
+    private string? errorMessage;
+    private long maxFileSize = 1024 * 1024 * 100; // 100 MB max
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                CurrentUserId = customAuth.CurrentUserModel.Id;
+            }
+        }
+
+        newVideo ??= new Video();
+        if (string.IsNullOrEmpty(newVideo.Category))
+        {
+            newVideo.Category = Categories[0]; // Default category
+        }
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        var file = e.File;
+        
+        if (file.Size > maxFileSize)
+        {
+            errorMessage = "File size exceeds the 100MB limit.";
+            return;
+        }
+
+        selectedFile = file;
+        selectedFileName = file.Name;
+		newVideo.VideoUrl = $"-";
+
+        var randomId = new Random().Next(100, 999);
+        newVideo.ThumbnailUrl = $"https://picsum.photos/seed/{randomId}/600/337";
+                
+        // Auto-fill title if empty
+        if (newVideo != null && string.IsNullOrWhiteSpace(newVideo.Title))
+        {
+            newVideo.Title = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (newVideo == null || CurrentUserId == null) return;
+        errorMessage = null;
+        isUploading = true;
+        
+        try
+        {
+            // If file is selected, upload it
+            if (selectedFile != null)
+            {
+                var uploadsFolder = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+                if (!System.IO.Directory.Exists(uploadsFolder))
+                {
+                    System.IO.Directory.CreateDirectory(uploadsFolder);
+                }
+
+                var uniqueFileName = $"{Guid.NewGuid()}{System.IO.Path.GetExtension(selectedFile.Name)}";
+                var filePath = System.IO.Path.Combine(uploadsFolder, uniqueFileName);
+
+                using var fileStream = new System.IO.FileStream(filePath, System.IO.FileMode.Create);
+                await selectedFile.OpenReadStream(maxFileSize).CopyToAsync(fileStream);
+
+                newVideo.VideoUrl = $"/uploads/{uniqueFileName}";
+                
+                // Auto-generate thumbnail (using a dummy thumbnail based on category for now)
+                // In a real app, you would use FFMPEG or MediaToolkit to extract a frame
+                if (string.IsNullOrWhiteSpace(newVideo.ThumbnailUrl))
+                {
+                    var randomId = new Random().Next(100, 999);
+                    newVideo.ThumbnailUrl = $"https://picsum.photos/seed/{randomId}/600/337";
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(newVideo.VideoUrl))
+            {
+                errorMessage = "Please provide a video file or a Video URL.";
+                isUploading = false;
+                return;
+            }
+
+            newVideo.UserId = CurrentUserId.Value;
+            newVideo.UploadedAt = DateTime.UtcNow;
+            
+            await VideoService.AddVideoAsync(newVideo);
+            
+            Navigation.NavigateTo("/"); // Redirect to home page
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error uploading video: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+}

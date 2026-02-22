@@ -1,0 +1,69 @@
+@page "/results"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject NavigationManager Navigation
+
+<PageTitle>@SearchQuery - NetTube Search</PageTitle>
+
+<div style="max-width: 1000px; margin: 0 auto; padding: 20px;">
+    @if (ResultVideos == null)
+    {
+        <p><em>Searching...</em></p>
+    }
+    else if (!ResultVideos.Any())
+    {
+        <div style="text-align: center; padding: 50px;">
+            <i class="fas fa-search fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+            <h3>No results found</h3>
+            <p style="opacity: 0.7;">Try different keywords or remove search filters</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var video in ResultVideos)
+        {
+            <div class="glass-panel" style="display: flex; gap: 20px; margin-bottom: 20px; cursor: pointer; transition: transform 0.2s;" @onclick="() => WatchVideo(video.Id)">
+                <img src="@video.ThumbnailUrl" style="width: 360px; height: 202px; object-fit: cover; border-radius: 10px;" />
+                <div style="padding: 10px 0;">
+                    <h3 style="margin: 0 0 10px 0; font-size: 20px;">@video.Title</h3>
+                    <p style="font-size: 12px; opacity: 0.7; margin-bottom: 15px;">@video.Views views • @video.UploadedAt.ToString("MMM dd, yyyy")</p>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                        <img src="@(video.Uploader?.ProfilePictureUrl ?? $"https://i.pravatar.cc/150?img={video.UserId + 10}")" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" />
+                        <span style="font-size: 14px; opacity: 0.8;">@video.Uploader?.Username</span>
+                    </div>
+                    <p style="font-size: 14px; opacity: 0.8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0;">@video.Description</p>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "search_query")]
+    public string? SearchQuery { get; set; }
+
+    private List<Video>? ResultVideos;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            var allVideos = await VideoService.GetAllVideosAsync();
+            ResultVideos = allVideos
+                .Where(v => v.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || 
+                            (v.Description != null && v.Description.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+        else
+        {
+            ResultVideos = new List<Video>();
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        Navigation.NavigateTo($"/watch/{id}");
+    }
+}

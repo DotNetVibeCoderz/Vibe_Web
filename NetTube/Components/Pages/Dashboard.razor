@@ -1,0 +1,148 @@
+@page "/dashboard"
+@using NetTube.Models
+@using NetTube.Services
+@inject VideoService VideoService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Creator Dashboard - NetTube</PageTitle>
+
+<div class="glass-panel" style="padding: 30px;">
+    <h2>Channel Dashboard</h2>
+    
+    <AuthorizeView>
+        <Authorized>
+            @if (Stats == null)
+            {
+                <p>Loading dashboard data...</p>
+            }
+            else
+            {
+                <div style="display: flex; gap: 30px; margin-top: 30px;">
+                    <!-- Latest video performance -->
+                    <div style="flex: 1;" class="glass-panel">
+                        <h4>Latest video performance</h4>
+                        @if (LatestVideo != null)
+                        {
+                            <div style="margin-top: 20px; cursor: pointer;" @onclick="() => WatchVideo(LatestVideo.Id)">
+                                <img src="@LatestVideo.ThumbnailUrl" style="width: 100%; height: 180px; object-fit: cover; border-radius: 10px; margin-bottom: 15px;" />
+                                <h5>@LatestVideo.Title</h5>
+                                <p style="opacity: 0.7; font-size: 14px;">Uploaded @LatestVideo.UploadedAt.ToString("MMM dd, yyyy")</p>
+                                
+                                <ul style="list-style: none; padding: 0; margin-top: 20px;">
+                                    <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                                        <span>Views</span>
+                                        <strong>@LatestVideo.Views.ToString("N0")</strong>
+                                    </li>
+                                    <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                                        <span>Comments</span>
+                                        <strong>@(LatestVideo.Comments?.Count ?? 0)</strong>
+                                    </li>
+                                    <li style="display: flex; justify-content: space-between; padding: 10px 0;">
+                                        <span>Likes</span>
+                                        <strong>@(LatestVideo.Likes?.Count ?? 0)</strong>
+                                    </li>
+                                </ul>
+                                <a href="/watch/@LatestVideo.Id" style="color: var(--primary-color); display: block; text-align: center; text-decoration: none; margin-top: 15px; padding: 10px; border-radius: 20px; background: var(--glass-bg);">GO TO VIDEO</a>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="text-align: center; padding: 40px 0;">
+                                <p style="opacity: 0.7; margin-bottom: 20px;">You haven't uploaded any videos yet.</p>
+                                <a href="/upload" class="btn-primary" style="text-decoration: none;">Upload Video</a>
+                            </div>
+                        }
+                    </div>
+                    
+                    <!-- Channel analytics -->
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 30px;">
+                        <div class="glass-panel">
+                            <h4>Channel analytics</h4>
+                            <p style="opacity: 0.7; font-size: 14px;">Current subscribers</p>
+                            <h1 style="font-size: 48px; margin: 0;">@Stats.TotalSubscribers.ToString("N0")</h1>
+                            <p style="color: #4caf50; font-size: 14px;"><i class="fas fa-arrow-up"></i> Lifetime</p>
+                            <hr style="border-color: var(--glass-border);" />
+                            <h5>Summary <span style="font-size: 12px; font-weight: normal; opacity: 0.7;">Lifetime</span></h5>
+                            <ul style="list-style: none; padding: 0;">
+                                <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>Total Videos</span>
+                                    <strong>@Stats.TotalVideos.ToString("N0")</strong>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>Total Views</span>
+                                    <strong>@Stats.TotalViews.ToString("N0")</strong>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; padding: 10px 0;">
+                                    <span>Est. Watch time (hours)</span>
+                                    <strong>@Stats.TotalWatchTimeHours.ToString("N0")</strong>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="glass-panel">
+                            <h4>Recent subscribers</h4>
+                            <p style="opacity: 0.7; font-size: 14px;">Lifetime</p>
+                            @if (!Stats.RecentSubscribers.Any())
+                            {
+                                <p style="opacity: 0.7;">No subscribers yet.</p>
+                            }
+                            else
+                            {
+                                @foreach(var sub in Stats.RecentSubscribers)
+                                {
+                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                                        <img src="@(sub.ProfilePictureUrl ?? $"https://i.pravatar.cc/150?u={sub.Username}")" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;" />
+                                        <div>
+                                            <div style="font-weight: bold;">@sub.Username</div>
+                                            <div style="font-size: 12px; opacity: 0.7;">Joined @sub.CreatedAt.ToString("MMM yyyy")</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </Authorized>
+        <NotAuthorized>
+            <div style="text-align: center; padding: 50px;">
+                <i class="fas fa-chart-line fa-4x" style="color: var(--primary-color); margin-bottom: 20px;"></i>
+                <h3>Creator Studio</h3>
+                <p style="opacity: 0.7;">Sign in to view your channel analytics, manage videos, and more.</p>
+                <a href="/login" class="btn-primary" style="text-decoration: none; display: inline-block; margin-top: 15px;">
+                    <i class="fas fa-user-circle"></i> Sign In
+                </a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private CreatorDashboardStats? Stats;
+    private Video? LatestVideo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            var authState = await customAuth.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true && customAuth.CurrentUserModel != null)
+            {
+                var userId = customAuth.CurrentUserModel.Id;
+                Stats = await VideoService.GetCreatorStatsAsync(userId);
+                
+                var allVideos = await VideoService.GetAllVideosAsync();
+                LatestVideo = allVideos
+                    .Where(v => v.UserId == userId)
+                    .OrderByDescending(v => v.UploadedAt)
+                    .FirstOrDefault();
+            }
+        }
+    }
+
+    private void WatchVideo(int id)
+    {
+        Navigation.NavigateTo($"/watch/{id}");
+    }
+}
