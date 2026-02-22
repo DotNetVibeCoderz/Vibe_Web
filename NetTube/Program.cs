@@ -47,7 +47,7 @@ using (var scope = app.Services.CreateScope())
     using var context = contextFactory.CreateDbContext();
     
     // We recreate for testing purposes so everything is fresh and clean based on new schema
-    context.Database.EnsureDeleted();
+    //context.Database.EnsureDeleted();
     context.Database.EnsureCreated();
 
     if (!context.Users.Any())
