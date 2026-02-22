@@ -1,0 +1,101 @@
+@page "/nearby"
+@inject Kopdar.Services.AppService AppService
+@inject NavigationManager NavManager
+@using Kopdar.Models
+
+<PageTitle>Nearby - Kopdar</PageTitle>
+
+<h2>People & Groups Nearby</h2>
+<div style="margin-bottom: 20px;">
+    <label>Radius (km): @radiusKm km</label>
+    <input type="range" min="0.05" max="100" @bind="radiusKm" @oninput="UpdateRadius" style="width: 100%;" />
+</div>
+
+<div style="display: flex; gap: 20px;">
+    <div style="flex: 1;">
+        <h3>Users</h3>
+        @if (nearbyUsers == null)
+        {
+            <p>Scanning area...</p>
+        }
+        else if (!nearbyUsers.Any())
+        {
+            <p>No one found in this area. Increase radius!</p>
+        }
+        else
+        {
+            @foreach (var user in nearbyUsers)
+            {
+                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <img src="@user.ProfilePictureUrl" width="40" height="40" style="border: 2px solid #111; border-radius: 50%; object-fit: cover;" />
+                        <div>
+                            <strong><a href="/profile/@user.Id" style="color:inherit;">@user.Username</a></strong><br />
+                            <small>@user.Bio</small>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="/chat/@user.Id" class="brutal-btn secondary">Chat</a>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <div style="flex: 1;">
+        <h3>Groups</h3>
+        @if (nearbyGroups != null)
+        {
+            @foreach (var group in nearbyGroups)
+            {
+                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between; background: var(--accent);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <img src="@group.GroupPictureUrl" width="40" height="40" style="border: 2px solid #111;" />
+                        <div>
+                            <strong>@group.Name</strong><br />
+                            <small>@group.Description</small>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="brutal-btn" @onclick="() => JoinGroup(group.Id)">Join & Chat</button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private double radiusKm = 5.0;
+    private List<AppUser> nearbyUsers;
+    private List<ChatGroup> nearbyGroups;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNearby();
+    }
+
+    private async Task UpdateRadius(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value.ToString(), out var newRadius))
+        {
+            radiusKm = newRadius;
+            await LoadNearby();
+        }
+    }
+
+    private async Task LoadNearby()
+    {
+        if (AppService.CurrentUser != null)
+        {
+            nearbyUsers = await AppService.GetNearbyUsersAsync(AppService.CurrentUser.Latitude, AppService.CurrentUser.Longitude, radiusKm);
+            nearbyGroups = await AppService.GetNearbyGroupsAsync(AppService.CurrentUser.Latitude, AppService.CurrentUser.Longitude, radiusKm);
+        }
+    }
+
+    private async Task JoinGroup(int groupId)
+    {
+        await AppService.JoinGroupAsync(groupId);
+        NavManager.NavigateTo($"/chat/group/{groupId}");
+    }
+}

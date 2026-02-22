@@ -1,0 +1,78 @@
+@page "/search"
+@inject Kopdar.Services.AppService AppService
+@using Kopdar.Models
+
+<PageTitle>Semantic Search - Kopdar</PageTitle>
+
+<h2>Find People via Semantic Search</h2>
+<p>Ketik deskripsi, hobi, atau profile yang kamu cari. Kopdar akan mencarikan pengguna dengan Bio yang paling relevan!</p>
+
+<div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" class="brutal-input" style="margin-bottom:0;" placeholder="Contoh: gamer, fullstack developer, suka kopi..." />
+    <button class="brutal-btn secondary" @onclick="PerformSearch">Search</button>
+</div>
+
+@if (isSearching)
+{
+    <p>Loading semantic similarities...</p>
+}
+else
+{
+    @if (searchResults != null)
+    {
+        if (!searchResults.Any())
+        {
+            <div class="brutal-card" style="background: var(--primary);">
+                <strong>No matching users found!</strong> Coba kata kunci lain.
+            </div>
+        }
+        else
+        {
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                @foreach (var result in searchResults)
+                {
+                    <div class="brutal-card" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <img src="@result.User.ProfilePictureUrl" width="50" height="50" style="border: 2px solid #111;" />
+                            <div>
+                                <strong style="font-size: 1.1rem;">@result.User.Username</strong>
+                                <span style="font-size: 0.8rem; background: var(--accent); padding: 2px 6px; border: 1px solid #111;">
+                                    Match: @((result.Score * 100).ToString("0.0"))%
+                                </span>
+                                <br />
+                                <small>@result.User.Bio</small>
+                            </div>
+                        </div>
+                        <a href="/profile/@result.User.Id" class="brutal-btn">Profile</a>
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    private string searchQuery = string.Empty;
+    private bool isSearching = false;
+    private List<(AppUser User, double Score)> searchResults;
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await PerformSearch();
+        }
+    }
+
+    private async Task PerformSearch()
+    {
+        isSearching = true;
+        StateHasChanged(); // force UI update to show loading
+        
+        // Add a slight delay just to show loading state nicely if DB is too fast
+        await Task.Delay(300);
+        searchResults = await AppService.SearchUsersSemanticAsync(searchQuery);
+        
+        isSearching = false;
+    }
+}

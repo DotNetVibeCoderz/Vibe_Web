@@ -1,0 +1,27 @@
+﻿@page "/location"
+@inject IJSRuntime JS
+
+<div style="display:none;">
+    <p>Latitude: @latitude</p>
+    <p>Longitude: @longitude</p>
+</div>
+
+
+@code {
+    public double latitude { set; get; } = 0;
+    public double longitude { set; get; } = 0;
+
+    [JSInvokable]
+    public void ReceiveLocation(double lat, double lon)
+    {
+        latitude = lat;
+        longitude = lon;
+        StateHasChanged();
+    }
+
+    public async Task GetLocation()
+    {
+        var objRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("getLocation", objRef);
+    }
+}

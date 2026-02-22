@@ -1,0 +1,231 @@
+@page "/chat"
+@page "/chat/{UserId:int}"
+@inject Kopdar.Services.AppService AppService
+@inject Kopdar.Services.IStorageService StorageService
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>Chat - Kopdar</PageTitle>
+
+<div style="display: flex; gap: 20px; height: 75vh;">
+    <!-- Contacts List -->
+    <div style="width: 250px; border-right: 3px solid #111; padding-right: 15px; display: flex; flex-direction: column;">
+        <h3>Contacts</h3>
+        <p style="font-size: 0.8rem;">Select a user to chat</p>
+        <hr style="border: 1.5px solid #111;" />
+        
+        <div style="flex: 1; overflow-y: auto;">
+            @if (contacts == null)
+            {
+                <p>Loading...</p>
+            }
+            else if (!contacts.Any())
+            {
+                <p style="font-style: italic; font-size: 0.9rem;">No active chats yet. Go to Nearby or Profile to start chatting!</p>
+            }
+            else
+            {
+                @foreach (var c in contacts)
+                {
+                    <div class="brutal-card" style="padding: 10px; cursor: pointer; margin-bottom: 10px; @(UserId == c.Id ? "background: var(--accent);" : "background: var(--secondary);")" @onclick="() => NavigateToUser(c.Id)">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <img src="@c.ProfilePictureUrl" width="30" height="30" style="border: 2px solid #111;" />
+                            <strong style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@c.Username</strong>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Chat Window -->
+    <div style="flex: 1; display: flex; flex-direction: column;" class="chat-container">
+        @if (UserId.HasValue)
+        {
+            <div style="padding: 10px; border-bottom: 3px solid #111; background: var(--accent); display: flex; justify-content: space-between; align-items: center;">
+                <strong>Chatting with #@UserId.Value</strong>
+                <button class="brutal-btn primary" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="DeleteThread">🗑️ Delete Thread</button>
+            </div>
+            
+            <div class="chat-messages">
+                @if (messages != null)
+                {
+                    var lastDate = "";
+                    foreach(var msg in messages)
+                    {
+                        var msgDate = TimeHelper.ToFriendlyTime(msg.SentAt);
+                        
+                        <div class="message @(msg.SenderId == AppService.CurrentUser.Id ? "mine" : "")">
+                            <small>
+                                <b>@(msg.SenderId == AppService.CurrentUser.Id ? "You" : msg.Sender.Username)</b> - @msgDate
+                            </small><br/>
+                            
+                            @if (!string.IsNullOrEmpty(msg.Content))
+                            {
+                                <div style="margin-top: 5px; white-space: pre-wrap;">@msg.Content</div>
+                            }
+                            
+                            @if (!string.IsNullOrEmpty(msg.MediaUrl))
+                            {
+                                <div style="margin-top: 10px;">
+                                    @if (IsImage(msg.MediaUrl))
+                                    {
+                                        <img src="@msg.MediaUrl" style="max-width: 100%; border: 2px solid #111;" />
+                                    }
+                                    else if (IsVideo(msg.MediaUrl))
+                                    {
+                                        <video src="@msg.MediaUrl" controls style="max-width: 100%; border: 2px solid #111;"></video>
+                                    }
+                                    else
+                                    {
+                                        <a href="@msg.MediaUrl" target="_blank" class="brutal-btn" style="display: inline-block;">💾 Download File</a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            
+            <div style="background: #fff; padding: 10px; border-top: 3px solid #111;">
+                @if (isUploading)
+                {
+                    <div style="color: var(--primary); font-weight: bold; margin-bottom: 5px;">Uploading attachment...</div>
+                }
+                
+                @if (!string.IsNullOrEmpty(newMediaUrl))
+                {
+                    <div style="margin-bottom: 10px; padding: 5px; background: var(--secondary); border: 2px solid #111;">
+                        Attached: <a href="@newMediaUrl" target="_blank" style="color: #111;">@newMediaUrl</a>
+                        <button class="brutal-btn" style="padding: 2px 5px; margin-left: 10px;" @onclick='() => newMediaUrl = ""'>X</button>
+                    </div>
+                }
+
+                <div class="chat-input-area" style="padding: 0;">
+                    <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; background: var(--accent); border: 3px solid #111; padding: 10px; margin-right: 10px; font-weight: bold;">
+                        📎
+                        <InputFile OnChange="HandleFileUpload" style="display: none;" />
+                    </label>
+                    <input @bind="newMessage" @bind:event="oninput" @onkeyup="HandleKeyUp" class="brutal-input" style="margin-bottom: 0;" placeholder="Type a message..." />
+                    <button class="brutal-btn" @onclick="SendMessage" disabled="@isUploading">Send</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 20px; text-align: center; margin-top: 100px;">
+                <h2>Select a chat to start messaging!</h2>
+                <p>Or find someone in <a href="/nearby">People Nearby</a></p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int? UserId { get; set; }
+    
+    private List<AppUser> contacts;
+    private List<Message> messages = new();
+    
+    private string newMessage = "";
+    private string newMediaUrl = "";
+    private bool isUploading = false;
+
+    [Inject] private NavigationManager NavManager { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        contacts = await AppService.GetChatContactsAsync();
+        AppService.OnMessageReceived += HandleNewMessage;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (UserId.HasValue)
+        {
+            messages = await AppService.GetChatHistoryAsync(UserId.Value);
+            
+            // Refresh contacts just in case
+            contacts = await AppService.GetChatContactsAsync();
+        }
+    }
+
+    private void NavigateToUser(int id)
+    {
+        NavManager.NavigateTo($"/chat/{id}");
+    }
+
+    private void HandleNewMessage(Message msg)
+    {
+        if (UserId.HasValue && (msg.SenderId == UserId.Value || msg.ReceiverId == UserId.Value))
+        {
+            messages.Add(msg);
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        StateHasChanged();
+        
+        var file = e.File;
+        // Allows up to 100 MB upload
+        using var stream = file.OpenReadStream(104857600);
+        newMediaUrl = await StorageService.UploadFileAsync(file.Name, stream);
+        
+        isUploading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if ((!string.IsNullOrWhiteSpace(newMessage) || !string.IsNullOrEmpty(newMediaUrl)) && UserId.HasValue)
+        {
+            await AppService.SendMessageAsync(UserId.Value, null, newMessage, newMediaUrl);
+            newMessage = string.Empty;
+            newMediaUrl = string.Empty;
+            
+            // Reload contacts in case this is a new thread
+            contacts = await AppService.GetChatContactsAsync();
+        }
+    }
+
+    private async Task DeleteThread()
+    {
+        if (UserId.HasValue)
+        {
+            await AppService.DeleteChatThreadAsync(UserId.Value);
+            messages.Clear();
+            contacts = await AppService.GetChatContactsAsync();
+            NavManager.NavigateTo("/chat");
+        }
+    }
+
+    private bool IsImage(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp";
+    }
+
+    private bool IsVideo(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".mp4" || ext == ".webm" || ext == ".ogg";
+    }
+
+    public void Dispose()
+    {
+        AppService.OnMessageReceived -= HandleNewMessage;
+    }
+}

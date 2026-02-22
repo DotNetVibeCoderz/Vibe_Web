@@ -1,0 +1,134 @@
+@page "/map"
+@inject Kopdar.Services.AppService AppService
+@inject NavigationManager NavManager
+@inject IJSRuntime JSRuntime
+@using Kopdar.Models
+
+<PageTitle>Social Map - Kopdar</PageTitle>
+
+<div style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;">
+    <div style="flex: 1;">
+        <h2>Social Map</h2>
+        <p>Interactive map showing users and groups nearby.</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <div class="brutal-card" style="margin: 0; padding: 10px 20px; background: var(--accent); text-align: center;">
+            <h3 style="margin: 0;">@allUsers?.Count</h3>
+            <small>Active Users</small>
+        </div>
+        <div class="brutal-card" style="margin: 0; padding: 10px 20px; background: var(--primary); text-align: center; color: white;">
+            <h3 style="margin: 0;">@allGroups?.Count</h3>
+            <small>Public Groups</small>
+        </div>
+    </div>
+</div>
+
+<div class="brutal-card" style="padding: 0; overflow: hidden; border: 4px solid #111; margin-bottom: 20px;">
+    <div id="map" style="height: 400px; width: 100%; z-index: 1;"></div>
+</div>
+
+<div style="display: flex; gap: 20px;">
+    <div style="flex: 1;" class="brutal-card">
+        <h3>User Directory</h3>
+        <div style="max-height: 300px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: var(--secondary); border-bottom: 3px solid #111;">
+                        <th style="padding: 10px; text-align: left;">User</th>
+                        <th style="padding: 10px; text-align: left;">Bio</th>
+                        <th style="padding: 10px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (allUsers != null)
+                    {
+                        foreach (var u in allUsers)
+                        {
+                            <tr style="border-bottom: 1px solid #ccc;">
+                                <td style="padding: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <img src="@u.ProfilePictureUrl" width="30" height="30" style="border: 2px solid #111;" />
+                                        <strong>@u.Username</strong>
+                                    </div>
+                                </td>
+                                <td style="padding: 10px;"><small>@u.Bio</small></td>
+                                <td style="padding: 10px; text-align: center;">
+                                    <a href="/profile/@u.Id" class="brutal-btn" style="padding: 5px 10px; font-size: 0.8rem;">Profile</a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="flex: 1;" class="brutal-card">
+        <h3>Public Groups</h3>
+        <div style="max-height: 300px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: var(--primary); color: white; border-bottom: 3px solid #111;">
+                        <th style="padding: 10px; text-align: left;">Group Name</th>
+                        <th style="padding: 10px; text-align: left;">Description</th>
+                        <th style="padding: 10px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (allGroups != null)
+                    {
+                        foreach (var g in allGroups)
+                        {
+                            <tr style="border-bottom: 1px solid #ccc;">
+                                <td style="padding: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <img src="@g.GroupPictureUrl" width="30" height="30" style="border: 2px solid #111;" />
+                                        <strong>@g.Name</strong>
+                                    </div>
+                                </td>
+                                <td style="padding: 10px;"><small>@g.Description</small></td>
+                                <td style="padding: 10px; text-align: center;">
+                                    <div style="display: flex; gap: 5px; justify-content: center;">
+                                        <a href="/group/@g.Id" class="brutal-btn" style="padding: 5px 10px; font-size: 0.8rem; background: var(--accent);">Info</a>
+                                        <button class="brutal-btn secondary" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="() => JoinAndChat(g.Id)">Join</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AppUser> allUsers;
+    private List<ChatGroup> allGroups;
+
+    protected override async Task OnInitializedAsync()
+    {
+        allUsers = await AppService.GetAllActiveUsersAsync();
+        allGroups = await AppService.GetAllPublicGroupsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AppService.CurrentUser != null)
+        {
+            var lat = AppService.CurrentUser.Latitude;
+            var lon = AppService.CurrentUser.Longitude;
+
+            var userPayload = allUsers.Select(u => new { u.Id, u.Username, u.Bio, u.Latitude, u.Longitude }).ToList();
+            var groupPayload = allGroups.Select(g => new { g.Id, g.Name, g.Description, g.Latitude, g.Longitude }).ToList();
+
+            await JSRuntime.InvokeVoidAsync("initMap", "map", lat, lon, userPayload, groupPayload);
+        }
+    }
+
+    private async Task JoinAndChat(int groupId)
+    {
+        await AppService.JoinGroupAsync(groupId);
+        NavManager.NavigateTo($"/chat/group/{groupId}");
+    }
+}

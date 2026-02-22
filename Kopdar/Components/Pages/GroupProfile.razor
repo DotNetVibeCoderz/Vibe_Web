@@ -1,0 +1,101 @@
+@page "/group/{GroupId:int}"
+@inject Kopdar.Services.AppService AppService
+@inject NavigationManager NavManager
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>Group Profile - Kopdar</PageTitle>
+
+@if (group == null)
+{
+    <p>Loading group...</p>
+}
+else
+{
+    <div class="brutal-card" style="text-align: center; background: var(--primary); color: white;">
+        <img src="@group.GroupPictureUrl" width="120" height="120" style="border: 4px solid #111; border-radius: 10px; background: #fff; object-fit: cover;" />
+        
+        <h1 style="margin: 10px 0;">@group.Name</h1>
+        <p style="font-size: 1.2rem; font-style: italic;">"@group.Description"</p>
+        <p><strong>Created by:</strong> @(group.Creator != null ? group.Creator.Username : "Unknown") | <strong>Mode:</strong> @(group.IsPublic ? "Public" : "Private")</p>
+
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
+            @if (isMember)
+            {
+                <button class="brutal-btn accent" @onclick="GoToChat">Chat Now</button>
+            }
+            else
+            {
+                <button class="brutal-btn accent" @onclick="JoinGroup">Join Group</button>
+            }
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 20px; text-align: center; margin-bottom: 30px;">
+        <div class="brutal-card" style="flex: 1;">
+            <h2>@group.Members.Count</h2>
+            <p>Total Members</p>
+        </div>
+    </div>
+
+    <div class="brutal-card">
+        <h3>Members List</h3>
+        @if (group.Members != null && group.Members.Any())
+        {
+            <ul style="list-style: none; padding: 0;">
+                @foreach (var m in group.Members.OrderBy(x => x.JoinedAt))
+                {
+                    <li style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px dashed #111; padding-bottom: 5px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <img src="@m.User.ProfilePictureUrl" width="40" height="40" style="border: 2px solid #111; border-radius: 50%; object-fit: cover;" />
+                            <div>
+                                <a href="/profile/@m.UserId" style="color: inherit; font-weight: bold; text-decoration: none;">@m.User.Username</a>
+                                @if (m.UserId == group.CreatorId)
+                                {
+                                    <span style="font-size: 0.7rem; background: var(--accent); padding: 2px 5px; border: 1px solid #111; margin-left: 5px;">Owner</span>
+                                }
+                            </div>
+                        </div>
+                        <small>Joined @TimeHelper.ToFriendlyTime(m.JoinedAt)</small>
+                    </li>
+                }
+            </ul>
+        }
+        else
+        {
+            <p>No members found.</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int GroupId { get; set; }
+    
+    private ChatGroup group;
+    private bool isMember = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadGroupAsync();
+    }
+
+    private async Task LoadGroupAsync()
+    {
+        group = await AppService.GetGroupProfileAsync(GroupId);
+        if (group != null && AppService.CurrentUser != null)
+        {
+            isMember = group.Members.Any(m => m.UserId == AppService.CurrentUser.Id);
+        }
+    }
+
+    private async Task JoinGroup()
+    {
+        await AppService.JoinGroupAsync(GroupId);
+        await LoadGroupAsync(); // refresh status
+    }
+
+    private void GoToChat()
+    {
+        NavManager.NavigateTo($"/chat/group/{GroupId}");
+    }
+}

@@ -1,0 +1,212 @@
+@page "/chat/group/{GroupId:int}"
+@inject Kopdar.Services.AppService AppService
+@inject Kopdar.Services.IStorageService StorageService
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>Group Chat - Kopdar</PageTitle>
+
+<div style="display: flex; gap: 20px; height: 75vh;">
+    <!-- Contacts List -->
+    <div style="width: 250px; border-right: 3px solid #111; padding-right: 15px; display: flex; flex-direction: column;">
+        <h3>My Groups</h3>
+        <p style="font-size: 0.8rem;">Select a group to chat</p>
+        <hr style="border: 1.5px solid #111;" />
+        
+        <div style="flex: 1; overflow-y: auto;">
+            @if (myGroups == null)
+            {
+                <p>Loading...</p>
+            }
+            else if (!myGroups.Any())
+            {
+                <p style="font-style: italic; font-size: 0.9rem;">You haven't joined any groups yet. Find groups in Explore Nearby!</p>
+            }
+            else
+            {
+                @foreach (var g in myGroups)
+                {
+                    <div class="brutal-card" style="padding: 10px; cursor: pointer; margin-bottom: 10px; @(GroupId == g.Id ? "background: var(--accent);" : "background: var(--secondary);")" @onclick="() => NavigateToGroup(g.Id)">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <img src="@g.GroupPictureUrl" width="30" height="30" style="border: 2px solid #111;" />
+                            <strong style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@g.Name</strong>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Chat Window -->
+    <div style="flex: 1; display: flex; flex-direction: column;" class="chat-container">
+        @if (GroupId.HasValue)
+        {
+            var selectedGroup = myGroups?.FirstOrDefault(x => x.Id == GroupId);
+
+            <div style="padding: 10px; border-bottom: 3px solid #111; background: var(--accent); display: flex; justify-content: space-between; align-items: center;">
+                <strong>Chatting in @(selectedGroup != null ? selectedGroup.Name : "Group")</strong>
+            </div>
+            
+            <div class="chat-messages">
+                @if (messages != null)
+                {
+                    foreach(var msg in messages)
+                    {
+                        var msgDate = TimeHelper.ToFriendlyTime(msg.SentAt);
+                        
+                        <div class="message @(msg.SenderId == AppService.CurrentUser.Id ? "mine" : "")">
+                            <small>
+                                <b><a href="/profile/@msg.SenderId" style="color:inherit;">@(msg.SenderId == AppService.CurrentUser.Id ? "You" : msg.Sender.Username)</a></b> - @msgDate
+                            </small><br/>
+                            
+                            @if (!string.IsNullOrEmpty(msg.Content))
+                            {
+                                <div style="margin-top: 5px; white-space: pre-wrap;">@msg.Content</div>
+                            }
+                            
+                            @if (!string.IsNullOrEmpty(msg.MediaUrl))
+                            {
+                                <div style="margin-top: 10px;">
+                                    @if (IsImage(msg.MediaUrl))
+                                    {
+                                        <img src="@msg.MediaUrl" style="max-width: 100%; border: 2px solid #111;" />
+                                    }
+                                    else if (IsVideo(msg.MediaUrl))
+                                    {
+                                        <video src="@msg.MediaUrl" controls style="max-width: 100%; border: 2px solid #111;"></video>
+                                    }
+                                    else
+                                    {
+                                        <a href="@msg.MediaUrl" target="_blank" class="brutal-btn" style="display: inline-block;">💾 Download File</a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            
+            <div style="background: #fff; padding: 10px; border-top: 3px solid #111;">
+                @if (isUploading)
+                {
+                    <div style="color: var(--primary); font-weight: bold; margin-bottom: 5px;">Uploading attachment...</div>
+                }
+                
+                @if (!string.IsNullOrEmpty(newMediaUrl))
+                {
+                    <div style="margin-bottom: 10px; padding: 5px; background: var(--secondary); border: 2px solid #111;">
+                        Attached: <a href="@newMediaUrl" target="_blank" style="color: #111;">@newMediaUrl</a>
+                        <button class="brutal-btn" style="padding: 2px 5px; margin-left: 10px;" @onclick='() => newMediaUrl = ""'>X</button>
+                    </div>
+                }
+
+                <div class="chat-input-area" style="padding: 0;">
+                    <label style="cursor: pointer; display: flex; align-items: center; justify-content: center; background: var(--accent); border: 3px solid #111; padding: 10px; margin-right: 10px; font-weight: bold;">
+                        📎
+                        <InputFile OnChange="HandleFileUpload" style="display: none;" />
+                    </label>
+                    <input @bind="newMessage" @bind:event="oninput" @onkeyup="HandleKeyUp" class="brutal-input" style="margin-bottom: 0;" placeholder="Type a message..." />
+                    <button class="brutal-btn" @onclick="SendMessage" disabled="@isUploading">Send</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 20px; text-align: center; margin-top: 100px;">
+                <h2>Select a group to start messaging!</h2>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int? GroupId { get; set; }
+    
+    private List<ChatGroup> myGroups;
+    private List<Message> messages = new();
+    
+    private string newMessage = "";
+    private string newMediaUrl = "";
+    private bool isUploading = false;
+
+    [Inject] private NavigationManager NavManager { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        myGroups = await AppService.GetMyGroupsAsync();
+        AppService.OnMessageReceived += HandleNewMessage;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (GroupId.HasValue)
+        {
+            messages = await AppService.GetGroupChatHistoryAsync(GroupId.Value);
+            myGroups = await AppService.GetMyGroupsAsync();
+        }
+    }
+
+    private void NavigateToGroup(int id)
+    {
+        NavManager.NavigateTo($"/chat/group/{id}");
+    }
+
+    private void HandleNewMessage(Message msg)
+    {
+        if (GroupId.HasValue && msg.GroupId == GroupId.Value)
+        {
+            messages.Add(msg);
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        StateHasChanged();
+        
+        var file = e.File;
+        using var stream = file.OpenReadStream(104857600);
+        newMediaUrl = await StorageService.UploadFileAsync(file.Name, stream);
+        
+        isUploading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if ((!string.IsNullOrWhiteSpace(newMessage) || !string.IsNullOrEmpty(newMediaUrl)) && GroupId.HasValue)
+        {
+            await AppService.SendMessageAsync(null, GroupId.Value, newMessage, newMediaUrl);
+            newMessage = string.Empty;
+            newMediaUrl = string.Empty;
+        }
+    }
+
+    private bool IsImage(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp";
+    }
+
+    private bool IsVideo(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".mp4" || ext == ".webm" || ext == ".ogg";
+    }
+
+    public void Dispose()
+    {
+        AppService.OnMessageReceived -= HandleNewMessage;
+    }
+}

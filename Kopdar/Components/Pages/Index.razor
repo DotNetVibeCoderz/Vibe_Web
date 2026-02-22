@@ -1,0 +1,233 @@
+@page "/"
+@inject Kopdar.Services.AppService AppService
+@inject Kopdar.Services.IStorageService StorageService
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>Timeline - Kopdar</PageTitle>
+
+<div style="max-width: 600px; margin: 0 auto;">
+    <div class="brutal-card" style="background: var(--accent);">
+        <h3>What's on your mind?</h3>
+        <textarea @bind="newPostContent" class="brutal-input" rows="3" placeholder="Share your moments..."></textarea>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
+            <button class="brutal-btn secondary" style="padding: 5px 10px;" @onclick='() => InsertEmoji("😊")'>😊</button>
+            <button class="brutal-btn secondary" style="padding: 5px 10px;" @onclick='() => InsertEmoji("😂")'>😂</button>
+            <button class="brutal-btn secondary" style="padding: 5px 10px;" @onclick='() => InsertEmoji("❤️")'>❤️</button>
+            <button class="brutal-btn secondary" style="padding: 5px 10px;" @onclick='() => InsertEmoji("🎮")'>🎮</button>
+            <button class="brutal-btn secondary" style="padding: 5px 10px;" @onclick='() => InsertEmoji("☕")'>☕</button>
+            
+            <div style="flex: 1;"></div>
+            <label style="cursor: pointer; font-weight: bold; text-decoration: underline;">
+                📎 Attach File
+                <InputFile OnChange="HandleFileUpload" style="display: none;" />
+            </label>
+            <button class="brutal-btn primary" @onclick="CreatePost" disabled="@isUploading">
+                @(isUploading ? "Uploading..." : "Post")
+            </button>
+        </div>
+        
+        @if (!string.IsNullOrEmpty(newMediaUrl))
+        {
+            <div style="padding: 5px; background: #fff; border: 2px solid #111;">
+                Attached: <a href="@newMediaUrl" target="_blank">@newMediaUrl</a>
+                <button class="brutal-btn" style="padding: 2px 5px; margin-left: 10px;" @onclick='() => newMediaUrl = ""'>X</button>
+            </div>
+        }
+    </div>
+
+    @if (posts == null)
+    {
+        <p>Loading timeline...</p>
+    }
+    else
+    {
+        @foreach (var post in posts)
+        {
+            <div class="brutal-card post">
+                <div class="post-header">
+                    <img src="@post.User.ProfilePictureUrl" class="avatar" />
+                    <span>
+                        <a href="/profile/@post.User.Id" style="color:inherit; text-decoration:none;">
+                            <strong>@post.User.Username</strong>
+                        </a>
+                        <br/><small>@TimeHelper.ToFriendlyTime(post.CreatedAt)</small>
+                    </span>
+                </div>
+                
+                <div style="margin: 15px 0; font-size: 1.1rem; white-space: pre-wrap;">
+                    @post.Content
+                </div>
+
+                @if (!string.IsNullOrEmpty(post.MediaUrl))
+                {
+                    <div style="margin-bottom: 15px;">
+                        @if (IsImage(post.MediaUrl))
+                        {
+                            <img src="@post.MediaUrl" style="max-width: 100%; border: 3px solid #111;" />
+                        }
+                        else if (IsVideo(post.MediaUrl))
+                        {
+                            <video src="@post.MediaUrl" controls style="max-width: 100%; border: 3px solid #111;"></video>
+                        }
+                        else
+                        {
+                            <a href="@post.MediaUrl" target="_blank" class="brutal-btn accent" style="display: block; text-align: center;">💾 Download Document</a>
+                        }
+                    </div>
+                }
+                
+                <div style="border-top: 3px solid #111; padding-top: 10px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <button class="brutal-btn secondary" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="() => LikePost(post.Id)">
+                            ❤️ @post.Likes.Count Likes
+                        </button>
+                        <button class="brutal-btn" style="padding: 5px 10px; font-size: 0.8rem; margin-left: 10px;" @onclick="() => ToggleComments(post.Id)">
+                            💬 @post.Comments.Count Comments
+                        </button>
+                    </div>
+                </div>
+
+                @if (expandedPostId == post.Id)
+                {
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 2px dashed #111;">
+                        <div style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                            @if (post.Comments.Any())
+                            {
+                                @foreach(var c in post.Comments.OrderBy(x => x.CreatedAt))
+                                {
+                                    <div style="margin-bottom: 8px; padding: 8px; background: #fff; border: 2px solid #111;">
+                                        <strong>@c.User.Username</strong>: @c.Content <br/>
+                                        <small style="color: gray;">@TimeHelper.ToFriendlyTime(c.CreatedAt)</small>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p style="font-size: 0.9rem; font-style: italic;">No comments yet. Be the first!</p>
+                            }
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <input @bind="newCommentContent" class="brutal-input" style="margin-bottom: 0;" placeholder="Write a comment..." />
+                            <button class="brutal-btn primary" @onclick="() => SubmitComment(post.Id)">Send</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button class="brutal-btn" style="width: 100%; padding: 15px; background: var(--secondary);" @onclick="LoadMorePosts">🔽 Load More Posts 🔽</button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Post> posts = new();
+    private string newPostContent = "";
+    private string newMediaUrl = "";
+    private bool isUploading = false;
+    
+    private int skip = 0;
+    private int take = 100;
+
+    private int? expandedPostId = null;
+    private string newCommentContent = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPosts(true);
+        AppService.OnStateChanged += async () => { await LoadPosts(true); InvokeAsync(StateHasChanged); };
+    }
+
+    private async Task LoadPosts(bool refresh = false)
+    {
+        if (refresh)
+        {
+            skip = 0;
+            posts = await AppService.GetTimelineAsync(skip, take);
+        }
+        else
+        {
+            skip += take;
+            var newPosts = await AppService.GetTimelineAsync(skip, take);
+            posts.AddRange(newPosts);
+        }
+    }
+
+    private async Task LoadMorePosts()
+    {
+        await LoadPosts(false);
+    }
+
+    private void InsertEmoji(string emoji)
+    {
+        newPostContent += emoji;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        StateHasChanged();
+        
+        var file = e.File;
+        // Allows up to 100 MB upload
+        using var stream = file.OpenReadStream(104857600);
+        newMediaUrl = await StorageService.UploadFileAsync(file.Name, stream);
+        
+        isUploading = false;
+        StateHasChanged();
+    }
+
+    private async Task CreatePost()
+    {
+        if (!string.IsNullOrWhiteSpace(newPostContent) || !string.IsNullOrEmpty(newMediaUrl))
+        {
+            await AppService.CreatePostAsync(newPostContent, newMediaUrl);
+            newPostContent = string.Empty;
+            newMediaUrl = string.Empty;
+        }
+    }
+
+    private async Task LikePost(int postId)
+    {
+        await AppService.LikePostAsync(postId);
+    }
+
+    private void ToggleComments(int postId)
+    {
+        if (expandedPostId == postId)
+        {
+            expandedPostId = null; 
+        }
+        else
+        {
+            expandedPostId = postId; 
+            newCommentContent = "";
+        }
+    }
+
+    private async Task SubmitComment(int postId)
+    {
+        if (!string.IsNullOrWhiteSpace(newCommentContent))
+        {
+            await AppService.AddCommentAsync(postId, newCommentContent);
+            newCommentContent = "";
+        }
+    }
+
+    private bool IsImage(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp";
+    }
+
+    private bool IsVideo(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        var ext = System.IO.Path.GetExtension(url).ToLower();
+        return ext == ".mp4" || ext == ".webm" || ext == ".ogg";
+    }
+}

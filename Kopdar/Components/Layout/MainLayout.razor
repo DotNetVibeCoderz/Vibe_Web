@@ -1,0 +1,124 @@
+@inherits LayoutComponentBase
+@inject Kopdar.Services.AppService AppService
+@implements IDisposable
+
+<div class="app-container">
+    @if (AppService.CurrentUser != null)
+    {
+        <div class="sidebar">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="@AppService.CurrentUser.ProfilePictureUrl" width="80" height="80" style="border: 3px solid #111; border-radius: 50%; background: #fff; object-fit: cover;" />
+                <h2 style="margin: 10px 0; font-weight: 900;">KOPDAR</h2>
+            </div>
+            
+            <a href="/" class="nav-link">Timeline</a>
+            <a href="/chat" class="nav-link">Chats</a>
+            <a href="/nearby" class="nav-link">People Nearby</a>
+            <a href="/map" class="nav-link">Social Map</a>
+            <a href="/search" class="nav-link">Semantic Search</a>
+            <a href="/profile/@AppService.CurrentUser.Id" class="nav-link">My Profile</a>
+            <button class="brutal-btn secondary" style="width: 100%; margin-top: 20px;" @onclick="Logout">Logout</button>
+        </div>
+    }
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div>
+                @if (AppService.CurrentUser != null)
+                {
+                    <strong>Hi, @AppService.CurrentUser.Username! Ready to Kopdar?</strong>
+                }
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                @if (AppService.CurrentUser != null)
+                {
+                    <a href="/notifications" class="brutal-btn secondary" style="text-decoration: none; position: relative; padding: 10px;">
+                        🔔
+                        @if (unreadNotifCount > 0)
+                        {
+                            <span style="position: absolute; top: -8px; right: -8px; background: var(--primary); color: white; border: 2px solid #111; border-radius: 50%; padding: 2px 6px; font-size: 0.8rem; font-weight: bold;">
+                                @unreadNotifCount
+                            </span>
+                        }
+                    </a>
+                }
+                <button class="brutal-btn" onclick="toggleTheme()">Toggle Theme</button>
+            </div>
+        </div>
+        
+        @if (AppService.CurrentUser != null)
+        {
+            @Body
+        }
+        else
+        {
+            <Kopdar.Components.Pages.Auth />
+        }
+    </div>
+</div>
+
+<div id="blazor-error-ui">
+    <environment include="Staging,Production">
+        An error has occurred. This application may no longer respond until reloaded.
+    </environment>
+    <environment include="Development">
+        An unhandled exception has occurred. See browser dev tools for details.
+    </environment>
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+<LocationPage @ref="currentLocation"></LocationPage>
+@code {
+    LocationPage currentLocation;
+    private int unreadNotifCount = 0;
+    Helpers.BlazorTimer Timer { set; get; }
+    protected override async Task OnInitializedAsync()
+    {
+        AppService.OnStateChanged += async () => await LoadData();
+        AppService.OnMessageReceived += async (m) => await LoadData();
+        await LoadData();
+
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await UpdateLocation();
+            Timer = new();
+            
+            Timer.SetTimer(30000); // Update location every 30 seconds
+            Timer.OnElapsed += async () =>
+            {
+                await UpdateLocation();
+            };
+        }
+    }
+    async Task UpdateLocation()
+    {
+        if (currentLocation != null)
+        {
+            await currentLocation.GetLocation();
+            AppService.CurrentUser?.Latitude = currentLocation.latitude;
+            AppService.CurrentUser?.Longitude = currentLocation.longitude;
+        }
+    }
+    private async Task LoadData()
+    {
+        if (AppService.CurrentUser != null)
+        {
+            unreadNotifCount = await AppService.GetUnreadNotificationCountAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        AppService.OnStateChanged -= async () => await LoadData();
+        AppService.OnMessageReceived -= async (m) => await LoadData();
+    }
+
+    private void Logout()
+    {
+        AppService.Logout();
+    }
+}

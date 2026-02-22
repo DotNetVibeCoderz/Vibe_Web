@@ -1,0 +1,58 @@
+html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+h1:focus {
+    outline: none;
+}
+
+a, .btn-link {
+    color: #0071c1;
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: #1b6ec2;
+    border-color: #1861ac;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid red;
+}
+
+.validation-message {
+    color: red;
+}
+
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBmaWxsPSIjZWE0MzM1Ij48cGF0aCBkPSJNMjU2IDBDMTE0LjYgMCAwIDExNC42IDAgMjU2czExNC42IDI1NiAyNTYgMjU2czI1Ni0xMTQuNiAyNTYtMjU2UzM5Ny40IDAgMjU2IDB6TTIzMiAxNTJjMC0xMy4zIDExLjItMjQgMjQtMjRzMjQgMTAuNyAyNCAyNHYxODRjMCAxMy4zLTExLjIgMjQtMjQgMjRzLTI0LTEwLjctMjQtMjRWMTUyek0yNTYgNDAwYzAtMTMuMyAxMS4yLTI0IDI0LTI0czI0IDEwLjcgMjQgMjRzLTExLjIgMjQtMjQgMjRzLTI0LTEwLjctMjQtMjR6Ii8+PC9zdmc+) no-repeat 1rem/1.8rem, #bbed21;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: red;
+}
+
+.blazor-error-boundary::after {
+    content: "An error has occurred."
+}

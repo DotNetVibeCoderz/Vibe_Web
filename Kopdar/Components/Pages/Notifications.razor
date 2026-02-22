@@ -1,0 +1,49 @@
+@page "/notifications"
+@inject Kopdar.Services.AppService AppService
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>Notifications - Kopdar</PageTitle>
+
+<h2>Your Notifications 🔔</h2>
+
+@if (notifications == null)
+{
+    <p>Loading...</p>
+}
+else if (!notifications.Any())
+{
+    <div class="brutal-card" style="background: var(--secondary);">
+        <p style="font-weight: bold; margin: 0;">You don't have any notifications right now! Go make some friends.</p>
+    </div>
+}
+else
+{
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+        @foreach (var n in notifications)
+        {
+            <div class="brutal-card" style="padding: 15px; margin-bottom: 0; @(!n.IsRead ? "border-left: 10px solid var(--primary); background: var(--accent);" : "")">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <!-- Parse simple markdown-like bold -->
+                        @((MarkupString)n.Content.Replace("**", "<b>").Replace("**", "</b>"))
+                    </div>
+                    <small style="color: #444; font-weight: bold;">@TimeHelper.ToFriendlyTime(n.CreatedAt)</small>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Notification> notifications;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load notifications
+        notifications = await AppService.GetUserNotificationsAsync();
+        
+        // Mark all as read when user visits this page
+        await AppService.MarkNotificationsAsReadAsync();
+    }
+}
