@@ -1,3 +1,4 @@
+@page "/chat/group"
 @page "/chat/group/{GroupId:int}"
 @inject Kopdar.Services.AppService AppService
 @inject Kopdar.Services.IStorageService StorageService
@@ -6,10 +7,16 @@
 
 <PageTitle>Group Chat - Kopdar</PageTitle>
 
-<div style="display: flex; gap: 20px; height: 75vh;">
+<div class="chat-layout">
     <!-- Contacts List -->
-    <div style="width: 250px; border-right: 3px solid #111; padding-right: 15px; display: flex; flex-direction: column;">
-        <h3>My Groups</h3>
+    <div class="contacts-list @(GroupId.HasValue ? "d-none d-md-flex" : "d-flex")">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;">My Groups</h3>
+            @if(GroupId.HasValue)
+            {
+                <button class="brutal-btn d-md-none" style="padding: 2px 8px;" @onclick="() => GroupId = null">Back</button>
+            }
+        </div>
         <p style="font-size: 0.8rem;">Select a group to chat</p>
         <hr style="border: 1.5px solid #111;" />
         
@@ -38,13 +45,16 @@
     </div>
 
     <!-- Chat Window -->
-    <div style="flex: 1; display: flex; flex-direction: column;" class="chat-container">
+    <div class="chat-window @(GroupId.HasValue ? "d-flex" : "d-none d-md-flex")">
         @if (GroupId.HasValue)
         {
             var selectedGroup = myGroups?.FirstOrDefault(x => x.Id == GroupId);
 
             <div style="padding: 10px; border-bottom: 3px solid #111; background: var(--accent); display: flex; justify-content: space-between; align-items: center;">
-                <strong>Chatting in @(selectedGroup != null ? selectedGroup.Name : "Group")</strong>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="brutal-btn d-md-none" style="padding: 5px 10px;" @onclick="() => GroupId = null">←</button>
+                    <strong>Chatting in @(selectedGroup != null ? selectedGroup.Name : "Group")</strong>
+                </div>
             </div>
             
             <div class="chat-messages">
@@ -114,10 +124,41 @@
         {
             <div style="padding: 20px; text-align: center; margin-top: 100px;">
                 <h2>Select a group to start messaging!</h2>
+                <p>Or find groups in <a href="/nearby">Explore Nearby</a></p>
             </div>
         }
     </div>
 </div>
+
+<style>
+    .chat-layout {
+        display: flex;
+        gap: 20px;
+        height: 80vh;
+    }
+    .contacts-list {
+        width: 280px;
+        border-right: 3px solid #111;
+        padding-right: 15px;
+        flex-direction: column;
+    }
+    .chat-window {
+        flex: 1;
+        flex-direction: column;
+        border: 3px solid #111;
+        background: var(--card-bg);
+    }
+    .d-none { display: none; }
+    .d-flex { display: flex; }
+    @@media (min-width: 768px) {
+        .d-md-flex { display: flex !important; }
+        .d-md-none { display: none !important; }
+    }
+    @@media (max-width: 767px) {
+        .contacts-list { width: 100%; border-right: none; padding-right: 0; }
+        .chat-layout { height: auto; min-height: 70vh; }
+    }
+</style>
 
 @code {
     [Parameter] public int? GroupId { get; set; }

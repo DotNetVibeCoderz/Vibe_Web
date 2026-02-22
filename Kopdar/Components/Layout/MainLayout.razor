@@ -5,28 +5,30 @@
 <div class="app-container">
     @if (AppService.CurrentUser != null)
     {
-        <div class="sidebar">
+        <div class="sidebar @(showSidebar ? "show" : "")">
             <div style="text-align: center; margin-bottom: 20px;">
                 <img src="@AppService.CurrentUser.ProfilePictureUrl" width="80" height="80" style="border: 3px solid #111; border-radius: 50%; background: #fff; object-fit: cover;" />
                 <h2 style="margin: 10px 0; font-weight: 900;">KOPDAR</h2>
             </div>
             
-            <a href="/" class="nav-link">Timeline</a>
-            <a href="/chat" class="nav-link">Chats</a>
-            <a href="/nearby" class="nav-link">People Nearby</a>
-            <a href="/map" class="nav-link">Social Map</a>
-            <a href="/search" class="nav-link">Semantic Search</a>
-            <a href="/profile/@AppService.CurrentUser.Id" class="nav-link">My Profile</a>
+            <a href="/" class="nav-link" @onclick="CloseSidebar">Timeline</a>
+            <a href="/chat" class="nav-link" @onclick="CloseSidebar">Chats</a>
+            <a href="/nearby" class="nav-link" @onclick="CloseSidebar">People Nearby</a>
+            <a href="/map" class="nav-link" @onclick="CloseSidebar">Social Map</a>
+            <a href="/search" class="nav-link" @onclick="CloseSidebar">Semantic Search</a>
+            <a href="/gallery" class="nav-link" @onclick="CloseSidebar">My Gallery</a>
+            <a href="/profile/@AppService.CurrentUser.Id" class="nav-link" @onclick="CloseSidebar">My Profile</a>
             <button class="brutal-btn secondary" style="width: 100%; margin-top: 20px;" @onclick="Logout">Logout</button>
         </div>
     }
 
     <div class="main-content">
         <div class="top-bar">
-            <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
                 @if (AppService.CurrentUser != null)
                 {
-                    <strong>Hi, @AppService.CurrentUser.Username! Ready to Kopdar?</strong>
+                    <button class="brutal-btn d-md-none" style="padding: 5px 10px;" @onclick="ToggleSidebar">☰</button>
+                    <strong>Hi, @AppService.CurrentUser.Username!</strong>
                 }
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
@@ -42,18 +44,20 @@
                         }
                     </a>
                 }
-                <button class="brutal-btn" onclick="toggleTheme()">Toggle Theme</button>
+                <button class="brutal-btn" onclick="toggleTheme()">🌓</button>
             </div>
         </div>
         
-        @if (AppService.CurrentUser != null)
-        {
-            @Body
-        }
-        else
-        {
-            <Kopdar.Components.Pages.Auth />
-        }
+        <div class="content-body">
+            @if (AppService.CurrentUser != null)
+            {
+                @Body
+            }
+            else
+            {
+                <Kopdar.Components.Pages.Auth />
+            }
+        </div>
     </div>
 </div>
 
@@ -68,17 +72,32 @@
     <a class="dismiss">🗙</a>
 </div>
 <LocationPage @ref="currentLocation"></LocationPage>
+
+<style>
+    .d-md-none { display: none; }
+    @@media (max-width: 768px) {
+        .d-md-none { display: block; }
+    }
+    .content-body {
+        max-width: 1200px;
+        margin: 0 auto;
+        width: 100%;
+    }
+</style>
+
 @code {
     LocationPage currentLocation;
     private int unreadNotifCount = 0;
+    private bool showSidebar = false;
     Helpers.BlazorTimer Timer { set; get; }
+
     protected override async Task OnInitializedAsync()
     {
         AppService.OnStateChanged += async () => await LoadData();
         AppService.OnMessageReceived += async (m) => await LoadData();
         await LoadData();
-
     }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -93,15 +112,20 @@
             };
         }
     }
+
     async Task UpdateLocation()
     {
         if (currentLocation != null)
         {
             await currentLocation.GetLocation();
-            AppService.CurrentUser?.Latitude = currentLocation.latitude;
-            AppService.CurrentUser?.Longitude = currentLocation.longitude;
+            if (AppService.CurrentUser != null)
+            {
+                AppService.CurrentUser.Latitude = currentLocation.latitude;
+                AppService.CurrentUser.Longitude = currentLocation.longitude;
+            }
         }
     }
+
     private async Task LoadData()
     {
         if (AppService.CurrentUser != null)
@@ -110,6 +134,9 @@
             await InvokeAsync(StateHasChanged);
         }
     }
+
+    private void ToggleSidebar() => showSidebar = !showSidebar;
+    private void CloseSidebar() => showSidebar = false;
 
     public void Dispose()
     {

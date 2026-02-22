@@ -153,6 +153,20 @@ public class AppService
             .Take(take)
             .ToListAsync();
     }
+    
+    public async Task<List<Post>> GetUserTimelineAsync(int userId, int skip = 0, int take = 100)
+    {
+        using var db = _dbFactory.CreateDbContext();
+        return await db.Posts
+            .Include(p => p.User)
+            .Include(p => p.Likes)
+            .Include(p => p.Comments).ThenInclude(c => c.User)
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync();
+    }
 
     public async Task CreatePostAsync(string content, string mediaUrl)
     {
@@ -203,6 +217,76 @@ public class AppService
             db.Notifications.Add(new Notification { UserId = post.UserId, Content = $"**{CurrentUser.Username}** commented on your post.", IsRead = false });
         }
 
+        await db.SaveChangesAsync();
+        NotifyStateChanged();
+    }
+
+    // Gallery
+    public async Task CreateGalleryFolderAsync(string name)
+    {
+        if (CurrentUser == null) return;
+        using var db = _dbFactory.CreateDbContext();
+        db.GalleryFolders.Add(new GalleryFolder { Name = name, UserId = CurrentUser.Id });
+        await db.SaveChangesAsync();
+        NotifyStateChanged();
+    }
+
+    public async Task<List<GalleryFolder>> GetUserGalleryFoldersAsync(int userId)
+    {
+        using var db = _dbFactory.CreateDbContext();
+        return await db.GalleryFolders
+            .Include(f => f.Images).ThenInclude(i => i.Likes)
+            .Include(f => f.Images).ThenInclude(i => i.Comments).ThenInclude(c => c.User)
+            .Where(f => f.UserId == userId)
+            .OrderByDescending(f => f.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task UploadGalleryImageAsync(int folderId, string imageUrl, string caption)
+    {
+        if (CurrentUser == null) return;
+        using var db = _dbFactory.CreateDbContext();
+        db.GalleryImages.Add(new GalleryImage 
+        { 
+            FolderId = folderId, 
+            UserId = CurrentUser.Id, 
+            ImageUrl = imageUrl, 
+            Caption = caption 
+        });
+        await db.SaveChangesAsync();
+        NotifyStateChanged();
+    }
+
+    public async Task LikeGalleryImageAsync(int imageId)
+    {
+        if (CurrentUser == null) return;
+        using var db = _dbFactory.CreateDbContext();
+        var existingLike = await db.GalleryLikes.FirstOrDefaultAsync(l => l.GalleryImageId == imageId && l.UserId == CurrentUser.Id);
+        if (existingLike == null)
+        {
+            db.GalleryLikes.Add(new GalleryLike { GalleryImageId = imageId, UserId = CurrentUser.Id });
+            
+            var img = await db.GalleryImages.FindAsync(imageId);
+            if (img != null && img.UserId != CurrentUser.Id)
+            {
+                db.Notifications.Add(new Notification { UserId = img.UserId, Content = $"**{CurrentUser.Username}** liked your gallery image.", IsRead = false });
+            }
+            await db.SaveChangesAsync();
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task AddGalleryCommentAsync(int imageId, string content)
+    {
+        if (CurrentUser == null || string.IsNullOrWhiteSpace(content)) return;
+        using var db = _dbFactory.CreateDbContext();
+        db.GalleryComments.Add(new GalleryComment { GalleryImageId = imageId, UserId = CurrentUser.Id, Content = content });
+        
+        var img = await db.GalleryImages.FindAsync(imageId);
+        if (img != null && img.UserId != CurrentUser.Id)
+        {
+            db.Notifications.Add(new Notification { UserId = img.UserId, Content = $"**{CurrentUser.Username}** commented on your gallery image.", IsRead = false });
+        }
         await db.SaveChangesAsync();
         NotifyStateChanged();
     }

@@ -22,6 +22,7 @@
     public async Task GetLocation()
     {
         var objRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("getLocation", objRef);
+        if(objRef!=null)
+            await JS.InvokeVoidAsync("getLocation", objRef);
     }
 }

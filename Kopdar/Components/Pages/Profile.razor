@@ -70,7 +70,7 @@ else
         }
     </div>
 
-    <!-- Create Group Modal/Section -->
+    <!-- Create Group Modal -->
     @if (isCreatingGroup)
     {
         <div class="brutal-card" style="background: #fff; border: 4px solid var(--primary);">
@@ -104,16 +104,16 @@ else
     }
 
     <!-- Follow Stats -->
-    <div style="display: flex; gap: 20px; text-align: center; margin-bottom: 30px;">
-        <div class="brutal-card" style="flex: 1; cursor: pointer; background: @(viewingStats == "followers" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("followers")'>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; margin-bottom: 30px;" class="stat-grid">
+        <div class="brutal-card" style="margin-bottom: 0; cursor: pointer; background: @(viewingStats == "followers" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("followers")'>
             <h2>@followersList?.Count</h2>
             <p>Followers</p>
         </div>
-        <div class="brutal-card" style="flex: 1; cursor: pointer; background: @(viewingStats == "following" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("following")'>
+        <div class="brutal-card" style="margin-bottom: 0; cursor: pointer; background: @(viewingStats == "following" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("following")'>
             <h2>@followingList?.Count</h2>
             <p>Following</p>
         </div>
-        <div class="brutal-card" style="flex: 1; cursor: pointer; background: @(viewingStats == "groups" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("groups")'>
+        <div class="brutal-card" style="margin-bottom: 0; cursor: pointer; background: @(viewingStats == "groups" ? "var(--accent)" : "#fff")" @onclick='() => ToggleStatsView("groups")'>
             <h2>@createdGroups?.Count</h2>
             <p>My Groups</p>
         </div>
@@ -174,34 +174,131 @@ else
         </div>
     }
 
-    <h3>Recent Activity</h3>
-    @if (userPosts != null && userPosts.Any())
+    <div class="brutal-card" style="background: var(--primary);">
+        <h2 style="margin: 0;">📁 @user.Username's Gallery</h2>
+    </div>
+
+    @if (galleryFolders == null)
+    {
+        <p>Loading gallery...</p>
+    }
+    else if (!galleryFolders.Any())
+    {
+        <p>No gallery folders created yet.</p>
+    }
+    else
+    {
+        @foreach (var folder in galleryFolders)
+        {
+            <div class="brutal-card">
+                <h4 style="margin-top: 0; border-bottom: 2px solid #111;">📁 @folder.Name</h4>
+                <div class="gallery-grid">
+                    @foreach (var img in folder.Images)
+                    {
+                        <div class="gallery-item" @onclick="() => OpenGalleryImage(img)">
+                            <img src="@img.ImageUrl" />
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    <div class="brutal-card" style="background: var(--secondary); margin-top: 30px;">
+        <h2 style="margin: 0;">🕒 Recent Activity (Last 100)</h2>
+    </div>
+    
+    @if (userPosts == null)
+    {
+        <p>Loading activity...</p>
+    }
+    else if (!userPosts.Any())
+    {
+        <p>No posts yet.</p>
+    }
+    else
     {
         @foreach (var post in userPosts)
         {
             <div class="brutal-card" style="border-left: 10px solid var(--primary);">
-                <small>@TimeHelper.ToFriendlyTime(post.CreatedAt)</small>
-                <p>@post.Content</p>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <small>@TimeHelper.ToFriendlyTime(post.CreatedAt)</small>
+                </div>
+                <p style="font-size: 1.1rem; margin: 10px 0;">@post.Content</p>
                 @if (!string.IsNullOrEmpty(post.MediaUrl))
                 {
                     <div style="margin-bottom: 10px;">
-                        <a href="@post.MediaUrl" target="_blank" class="brutal-btn secondary" style="font-size: 0.8rem; padding: 5px;">View Attachment</a>
+                        <img src="@post.MediaUrl" style="max-width: 100%; border: var(--border);" />
                     </div>
                 }
-                <span style="font-size: 0.8rem; font-weight: bold;">❤️ @post.Likes?.Count Likes | 💬 @post.Comments?.Count Comments</span>
+                
+                <div style="display: flex; gap: 15px; margin-top: 10px;">
+                    <button class="brutal-btn accent" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="() => LikePost(post.Id)">
+                        ❤️ @post.Likes?.Count Likes
+                    </button>
+                    <span style="font-weight: bold; font-size: 0.8rem; align-self: center;">💬 @post.Comments?.Count Comments</span>
+                </div>
+
+                @if (post.Comments != null && post.Comments.Any())
+                {
+                    <div style="background: #eee; padding: 10px; margin-top: 10px; border: 2px solid #111;">
+                        @foreach (var comment in post.Comments.OrderByDescending(c => c.CreatedAt).Take(5))
+                        {
+                            <div style="margin-bottom: 5px; font-size: 0.9rem;">
+                                <strong>@comment.User.Username:</strong> @comment.Content
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div style="display: flex; gap: 5px; margin-top: 10px;">
+                    <input class="brutal-input" style="padding: 5px; margin-bottom: 0; font-size: 0.9rem;" placeholder="Add a comment..." @bind="commentBuffers[post.Id]" />
+                    <button class="brutal-btn primary" style="padding: 5px 10px;" @onclick="() => AddComment(post.Id)">Post</button>
+                </div>
             </div>
         }
     }
-    else
-    {
-        <p>No posts yet.</p>
-    }
+}
+
+@if (selectedGalleryImage != null)
+{
+    <div class="brutal-modal-overlay" @onclick="CloseGalleryImage">
+        <div class="brutal-modal" @onclick:stopPropagation>
+            <div style="display: flex; justify-content: flex-end;">
+                <button class="brutal-btn" style="padding: 5px 10px;" @onclick="CloseGalleryImage">X</button>
+            </div>
+            <div style="text-align: center; margin-top: 10px;">
+                <img src="@selectedGalleryImage.ImageUrl" style="max-width: 100%; max-height: 60vh; border: 4px solid #111; box-shadow: 5px 5px 0px #111;" />
+                <p style="margin-top: 15px; font-size: 1.2rem; font-weight: bold;">@selectedGalleryImage.Caption</p>
+                <div style="margin-bottom: 20px;">
+                   <button class="brutal-btn accent" @onclick="LikeGalleryImage">❤️ @selectedGalleryImage.Likes.Count Likes</button>
+                </div>
+            </div>
+            
+            <div style="border-top: 3px solid #111; padding-top: 15px;">
+                <h4>Comments (@selectedGalleryImage.Comments.Count)</h4>
+                <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+                    @foreach (var comment in selectedGalleryImage.Comments.OrderBy(c => c.CreatedAt))
+                    {
+                        <div style="margin-bottom: 10px; padding: 5px; border-bottom: 1px dashed #111;">
+                            <strong>@comment.User.Username:</strong> @comment.Content
+                        </div>
+                    }
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <input @bind="newGalleryComment" class="brutal-input" style="margin-bottom: 0;" placeholder="Add a comment..." />
+                    <button class="brutal-btn primary" @onclick="AddGalleryComment">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
     [Parameter] public int UserId { get; set; }
     private AppUser user;
     private List<Post> userPosts;
+    private List<GalleryFolder> galleryFolders;
     private bool isFollowing;
     
     private List<AppUser> followersList = new();
@@ -222,6 +319,11 @@ else
     private string newGroupDesc = "";
     private HashSet<int> selectedMembers = new();
 
+    // Interaction states
+    private Dictionary<int, string> commentBuffers = new();
+    private GalleryImage selectedGalleryImage;
+    private string newGalleryComment = "";
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadProfileAsync();
@@ -234,8 +336,8 @@ else
         
         if (user != null)
         {
-            var allPosts = await AppService.GetTimelineAsync(0, 500);
-            userPosts = allPosts.Where(p => p.UserId == UserId).ToList();
+            userPosts = await AppService.GetUserTimelineAsync(UserId, 0, 100);
+            galleryFolders = await AppService.GetUserGalleryFoldersAsync(UserId);
             
             followersList = await AppService.GetFollowersAsync(UserId);
             followingList = await AppService.GetFollowingAsync(UserId);
@@ -245,6 +347,8 @@ else
             {
                 isFollowing = followersList.Any(f => f.Id == AppService.CurrentUser.Id);
             }
+
+            commentBuffers = userPosts.ToDictionary(p => p.Id, p => "");
         }
     }
 
@@ -275,7 +379,7 @@ else
     {
         if (AppService.CurrentUser == null) return;
         await AppService.ToggleFollowAsync(UserId);
-        await LoadProfileAsync(); // refresh UI and states automatically
+        await LoadProfileAsync();
     }
 
     private void ToggleStatsView(string stat)
@@ -301,7 +405,47 @@ else
             newGroupName = "";
             newGroupDesc = "";
             selectedMembers.Clear();
-            await LoadProfileAsync(); // refresh group lists
+            await LoadProfileAsync();
+        }
+    }
+
+    private async Task LikePost(int postId)
+    {
+        await AppService.LikePostAsync(postId);
+        await LoadProfileAsync();
+    }
+
+    private async Task AddComment(int postId)
+    {
+        if (commentBuffers.ContainsKey(postId) && !string.IsNullOrWhiteSpace(commentBuffers[postId]))
+        {
+            await AppService.AddCommentAsync(postId, commentBuffers[postId]);
+            commentBuffers[postId] = "";
+            await LoadProfileAsync();
+        }
+    }
+
+    private void OpenGalleryImage(GalleryImage img) => selectedGalleryImage = img;
+    private void CloseGalleryImage() => selectedGalleryImage = null;
+
+    private async Task LikeGalleryImage()
+    {
+        if (selectedGalleryImage != null)
+        {
+            await AppService.LikeGalleryImageAsync(selectedGalleryImage.Id);
+            await LoadProfileAsync();
+            selectedGalleryImage = galleryFolders.SelectMany(f => f.Images).FirstOrDefault(i => i.Id == selectedGalleryImage.Id);
+        }
+    }
+
+    private async Task AddGalleryComment()
+    {
+        if (selectedGalleryImage != null && !string.IsNullOrWhiteSpace(newGalleryComment))
+        {
+            await AppService.AddGalleryCommentAsync(selectedGalleryImage.Id, newGalleryComment);
+            newGalleryComment = "";
+            await LoadProfileAsync();
+            selectedGalleryImage = galleryFolders.SelectMany(f => f.Images).FirstOrDefault(i => i.Id == selectedGalleryImage.Id);
         }
     }
 }

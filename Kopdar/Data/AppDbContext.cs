@@ -16,6 +16,12 @@ public class AppDbContext : DbContext
     public DbSet<GroupMember> GroupMembers { get; set; }
     public DbSet<Message> Messages { get; set; }
     public DbSet<Notification> Notifications { get; set; }
+    
+    // Gallery
+    public DbSet<GalleryFolder> GalleryFolders { get; set; }
+    public DbSet<GalleryImage> GalleryImages { get; set; }
+    public DbSet<GalleryLike> GalleryLikes { get; set; }
+    public DbSet<GalleryComment> GalleryComments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,12 +73,37 @@ public class AppDbContext : DbContext
             .HasOne(gm => gm.User)
             .WithMany(u => u.GroupMemberships)
             .HasForeignKey(gm => gm.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict); // atau DeleteBehavior.NoAction
+            //.OnDelete(DeleteBehavior.Cascade);
             
         modelBuilder.Entity<GroupMember>()
             .HasOne(gm => gm.Group)
             .WithMany(g => g.Members)
             .HasForeignKey(gm => gm.GroupId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Gallery Config
+        modelBuilder.Entity<GalleryFolder>()
+            .HasOne(f => f.User)
+            .WithMany(u => u.GalleryFolders)
+            .HasForeignKey(f => f.UserId);
+
+        modelBuilder.Entity<GalleryImage>()
+            .HasOne(i => i.Folder)
+            .WithMany(f => f.Images)
+            .HasForeignKey(i => i.FolderId)
+            .OnDelete(DeleteBehavior.Restrict); // atau DeleteBehavior.NoAction;
+
+        modelBuilder.Entity<GalleryLike>()
+            .HasOne(l => l.User)
+            .WithMany()
+            .HasForeignKey(l => l.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<GalleryComment>()
+            .HasOne(c => c.User)
+            .WithMany()
+            .HasForeignKey(c => c.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

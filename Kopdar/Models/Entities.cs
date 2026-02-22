@@ -25,6 +25,7 @@ public class AppUser
     public ICollection<Message> SentMessages { get; set; } = new List<Message>();
     public ICollection<Message> ReceivedMessages { get; set; } = new List<Message>();
     public ICollection<GroupMember> GroupMemberships { get; set; } = new List<GroupMember>();
+    public ICollection<GalleryFolder> GalleryFolders { get; set; } = new List<GalleryFolder>();
 }
 
 public class Follow
@@ -63,6 +64,50 @@ public class Comment
     public int Id { get; set; }
     public int PostId { get; set; }
     public Post Post { get; set; }
+    public int UserId { get; set; }
+    public AppUser User { get; set; }
+    public string Content { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class GalleryFolder
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public int UserId { get; set; }
+    public AppUser User { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public ICollection<GalleryImage> Images { get; set; } = new List<GalleryImage>();
+}
+
+public class GalleryImage
+{
+    public int Id { get; set; }
+    public int FolderId { get; set; }
+    public GalleryFolder Folder { get; set; }
+    public int UserId { get; set; }
+    public AppUser User { get; set; }
+    public string ImageUrl { get; set; }
+    public string? Caption { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public ICollection<GalleryLike> Likes { get; set; } = new List<GalleryLike>();
+    public ICollection<GalleryComment> Comments { get; set; } = new List<GalleryComment>();
+}
+
+public class GalleryLike
+{
+    public int Id { get; set; }
+    public int GalleryImageId { get; set; }
+    public GalleryImage GalleryImage { get; set; }
+    public int UserId { get; set; }
+    public AppUser User { get; set; }
+}
+
+public class GalleryComment
+{
+    public int Id { get; set; }
+    public int GalleryImageId { get; set; }
+    public GalleryImage GalleryImage { get; set; }
     public int UserId { get; set; }
     public AppUser User { get; set; }
     public string Content { get; set; }

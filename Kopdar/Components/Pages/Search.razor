@@ -4,11 +4,13 @@
 
 <PageTitle>Semantic Search - Kopdar</PageTitle>
 
-<h2>Find People via Semantic Search</h2>
-<p>Ketik deskripsi, hobi, atau profile yang kamu cari. Kopdar akan mencarikan pengguna dengan Bio yang paling relevan!</p>
+<div class="brutal-card" style="background: var(--accent);">
+    <h2 style="margin: 0;">🔍 Semantic Search</h2>
+    <p>Find friends based on interests, bio, or description. We'll match the semantic relevance!</p>
+</div>
 
-<div style="display: flex; gap: 10px; margin-bottom: 20px;">
-    <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" class="brutal-input" style="margin-bottom:0;" placeholder="Contoh: gamer, fullstack developer, suka kopi..." />
+<div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+    <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" class="brutal-input" style="margin-bottom:0; flex: 1; min-width: 250px;" placeholder="Ex: gamer, like coffee, web developer..." />
     <button class="brutal-btn secondary" @onclick="PerformSearch">Search</button>
 </div>
 
@@ -23,33 +25,50 @@ else
         if (!searchResults.Any())
         {
             <div class="brutal-card" style="background: var(--primary);">
-                <strong>No matching users found!</strong> Coba kata kunci lain.
+                <strong>No matching users found!</strong> Try different keywords.
             </div>
         }
         else
         {
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="search-grid">
                 @foreach (var result in searchResults)
                 {
-                    <div class="brutal-card" style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="display: flex; align-items: center; gap: 15px;">
-                            <img src="@result.User.ProfilePictureUrl" width="50" height="50" style="border: 2px solid #111;" />
+                    <div class="brutal-card search-item">
+                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                            <img src="@result.User.ProfilePictureUrl" width="50" height="50" style="border: 2px solid #111; border-radius: 50%; object-fit: cover;" />
                             <div>
                                 <strong style="font-size: 1.1rem;">@result.User.Username</strong>
-                                <span style="font-size: 0.8rem; background: var(--accent); padding: 2px 6px; border: 1px solid #111;">
+                                <span style="font-size: 0.8rem; background: var(--accent); padding: 2px 6px; border: 1px solid #111; display: block; width: fit-content;">
                                     Match: @((result.Score * 100).ToString("0.0"))%
                                 </span>
-                                <br />
-                                <small>@result.User.Bio</small>
                             </div>
                         </div>
-                        <a href="/profile/@result.User.Id" class="brutal-btn">Profile</a>
+                        <p style="font-size: 0.9rem; margin-bottom: 15px; min-height: 40px;">@result.User.Bio</p>
+                        <a href="/profile/@result.User.Id" class="brutal-btn" style="width: 100%; text-align: center; text-decoration: none; padding: 5px;">View Profile</a>
                     </div>
                 }
             </div>
         }
     }
 }
+
+<style>
+    .search-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    @@media (max-width: 480px) {
+        .search-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .search-item {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+</style>
 
 @code {
     private string searchQuery = string.Empty;
@@ -66,10 +85,11 @@ else
 
     private async Task PerformSearch()
     {
+        if (string.IsNullOrWhiteSpace(searchQuery)) return;
+
         isSearching = true;
-        StateHasChanged(); // force UI update to show loading
+        StateHasChanged();
         
-        // Add a slight delay just to show loading state nicely if DB is too fast
         await Task.Delay(300);
         searchResults = await AppService.SearchUsersSemanticAsync(searchQuery);
         

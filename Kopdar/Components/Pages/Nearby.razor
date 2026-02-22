@@ -5,65 +5,95 @@
 
 <PageTitle>Nearby - Kopdar</PageTitle>
 
-<h2>People & Groups Nearby</h2>
-<div style="margin-bottom: 20px;">
-    <label>Radius (km): @radiusKm km</label>
-    <input type="range" min="0.05" max="100" @bind="radiusKm" @oninput="UpdateRadius" style="width: 100%;" />
+<div class="brutal-card" style="background: var(--secondary);">
+    <h2 style="margin: 0;">📍 Nearby People & Groups</h2>
+    <p>Discover who's around you right now.</p>
 </div>
 
-<div style="display: flex; gap: 20px;">
-    <div style="flex: 1;">
-        <h3>Users</h3>
+<div class="brutal-card">
+    <label><b>Radius: @radiusKm.ToString("0.0") km</b></label>
+    <input type="range" min="0.5" max="100" step="0.5" @bind="radiusKm" @oninput="UpdateRadius" style="width: 100%; height: 10px; accent-color: var(--primary);" />
+</div>
+
+<div class="nearby-grid">
+    <div class="nearby-column">
+        <h3>👥 Users Nearby</h3>
         @if (nearbyUsers == null)
         {
             <p>Scanning area...</p>
         }
         else if (!nearbyUsers.Any())
         {
-            <p>No one found in this area. Increase radius!</p>
+            <p style="font-style: italic;">No one found in this area. Try increasing the radius!</p>
         }
         else
         {
             @foreach (var user in nearbyUsers)
             {
-                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <img src="@user.ProfilePictureUrl" width="40" height="40" style="border: 2px solid #111; border-radius: 50%; object-fit: cover;" />
-                        <div>
-                            <strong><a href="/profile/@user.Id" style="color:inherit;">@user.Username</a></strong><br />
-                            <small>@user.Bio</small>
+                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                        <img src="@user.ProfilePictureUrl" width="40" height="40" style="border: 2px solid #111; border-radius: 50%; object-fit: cover; flex-shrink: 0;" />
+                        <div style="overflow: hidden; text-overflow: ellipsis;">
+                            <strong><a href="/profile/@user.Id" style="color:inherit; text-decoration: none;">@user.Username</a></strong><br />
+                            <small style="white-space: nowrap;">@user.Bio</small>
                         </div>
                     </div>
                     <div>
-                        <a href="/chat/@user.Id" class="brutal-btn secondary">Chat</a>
+                        <a href="/chat/@user.Id" class="brutal-btn secondary" style="padding: 5px 10px; font-size: 0.8rem;">Chat</a>
                     </div>
                 </div>
             }
         }
     </div>
 
-    <div style="flex: 1;">
-        <h3>Groups</h3>
-        @if (nearbyGroups != null)
+    <div class="nearby-column">
+        <h3>🏘️ Groups Nearby</h3>
+        @if (nearbyGroups == null)
+        {
+            <p>Scanning area...</p>
+        }
+        else if (!nearbyGroups.Any())
+        {
+            <p style="font-style: italic;">No groups found nearby.</p>
+        }
+        else
         {
             @foreach (var group in nearbyGroups)
             {
-                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between; background: var(--accent);">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <img src="@group.GroupPictureUrl" width="40" height="40" style="border: 2px solid #111;" />
-                        <div>
+                <div class="brutal-card" style="display: flex; align-items: center; justify-content: space-between; background: var(--accent); gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                        <img src="@group.GroupPictureUrl" width="40" height="40" style="border: 2px solid #111; flex-shrink: 0;" />
+                        <div style="overflow: hidden; text-overflow: ellipsis;">
                             <strong>@group.Name</strong><br />
-                            <small>@group.Description</small>
+                            <small style="white-space: nowrap;">@group.Description</small>
                         </div>
                     </div>
                     <div>
-                        <button class="brutal-btn" @onclick="() => JoinGroup(group.Id)">Join & Chat</button>
+                        <button class="brutal-btn" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="() => JoinGroup(group.Id)">Join</button>
                     </div>
                 </div>
             }
         }
     </div>
 </div>
+
+<style>
+    .nearby-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+    @@media (max-width: 768px) {
+        .nearby-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .nearby-column h3 {
+        border-bottom: 3px solid #111;
+        padding-bottom: 5px;
+        margin-bottom: 15px;
+    }
+</style>
 
 @code {
     private double radiusKm = 5.0;

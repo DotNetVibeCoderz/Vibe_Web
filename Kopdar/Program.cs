@@ -11,9 +11,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// Database Provider Selection
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
-    options.UseSqlite(connectionString));
+{
+    if (dbProvider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+    {
+        var conn = builder.Configuration.GetConnectionString("SqlServerConnection");
+        options.UseSqlServer(conn);
+    }
+    else if (dbProvider.Equals("MySql", StringComparison.OrdinalIgnoreCase))
+    {
+        var conn = builder.Configuration.GetConnectionString("MySqlConnection");
+        options.UseMySql(conn, ServerVersion.AutoDetect(conn));
+    }
+    else // Default to Sqlite
+    {
+        var conn = builder.Configuration.GetConnectionString("SqliteConnection");
+        options.UseSqlite(conn);
+    }
+});
 
 // Storage Provider Injection Strategy
 var storageProvider = builder.Configuration["StorageProvider"];
@@ -53,18 +70,17 @@ using (var scope = app.Services.CreateScope())
     using var context = dbFactory.CreateDbContext();
     
     // Refresh Schema & DB
-    //context.Database.EnsureDeleted();
     context.Database.EnsureCreated();
     
     if (!context.Users.Any())
     {
-        var user1 = new Kopdar.Models.AppUser { Username = "kangfadhil", Email = "fadhil@gravicode.com", PasswordHash = "admin", Latitude = -6.2, Longitude = 106.8, ProfilePictureUrl = "/images/logo.svg", Bio = "Code Bender at Gravicode Studios 💻🔥", Gender="Male" };
-        var user2 = new Kopdar.Models.AppUser { Username = "jacky", Email = "jacky@kopdar.id", PasswordHash = "admin", Latitude = -6.21, Longitude = 106.81, Bio = "Fullstack Developer. Suka kopi ☕ dan coding semalaman 🌙.", Gender="Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
-        var user3 = new Kopdar.Models.AppUser { Username = "budi", Email = "budi@kopdar.id", PasswordHash = "admin", Latitude = -6.22, Longitude = 106.82, Bio = "Gamer sejati. Main Valorant dan Dota 2 🎮", Gender="Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
-        var user4 = new Kopdar.Models.AppUser { Username = "siti", Email = "siti@kopdar.id", PasswordHash = "admin", Latitude = -6.25, Longitude = 106.85, Bio = "Suka masak masakan nusantara 🍳. Traveller ✈️.", Gender="Female", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png" };
-        var user5 = new Kopdar.Models.AppUser { Username = "gamer_pro", Email = "gamer@kopdar.id", PasswordHash = "admin", Latitude = -6.18, Longitude = 106.82, Bio = "Hardcore gamer, jago Valorant. Fullstack dev at night.", Gender="Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
-        var user6 = new Kopdar.Models.AppUser { Username = "lisa_blackpink", Email = "lisa@kopdar.id", PasswordHash = "admin", Latitude = -6.15, Longitude = 106.75, Bio = "Pecinta musik K-pop 🎧, dancer 💃.", Gender="Female", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png" };
-        var user7 = new Kopdar.Models.AppUser { Username = "kopi_senja", Email = "kopi@kopdar.id", PasswordHash = "admin", Latitude = -6.28, Longitude = 106.88, Bio = "Anak indie suka kopi senja ☕ dan baca buku puisi 📖.", Gender="Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
+        var user1 = new Kopdar.Models.AppUser { Username = "kangfadhil", Email = "fadhil@gravicode.com", PasswordHash = "admin", Latitude = -6.2, Longitude = 106.8, ProfilePictureUrl = "/images/logo.svg", Bio = "Code Bender at Gravicode Studios 💻🔥", Gender = "Male" };
+        var user2 = new Kopdar.Models.AppUser { Username = "jacky", Email = "jacky@kopdar.id", PasswordHash = "admin", Latitude = -6.21, Longitude = 106.81, Bio = "Fullstack Developer. Suka kopi ☕ dan coding semalaman 🌙.", Gender = "Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
+        var user3 = new Kopdar.Models.AppUser { Username = "budi", Email = "budi@kopdar.id", PasswordHash = "admin", Latitude = -6.22, Longitude = 106.82, Bio = "Gamer sejati. Main Valorant dan Dota 2 🎮", Gender = "Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
+        var user4 = new Kopdar.Models.AppUser { Username = "siti", Email = "siti@kopdar.id", PasswordHash = "admin", Latitude = -6.25, Longitude = 106.85, Bio = "Suka masak masakan nusantara 🍳. Traveller ✈️.", Gender = "Female", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png" };
+        var user5 = new Kopdar.Models.AppUser { Username = "gamer_pro", Email = "gamer@kopdar.id", PasswordHash = "admin", Latitude = -6.18, Longitude = 106.82, Bio = "Hardcore gamer, jago Valorant. Fullstack dev at night.", Gender = "Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
+        var user6 = new Kopdar.Models.AppUser { Username = "lisa_blackpink", Email = "lisa@kopdar.id", PasswordHash = "admin", Latitude = -6.15, Longitude = 106.75, Bio = "Pecinta musik K-pop 🎧, dancer 💃.", Gender = "Female", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png" };
+        var user7 = new Kopdar.Models.AppUser { Username = "kopi_senja", Email = "kopi@kopdar.id", PasswordHash = "admin", Latitude = -6.28, Longitude = 106.88, Bio = "Anak indie suka kopi senja ☕ dan baca buku puisi 📖.", Gender = "Male", ProfilePictureUrl = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png" };
 
         context.Users.AddRange(user1, user2, user3, user4, user5, user6, user7);
         context.SaveChanges();
@@ -73,7 +89,7 @@ using (var scope = app.Services.CreateScope())
         var group1 = new Kopdar.Models.ChatGroup { Name = "Gravicode Studios", Description = "Developer Community and Software Engineering Talk 🚀", CreatorId = user1.Id, Latitude = -6.2, Longitude = 106.8, IsPublic = true, GroupPictureUrl = "https://cdn-icons-png.flaticon.com/512/32/32441.png" };
         var group2 = new Kopdar.Models.ChatGroup { Name = "Gamer Jakarta", Description = "Mabar Valorant, ML, PUBG, Dota 2 🎮🔥", CreatorId = user3.Id, Latitude = -6.22, Longitude = 106.82, IsPublic = true, GroupPictureUrl = "https://cdn-icons-png.flaticon.com/512/32/32441.png" };
         var group3 = new Kopdar.Models.ChatGroup { Name = "Pecinta Kopi Nusantara", Description = "Membahas kopi dari seluruh penjuru Indonesia ☕🇮🇩", CreatorId = user7.Id, Latitude = -6.28, Longitude = 106.88, IsPublic = true, GroupPictureUrl = "https://cdn-icons-png.flaticon.com/512/32/32441.png" };
-        
+
         context.ChatGroups.AddRange(group1, group2, group3);
         context.SaveChanges();
 
@@ -87,7 +103,7 @@ using (var scope = app.Services.CreateScope())
             new Kopdar.Models.GroupMember { GroupId = group3.Id, UserId = user4.Id }
         );
         context.SaveChanges();
-        
+
         // Seed Posts with emojis, empty mediaUrls, etc
         var posts = new List<Kopdar.Models.Post>
         {
@@ -130,7 +146,7 @@ using (var scope = app.Services.CreateScope())
             new Kopdar.Models.Message { SenderId = user3.Id, ReceiverId = user5.Id, Content = "Bro masuk discord sekarang, mau mulai nih gamenya 🎮", SentAt = DateTime.UtcNow.AddMinutes(-5), MediaUrl = "" }
         };
         context.Messages.AddRange(msgs);
-        
+
         // Seed Notifications
         context.Notifications.AddRange(
             new Kopdar.Models.Notification { UserId = user1.Id, Content = "**jacky** liked your post.", IsRead = false, CreatedAt = DateTime.UtcNow.AddMinutes(-20) },

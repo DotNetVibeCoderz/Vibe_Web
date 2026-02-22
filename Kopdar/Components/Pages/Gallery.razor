@@ -1,0 +1,199 @@
+@page "/gallery"
+@inject Kopdar.Services.AppService AppService
+@inject Kopdar.Services.IStorageService StorageService
+@using Kopdar.Models
+@using Kopdar.Helpers
+
+<PageTitle>My Gallery - Kopdar</PageTitle>
+
+<div class="brutal-card" style="background: var(--accent);">
+    <h1 style="margin: 0;">📸 My Gallery</h1>
+    <p>Organize your photos into folders and share them with the community.</p>
+</div>
+
+<div class="row" style="display: flex; gap: 20px; flex-wrap: wrap;">
+    <div class="brutal-card" style="flex: 1; min-width: 300px;">
+        <h3>Create New Folder</h3>
+        <div style="display: flex; gap: 10px;">
+            <input @bind="newFolderName" class="brutal-input" style="margin-bottom: 0;" placeholder="Folder Name..." />
+            <button class="brutal-btn primary" @onclick="CreateFolder">Create</button>
+        </div>
+    </div>
+
+    @if (folders != null && folders.Any())
+    {
+        <div class="brutal-card" style="flex: 1; min-width: 300px;">
+            <h3>Upload Image</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <select @bind="selectedFolderId" class="brutal-input" style="margin-bottom: 0;">
+                    <option value="0">Select Folder...</option>
+                    @foreach (var f in folders)
+                    {
+                        <option value="@f.Id">@f.Name</option>
+                    }
+                </select>
+                <input @bind="imageCaption" class="brutal-input" style="margin-bottom: 0;" placeholder="Image caption..." />
+                <label class="brutal-btn secondary" style="text-align: center; cursor: pointer;">
+                    @(isUploading ? "Uploading..." : "Select & Upload")
+                    <InputFile OnChange="HandleImageUpload" style="display: none;" disabled="@isUploading" />
+                </label>
+            </div>
+        </div>
+    }
+</div>
+
+<hr style="border: 2px solid #111; margin: 30px 0;" />
+
+@if (folders == null)
+{
+    <p>Loading gallery...</p>
+}
+else if (!folders.Any())
+{
+    <div class="brutal-card" style="text-align: center; padding: 50px;">
+        <h3>No folders yet. Start by creating one above!</h3>
+    </div>
+}
+else
+{
+    @foreach (var folder in folders)
+    {
+        <div class="brutal-card">
+            <h2 style="margin-top: 0; border-bottom: 3px solid #111; padding-bottom: 5px;">📁 @folder.Name</h2>
+            <div class="gallery-grid">
+                @if (folder.Images != null && folder.Images.Any())
+                {
+                    @foreach (var img in folder.Images)
+                    {
+                        <div class="gallery-item" @onclick="() => OpenImage(img)">
+                            <img src="@img.ImageUrl" alt="@img.Caption" />
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p style="font-style: italic; color: #666;">This folder is empty.</p>
+                }
+            </div>
+        </div>
+    }
+}
+
+@if (selectedImage != null)
+{
+    <div class="brutal-modal-overlay" @onclick="CloseImage">
+        <div class="brutal-modal" @onclick:stopPropagation>
+            <div style="display: flex; justify-content: flex-end;">
+                <button class="brutal-btn" style="padding: 5px 10px;" @onclick="CloseImage">X</button>
+            </div>
+            <div style="text-align: center; margin-top: 10px;">
+                <img src="@selectedImage.ImageUrl" style="max-width: 100%; max-height: 60vh; border: 4px solid #111; box-shadow: 5px 5px 0px #111;" />
+                <p style="margin-top: 15px; font-size: 1.2rem; font-weight: bold;">@selectedImage.Caption</p>
+                <div style="margin-bottom: 20px;">
+                   <button class="brutal-btn accent" @onclick="LikeImage">❤️ @selectedImage.Likes.Count Likes</button>
+                </div>
+            </div>
+            
+            <div style="border-top: 3px solid #111; padding-top: 15px;">
+                <h4>Comments (@selectedImage.Comments.Count)</h4>
+                <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+                    @foreach (var comment in selectedImage.Comments.OrderBy(c => c.CreatedAt))
+                    {
+                        <div style="margin-bottom: 10px; padding: 5px; border-bottom: 1px dashed #111;">
+                            <strong>@comment.User.Username:</strong> @comment.Content
+                        </div>
+                    }
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <input @bind="newComment" class="brutal-input" style="margin-bottom: 0;" placeholder="Add a comment..." />
+                    <button class="brutal-btn primary" @onclick="AddComment">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<GalleryFolder> folders;
+    private string newFolderName = "";
+    private int selectedFolderId = 0;
+    private string imageCaption = "";
+    private bool isUploading = false;
+
+    private GalleryImage selectedImage;
+    private string newComment = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGallery();
+    }
+
+    private async Task LoadGallery()
+    {
+        if (AppService.CurrentUser != null)
+        {
+            folders = await AppService.GetUserGalleryFoldersAsync(AppService.CurrentUser.Id);
+        }
+    }
+
+    private async Task CreateFolder()
+    {
+        if (!string.IsNullOrWhiteSpace(newFolderName))
+        {
+            await AppService.CreateGalleryFolderAsync(newFolderName);
+            newFolderName = "";
+            await LoadGallery();
+        }
+    }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        if (selectedFolderId == 0) return;
+
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            var url = await StorageService.UploadFileAsync(file.Name, stream);
+            await AppService.UploadGalleryImageAsync(selectedFolderId, url, imageCaption);
+            imageCaption = "";
+            await LoadGallery();
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void OpenImage(GalleryImage img)
+    {
+        selectedImage = img;
+    }
+
+    private void CloseImage()
+    {
+        selectedImage = null;
+    }
+
+    private async Task LikeImage()
+    {
+        if (selectedImage != null)
+        {
+            await AppService.LikeGalleryImageAsync(selectedImage.Id);
+            await LoadGallery();
+            selectedImage = folders.SelectMany(f => f.Images).FirstOrDefault(i => i.Id == selectedImage.Id);
+        }
+    }
+
+    private async Task AddComment()
+    {
+        if (selectedImage != null && !string.IsNullOrWhiteSpace(newComment))
+        {
+            await AppService.AddGalleryCommentAsync(selectedImage.Id, newComment);
+            newComment = "";
+            await LoadGallery();
+            selectedImage = folders.SelectMany(f => f.Images).FirstOrDefault(i => i.Id == selectedImage.Id);
+        }
+    }
+}

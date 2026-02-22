@@ -7,10 +7,16 @@
 
 <PageTitle>Chat - Kopdar</PageTitle>
 
-<div style="display: flex; gap: 20px; height: 75vh;">
+<div class="chat-layout">
     <!-- Contacts List -->
-    <div style="width: 250px; border-right: 3px solid #111; padding-right: 15px; display: flex; flex-direction: column;">
-        <h3>Contacts</h3>
+    <div class="contacts-list @(UserId.HasValue ? "d-none d-md-flex" : "d-flex")">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;">Contacts</h3>
+            @if(UserId.HasValue)
+            {
+                <button class="brutal-btn d-md-none" style="padding: 2px 8px;" @onclick="() => UserId = null">Back</button>
+            }
+        </div>
         <p style="font-size: 0.8rem;">Select a user to chat</p>
         <hr style="border: 1.5px solid #111;" />
         
@@ -39,18 +45,20 @@
     </div>
 
     <!-- Chat Window -->
-    <div style="flex: 1; display: flex; flex-direction: column;" class="chat-container">
+    <div class="chat-window @(UserId.HasValue ? "d-flex" : "d-none d-md-flex")">
         @if (UserId.HasValue)
         {
             <div style="padding: 10px; border-bottom: 3px solid #111; background: var(--accent); display: flex; justify-content: space-between; align-items: center;">
-                <strong>Chatting with #@UserId.Value</strong>
-                <button class="brutal-btn primary" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="DeleteThread">🗑️ Delete Thread</button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="brutal-btn d-md-none" style="padding: 5px 10px;" @onclick="() => UserId = null">←</button>
+                    <strong>Chatting with #@UserId.Value</strong>
+                </div>
+                <button class="brutal-btn primary" style="padding: 5px 10px; font-size: 0.8rem;" @onclick="DeleteThread">🗑️</button>
             </div>
             
             <div class="chat-messages">
                 @if (messages != null)
                 {
-                    var lastDate = "";
                     foreach(var msg in messages)
                     {
                         var msgDate = TimeHelper.ToFriendlyTime(msg.SentAt);
@@ -121,6 +129,36 @@
     </div>
 </div>
 
+<style>
+    .chat-layout {
+        display: flex;
+        gap: 20px;
+        height: 80vh;
+    }
+    .contacts-list {
+        width: 280px;
+        border-right: 3px solid #111;
+        padding-right: 15px;
+        flex-direction: column;
+    }
+    .chat-window {
+        flex: 1;
+        flex-direction: column;
+        border: 3px solid #111;
+        background: var(--card-bg);
+    }
+    .d-none { display: none; }
+    .d-flex { display: flex; }
+    @@media (min-width: 768px) {
+        .d-md-flex { display: flex !important; }
+        .d-md-none { display: none !important; }
+    }
+    @@media (max-width: 767px) {
+        .contacts-list { width: 100%; border-right: none; padding-right: 0; }
+        .chat-layout { height: auto; min-height: 70vh; }
+    }
+</style>
+
 @code {
     [Parameter] public int? UserId { get; set; }
     
@@ -144,8 +182,6 @@
         if (UserId.HasValue)
         {
             messages = await AppService.GetChatHistoryAsync(UserId.Value);
-            
-            // Refresh contacts just in case
             contacts = await AppService.GetChatContactsAsync();
         }
     }
@@ -170,7 +206,6 @@
         StateHasChanged();
         
         var file = e.File;
-        // Allows up to 100 MB upload
         using var stream = file.OpenReadStream(104857600);
         newMediaUrl = await StorageService.UploadFileAsync(file.Name, stream);
         
@@ -193,8 +228,6 @@
             await AppService.SendMessageAsync(UserId.Value, null, newMessage, newMediaUrl);
             newMessage = string.Empty;
             newMediaUrl = string.Empty;
-            
-            // Reload contacts in case this is a new thread
             contacts = await AppService.GetChatContactsAsync();
         }
     }
@@ -206,7 +239,7 @@
             await AppService.DeleteChatThreadAsync(UserId.Value);
             messages.Clear();
             contacts = await AppService.GetChatContactsAsync();
-            NavManager.NavigateTo("/chat");
+            UserId = null;
         }
     }
 

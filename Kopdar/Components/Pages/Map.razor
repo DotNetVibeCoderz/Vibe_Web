@@ -108,14 +108,15 @@
 
     protected override async Task OnInitializedAsync()
     {
-        allUsers = await AppService.GetAllActiveUsersAsync();
-        allGroups = await AppService.GetAllPublicGroupsAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && AppService.CurrentUser != null)
         {
+            allUsers = await AppService.GetAllActiveUsersAsync();
+            allGroups = await AppService.GetAllPublicGroupsAsync();
+
             var lat = AppService.CurrentUser.Latitude;
             var lon = AppService.CurrentUser.Longitude;
 
@@ -123,6 +124,7 @@
             var groupPayload = allGroups.Select(g => new { g.Id, g.Name, g.Description, g.Latitude, g.Longitude }).ToList();
 
             await JSRuntime.InvokeVoidAsync("initMap", "map", lat, lon, userPayload, groupPayload);
+            StateHasChanged();
         }
     }
 
