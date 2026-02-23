@@ -118,10 +118,11 @@
         if (currentLocation != null)
         {
             await currentLocation.GetLocation();
-            if (AppService.CurrentUser != null)
+            if (AppService.CurrentUser != null && currentLocation.latitude!=0 && currentLocation.longitude!=0)
             {
                 AppService.CurrentUser.Latitude = currentLocation.latitude;
                 AppService.CurrentUser.Longitude = currentLocation.longitude;
+                await AppService.UpdateUserLocation();
             }
         }
     }

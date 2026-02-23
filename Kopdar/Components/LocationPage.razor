@@ -1,4 +1,5 @@
 ﻿@page "/location"
+@using System.Diagnostics
 @inject IJSRuntime JS
 
 <div style="display:none;">
@@ -10,7 +11,6 @@
 @code {
     public double latitude { set; get; } = 0;
     public double longitude { set; get; } = 0;
-
     [JSInvokable]
     public void ReceiveLocation(double lat, double lon)
     {
@@ -21,8 +21,14 @@
 
     public async Task GetLocation()
     {
-        var objRef = DotNetObjectReference.Create(this);
-        if(objRef!=null)
+        try
+        {
+            var objRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("getLocation", objRef);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+        }
     }
 }
