@@ -1,15 +1,35 @@
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Web;
-using Microsoft.EntityFrameworkCore;
 using Kopdar.Components;
 using Kopdar.Data;
 using Kopdar.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.EntityFrameworkCore;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// BLAZOR COOKIE Auth Code (begin)
+
+builder.Services.AddRazorPages();
+builder.Services.AddControllers();
+builder.Services.Configure<CookiePolicyOptions>(options =>
+{
+    options.CheckConsentNeeded = context => true;
+    options.MinimumSameSitePolicy = SameSiteMode.None;
+});
+builder.Services.AddAuthentication(
+    CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie();
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<HttpContextAccessor>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<HttpClient>();
+// BLAZOR COOKIE Auth Code (end)
 
 // Database Provider Selection
 var dbProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
@@ -47,7 +67,10 @@ else // Default fallback to FileSystem
     builder.Services.AddSingleton<IStorageService, LocalStorageService>();
 }
 builder.Services.AddScoped<AppService>();
-
+builder.Services.AddSignalR(hubOptions =>
+{
+    hubOptions.MaximumReceiveMessageSize = 128 * 1024; // 1MB
+});
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -55,6 +78,17 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
+
+// ******
+// BLAZOR COOKIE Auth Code (begin)
+app.UseRouting();
+app.UseCookiePolicy();
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute("default", "{controller=Home}/{action=Index}/{id?}");
+app.MapRazorPages(); // enable cshtml pages
+// BLAZOR COOKIE Auth Code (end)
 
 app.UseHttpsRedirection();
 app.UseAntiforgery();

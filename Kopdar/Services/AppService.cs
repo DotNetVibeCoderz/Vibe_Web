@@ -24,6 +24,18 @@ public class AppService
 
     private void NotifyStateChanged() => OnStateChanged?.Invoke();
 
+    public bool IsLoggedIn => CurrentUser != null;  
+    public async Task LoginByUsername(string username)
+    {
+        using var db = _dbFactory.CreateDbContext();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user != null)
+        {
+            CurrentUser = user;
+            NotifyStateChanged();
+        }
+    }
+
     public async Task LoginAsync(string username, string password)
     {
         using var db = _dbFactory.CreateDbContext();
@@ -34,7 +46,18 @@ public class AppService
             NotifyStateChanged();
         }
     }
-    
+    public async Task<bool> LoginForm(string username, string password)
+    {
+        using var db = _dbFactory.CreateDbContext();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username && u.PasswordHash == password);
+        if (user != null)
+        {
+            CurrentUser = user;
+            NotifyStateChanged();
+            return true;
+        }
+        return false;
+    }
     public void Logout()
     {
         CurrentUser = null;

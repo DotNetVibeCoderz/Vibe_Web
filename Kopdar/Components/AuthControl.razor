@@ -1,0 +1,33 @@
+﻿@inject NavigationManager NavMgr
+@inject Kopdar.Services.AppService AppService
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender)
+        {
+            var user = (await authenticationStateTask).User;
+
+            if (!user.Identity.IsAuthenticated)
+            {
+                AppService.Logout();
+                //NavMgr.NavigateTo("/auth/login");
+            }
+            else
+            {
+                if(AppService.IsLoggedIn)
+                {
+                    return;
+                }
+                await AppService.LoginByUsername(user.Identity.Name);
+            }
+        } 
+    }
+   
+}

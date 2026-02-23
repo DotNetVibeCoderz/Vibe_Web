@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 @inject Kopdar.Services.AppService AppService
 @implements IDisposable
-
+@inject NavigationManager NavMgr
+@inject IJSRuntime IJS
+<AuthControl></AuthControl>
 <div class="app-container">
     @if (AppService.CurrentUser != null)
     {
@@ -47,7 +49,6 @@
                 <button class="brutal-btn" onclick="toggleTheme()">🌓</button>
             </div>
         </div>
-        
         <div class="content-body">
             @if (AppService.CurrentUser != null)
             {
@@ -104,14 +105,13 @@
         {
             await UpdateLocation();
             Timer = new();
-            
+
             Timer.SetTimer(30000); // Update location every 30 seconds
-            Timer.OnElapsed += async () =>
-            {
-                await UpdateLocation();
-            };
+            Timer.OnElapsed += UpdateLocationHandler;
         }
     }
+
+    async void UpdateLocationHandler() => await UpdateLocation();
 
     async Task UpdateLocation()
     {
@@ -139,13 +139,18 @@
     private void CloseSidebar() => showSidebar = false;
 
     public void Dispose()
-    {
+    {        
+        Timer?.OnElapsed -= UpdateLocationHandler;
         AppService.OnStateChanged -= async () => await LoadData();
         AppService.OnMessageReceived -= async (m) => await LoadData();
     }
 
-    private void Logout()
+    private async Task Logout()
     {
-        AppService.Logout();
+        Timer?.OnElapsed -= UpdateLocationHandler;
+        await IJS.InvokeAsync<object>("OpenUrl", "/logout");
+     
+        //NavMgr.NavigateTo("/logout",);
+        //AppService.Logout();
     }
 }

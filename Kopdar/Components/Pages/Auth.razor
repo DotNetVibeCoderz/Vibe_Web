@@ -1,5 +1,9 @@
 @page "/auth"
 @inject Kopdar.Services.AppService AppService
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Web
+@inject NavigationManager NavMgr
+@inject IJSRuntime IJS
 
 <div style="max-width: 400px; margin: 0 auto; margin-top: 50px; text-align: center;">
     
@@ -76,15 +80,22 @@
             errorMessage = "Username and password cannot be empty!";
             return;
         }
-
+        string logUrl = $"/login?paramUsername={encode(username)}&paramPassword={encode(password)}";
+        await IJS.InvokeAsync<object>("OpenUrl", logUrl);
+        /*
+        //old way
         await AppService.LoginAsync(username, password);
         
         if (AppService.CurrentUser == null)
         {
             errorMessage = "Invalid username or password! Please try again.";
         }
+        */
     }
-
+    private string encode(string param)
+    {
+        return HttpUtility.UrlEncode(param);
+    }
     private async Task Register()
     {
         errorMessage = "";
@@ -106,6 +117,20 @@
         else
         {
             errorMessage = "Username is already taken! Please choose another one.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = NavMgr.ToAbsoluteUri(NavMgr.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("result", out var resultString))
+        {
+            var result = bool.Parse(resultString);
+            if (!result)
+            {
+                errorMessage = "Login failed! Invalid username or password.";
+                //toastService.ShowWarning("username/password salah atau tidak terdaftar");
+            }
         }
     }
 }
