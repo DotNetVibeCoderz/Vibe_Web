@@ -21,7 +21,21 @@ public class AppService
     {
         _dbFactory = dbFactory;
     }
-
+    public async Task UpdateUserLocation()
+    {
+        if (CurrentUser == null) return;
+        using var db = _dbFactory.CreateDbContext();
+        var user = await db.Users.FindAsync(CurrentUser.Id);
+        if (user != null)
+        {
+            if (user.Latitude != CurrentUser.Latitude && user.Longitude != CurrentUser.Longitude)
+            {
+                user.Latitude = CurrentUser.Latitude;
+                user.Longitude = CurrentUser.Longitude;
+                await db.SaveChangesAsync();
+            }
+        }
+    }
     private void NotifyStateChanged() => OnStateChanged?.Invoke();
 
     public bool IsLoggedIn => CurrentUser != null;  
