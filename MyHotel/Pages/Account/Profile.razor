@@ -1,0 +1,63 @@
+@page "/profile"
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject UserManager<IdentityUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<PageTitle>Edit Profile</PageTitle>
+
+<MudText Typo="Typo.h3" Class="mb-4">Edit Profile</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="8" md="6">
+        <MudCard>
+            <MudCardContent>
+                <MudTextField @bind-Value="Email" Label="Email Address" Variant="Variant.Outlined" Class="mb-4" />
+                <MudTextField @bind-Value="Phone" Label="Phone Number" Variant="Variant.Outlined" Class="mb-4" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile">Save Profile</MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    string Email = "";
+    string Phone = "";
+    IdentityUser currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            currentUser = await UserManager.FindByNameAsync(user.Identity.Name);
+            if (currentUser != null)
+            {
+                Email = currentUser.Email ?? "";
+                Phone = currentUser.PhoneNumber ?? "";
+            }
+        }
+    }
+
+    async Task SaveProfile()
+    {
+        if (currentUser != null)
+        {
+            currentUser.Email = Email;
+            currentUser.PhoneNumber = Phone;
+            var result = await UserManager.UpdateAsync(currentUser);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Profile updated successfully", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to update profile", Severity.Error);
+            }
+        }
+    }
+}

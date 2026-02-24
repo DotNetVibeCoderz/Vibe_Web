@@ -1,0 +1,120 @@
+@page "/reports"
+@using MyHotel.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+
+<PageTitle>Reports</PageTitle>
+
+<MudText Typo="Typo.h3" Class="mb-4">Reports & Analytics</MudText>
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudSelect T="int" Value="@SelectedYear" ValueChanged="OnYearChanged" Label="Filter Data by Year" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:250px;">
+        <MudSelectItem Value="2022">2022</MudSelectItem>
+        <MudSelectItem Value="2023">2023</MudSelectItem>
+        <MudSelectItem Value="2024">2024</MudSelectItem>
+        <MudSelectItem Value="2025">2025</MudSelectItem>
+    </MudSelect>
+</MudPaper>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Revenue by Month (Millions)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudChart T="double" ChartType="ChartType.Bar" ChartSeries="@RevenueSeries" ChartLabels="@MonthLabels" Width="100%" Height="300px" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Average Occupancy Trends (%)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudChart T="double" ChartType="ChartType.Line" ChartSeries="@OccupancySeries" ChartLabels="@MonthLabels" Width="100%" Height="300px" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Reservation Status Distribution</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudChart T="double" ChartType="ChartType.Pie" ChartSeries="@StatusData.AsChartDataSet()" ChartLabels="@StatusLabels" Width="100%" Height="300px" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Room Type Popularity</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@RoomTypeData.AsChartDataSet()" ChartLabels="@RoomTypeLabels" Width="100%" Height="300px" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    public int SelectedYear { get; set; } = DateTime.Now.Year;
+    
+    public string[] MonthLabels = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    
+    public List<ChartSeries<double>> RevenueSeries = new();
+    public List<ChartSeries<double>> OccupancySeries = new();
+    
+    public double[] StatusData = { 0, 0, 0, 0 };
+    public string[] StatusLabels = { "Confirmed", "CheckedIn", "CheckedOut", "Cancelled" };
+
+    public double[] RoomTypeData = { 0, 0, 0 };
+    public string[] RoomTypeLabels = { "Standard", "Deluxe", "Suite" };
+
+    protected override void OnInitialized()
+    {
+        GenerateSimulatedData();
+    }
+
+    void OnYearChanged(int year)
+    {
+        SelectedYear = year;
+        GenerateSimulatedData();
+    }
+
+    void GenerateSimulatedData()
+    {
+        // Use the selected year as a seed so the random data remains consistent for the same year
+        var rand = new Random(SelectedYear); 
+        
+        var revData = new double[12];
+        var occData = new double[12];
+        for(int i = 0; i < 12; i++)
+        {
+            revData[i] = rand.Next(20, 100);
+            occData[i] = rand.Next(40, 95);
+        }
+        
+        RevenueSeries = new List<ChartSeries<double>> 
+        { 
+            new ChartSeries<double> { Name = $"Revenue {SelectedYear}", Data = revData } 
+        };
+        OccupancySeries = new List<ChartSeries<double>> 
+        { 
+            new ChartSeries<double> { Name = $"Occupancy {SelectedYear}", Data = occData } 
+        };
+
+        StatusData = new double[] { rand.Next(50,150), rand.Next(10,50), rand.Next(40,100), rand.Next(5,25) };
+        RoomTypeData = new double[] { rand.Next(100,200), rand.Next(50,150), rand.Next(20,80) };
+    }
+}

@@ -1,0 +1,147 @@
+@page "/rooms"
+@using MyHotel.Data
+@using MyHotel.Models
+@using Microsoft.EntityFrameworkCore
+@using MyHotel.Pages.Dialogs
+@using System.Text
+@inject AppDbContext DbContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Rooms Management</PageTitle>
+
+<MudText Typo="Typo.h3" Class="mb-4">Rooms</MudText>
+
+<MudDataGrid T="Room" Items="@RoomsList" Filterable="true" SortMode="SortMode.Multiple" QuickFilter="@quickFilter">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Room List</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddDialog" Class="mr-2">Add New</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv">Export CSV</MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.Number" Title="Number" />
+        <PropertyColumn Property="x => x.Type" Title="Type" />
+        <PropertyColumn Property="x => x.Status" Title="Status">
+            <CellTemplate>
+                <MudChip T="string" Color="@GetStatusColor(context.Item.Status)" Size="Size.Small">@context.Item.Status</MudChip>
+            </CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.Price" Title="Price" Format="C0" />
+        <PropertyColumn Property="x => x.Notes" Title="Notes" />
+        <TemplateColumn CellClass="d-flex justify-end">
+            <CellTemplate>
+                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context.Item))" />
+                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" OnClick="@(() => Delete(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="Room" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    List<Room> RoomsList = new();
+    string searchString = "";
+
+    Func<Room, bool> quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (x.Number.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.Type.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.Status.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.Notes != null && x.Notes.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        RoomsList = await DbContext.Rooms.ToListAsync();
+    }
+
+    Color GetStatusColor(string status)
+    {
+        return status switch
+        {
+            "Available" => Color.Success,
+            "Occupied" => Color.Error,
+            "Cleaning" => Color.Warning,
+            "Maintenance" => Color.Dark,
+            _ => Color.Default
+        };
+    }
+
+    async Task OpenAddDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<RoomDialog>("Add Room", options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled && result.Data is Room newRoom)
+        {
+            DbContext.Rooms.Add(newRoom);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Room added", Severity.Success);
+        }
+    }
+
+    async Task Edit(Room room)
+    {
+        var editModel = new Room { Id = room.Id, Number = room.Number, Type = room.Type, Status = room.Status, Price = room.Price, Notes = room.Notes };
+        var parameters = new DialogParameters { ["Model"] = editModel };
+        var dialog = await DialogService.ShowAsync<RoomDialog>("Edit Room", parameters);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled && result.Data is Room updated)
+        {
+            var entity = await DbContext.Rooms.FindAsync(updated.Id);
+            if(entity != null){
+                entity.Number = updated.Number;
+                entity.Type = updated.Type;
+                entity.Status = updated.Status;
+                entity.Price = updated.Price;
+                entity.Notes = updated.Notes;
+                await DbContext.SaveChangesAsync();
+                await LoadData();
+                Snackbar.Add("Room updated", Severity.Success);
+            }
+        }
+    }
+
+    async Task Delete(Room room)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Warning", 
+            $"Are you sure you want to delete Room {room.Number}?", 
+            yesText: "Delete", cancelText: "Cancel");
+            
+        if (result == true)
+        {
+            DbContext.Rooms.Remove(room);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Room deleted", Severity.Success);
+        }
+    }
+
+    async Task ExportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Number,Type,Status,Price,Notes");
+        foreach (var item in RoomsList)
+        {
+            var notes = item.Notes?.Replace(",", " ") ?? "";
+            sb.AppendLine($"{item.Number},{item.Type},{item.Status},{item.Price},{notes}");
+        }
+        await JSRuntime.InvokeVoidAsync("downloadFile", "Rooms.csv", "text/csv", sb.ToString());
+    }
+}

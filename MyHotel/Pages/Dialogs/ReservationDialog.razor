@@ -1,0 +1,52 @@
+@using MyHotel.Models
+@using MudBlazor
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="int" @bind-Value="Model.GuestId" Label="Guest">
+            @foreach (var g in Guests)
+            {
+                <MudSelectItem Value="@g.Id">@g.FirstName @g.LastName</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="int" @bind-Value="Model.RoomId" Label="Room">
+            @foreach (var r in Rooms)
+            {
+                <MudSelectItem Value="@r.Id">@r.Number (@r.Type)</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker @bind-Date="CheckIn" Label="Check In" />
+        <MudDatePicker @bind-Date="CheckOut" Label="Check Out" />
+        <MudSelect T="string" @bind-Value="Model.Status" Label="Status">
+            <MudSelectItem Value="@("Confirmed")">Confirmed</MudSelectItem>
+            <MudSelectItem Value="@("CheckedIn")">CheckedIn</MudSelectItem>
+            <MudSelectItem Value="@("CheckedOut")">CheckedOut</MudSelectItem>
+            <MudSelectItem Value="@("Cancelled")">Cancelled</MudSelectItem>
+        </MudSelect>
+        <MudNumericField @bind-Value="Model.TotalAmount" Label="Total Amount" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Reservation Model { get; set; } = new();
+    [Parameter] public List<Guest> Guests { get; set; } = new();
+    [Parameter] public List<Room> Rooms { get; set; } = new();
+
+    DateTime? CheckIn 
+    { 
+        get => Model.CheckInDate == default ? DateTime.Today : Model.CheckInDate; 
+        set => Model.CheckInDate = value ?? DateTime.Today; 
+    }
+    DateTime? CheckOut 
+    { 
+        get => Model.CheckOutDate == default ? DateTime.Today.AddDays(1) : Model.CheckOutDate; 
+        set => Model.CheckOutDate = value ?? DateTime.Today.AddDays(1); 
+    }
+
+    void Submit() => MudDialog.Close(DialogResult.Ok(Model));
+    void Cancel() => MudDialog.Cancel();
+}

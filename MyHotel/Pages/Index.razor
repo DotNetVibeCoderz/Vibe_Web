@@ -1,0 +1,120 @@
+@page "/"
+@using MyHotel.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+
+<PageTitle>Dashboard - MyHotel</PageTitle>
+
+<MudText Typo="Typo.h3" Class="mb-4">Dashboard</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+            <MudIcon Icon="@Icons.Material.Filled.MeetingRoom" Color="Color.Primary" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+            <div>
+                <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Total Rooms</MudText>
+                <MudText Typo="Typo.h5">@totalRooms</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+            <MudIcon Icon="@Icons.Material.Filled.EventAvailable" Color="Color.Secondary" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+            <div>
+                <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Available Rooms</MudText>
+                <MudText Typo="Typo.h5">@availableRooms</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+            <MudIcon Icon="@Icons.Material.Filled.People" Color="Color.Success" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+            <div>
+                <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Total Guests</MudText>
+                <MudText Typo="Typo.h5">@totalGuests</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+            <MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Warning" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+            <div>
+                <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Reservations</MudText>
+                <MudText Typo="Typo.h5">@totalReservations</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" md="8">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Recent Reservations</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTable Items="@recentReservations" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Guest</MudTh>
+                        <MudTh>Room</MudTh>
+                        <MudTh>Check In</MudTh>
+                        <MudTh>Status</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Guest">@context.Guest?.FirstName @context.Guest?.LastName</MudTd>
+                        <MudTd DataLabel="Room">@context.Room?.Number (@context.Room?.Type)</MudTd>
+                        <MudTd DataLabel="Check In">@context.CheckInDate.ToShortDateString()</MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Color="@(context.Status == "Confirmed" ? Color.Success : Color.Default)" Size="Size.Small">@context.Status</MudChip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Room Status</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                 <MudChart T="double" ChartType="ChartType.Pie" ChartSeries="@data.AsChartDataSet()" ChartLabels="@labels" Width="100%" Height="300px" />
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    int totalRooms;
+    int availableRooms;
+    int totalGuests;
+    int totalReservations;
+    List<MyHotel.Models.Reservation> recentReservations = new();
+
+    double[] data = { 0, 0, 0 };
+    string[] labels = { "Available", "Occupied", "Cleaning" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalRooms = await DbContext.Rooms.CountAsync();
+        availableRooms = await DbContext.Rooms.CountAsync(r => r.Status == "Available");
+        totalGuests = await DbContext.Guests.CountAsync();
+        totalReservations = await DbContext.Reservations.CountAsync();
+
+        recentReservations = await DbContext.Reservations
+            .Include(r => r.Guest)
+            .Include(r => r.Room)
+            .OrderByDescending(r => r.Id)
+            .Take(5)
+            .ToListAsync();
+
+        var occupied = await DbContext.Rooms.CountAsync(r => r.Status == "Occupied");
+        var cleaning = await DbContext.Rooms.CountAsync(r => r.Status == "Cleaning");
+
+        data = new double[] { availableRooms, occupied, cleaning };
+    }
+}

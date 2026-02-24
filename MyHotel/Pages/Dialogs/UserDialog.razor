@@ -1,0 +1,62 @@
+@using Microsoft.AspNetCore.Identity
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Model.UserName" Label="Username" Required="true" />
+        <MudTextField @bind-Value="Model.Email" Label="Email" Required="true" InputType="InputType.Email" />
+        <MudTextField @bind-Value="Model.PhoneNumber" Label="Phone Number" />
+        
+        @if (IsNewUser)
+        {
+            <MudTextField @bind-Value="Password" Label="Password" Required="true" InputType="InputType.Password" />
+        }
+        else
+        {
+             <MudTextField @bind-Value="Password" Label="New Password (Leave blank to keep current)" InputType="InputType.Password" />
+        }
+
+        <MudSelect T="string" Label="Role" @bind-Value="SelectedRole" Required="true">
+            @foreach (var role in Roles)
+            {
+                <MudSelectItem Value="@role">@role</MudSelectItem>
+            }
+        </MudSelect>
+
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter] public IdentityUser Model { get; set; } = new();
+    [Parameter] public List<string> Roles { get; set; } = new();
+    [Parameter] public string SelectedRole { get; set; } = "";
+    [Parameter] public bool IsNewUser { get; set; } = false;
+
+    public string Password { get; set; } = "";
+
+    void Submit() 
+    {
+        // Return the model, the password, and the selected role
+        MudDialog.Close(DialogResult.Ok(new UserDialogResult 
+        { 
+            User = Model, 
+            Password = Password, 
+            Role = SelectedRole 
+        }));
+    }
+
+    void Cancel() => MudDialog.Cancel();
+
+    public class UserDialogResult
+    {
+        public IdentityUser User { get; set; }
+        public string Password { get; set; }
+        public string Role { get; set; }
+    }
+}

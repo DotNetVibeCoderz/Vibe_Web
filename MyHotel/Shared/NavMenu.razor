@@ -1,0 +1,13 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    
+    <AuthorizeView>
+        <Authorized>
+            <MudNavLink Href="/rooms" Icon="@Icons.Material.Filled.MeetingRoom">Rooms Management</MudNavLink>
+            <MudNavLink Href="/guests" Icon="@Icons.Material.Filled.People">Guests Management</MudNavLink>
+            <MudNavLink Href="/reservations" Icon="@Icons.Material.Filled.Event">Reservations</MudNavLink>
+            <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.PieChart">Reports</MudNavLink>
+            <MudNavLink Href="/users" Icon="@Icons.Material.Filled.SupervisedUserCircle">User Management</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>

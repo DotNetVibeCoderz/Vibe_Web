@@ -1,0 +1,23 @@
+@using MudBlazor
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Model.FirstName" Label="First Name" Required="true" />
+        <MudTextField @bind-Value="Model.LastName" Label="Last Name" Required="true" />
+        <MudTextField @bind-Value="Model.Email" Label="Email" Required="true" />
+        <MudTextField @bind-Value="Model.Phone" Label="Phone" />
+        <MudTextField @bind-Value="Model.Address" Label="Address" />
+        <MudTextField @bind-Value="Model.Preference" Label="Preference" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public MyHotel.Models.Guest Model { get; set; } = new();
+
+    void Submit() => MudDialog.Close(DialogResult.Ok(Model));
+    void Cancel() => MudDialog.Cancel();
+}

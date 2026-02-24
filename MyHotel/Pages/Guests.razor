@@ -1,0 +1,132 @@
+@page "/guests"
+@using MyHotel.Data
+@using MyHotel.Models
+@using Microsoft.EntityFrameworkCore
+@using MyHotel.Pages.Dialogs
+@using System.Text
+@inject AppDbContext DbContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Guests Management</PageTitle>
+
+<MudText Typo="Typo.h3" Class="mb-4">Guests</MudText>
+
+<MudDataGrid T="Guest" Items="@GuestsList" Filterable="true" SortMode="SortMode.Multiple" QuickFilter="@quickFilter">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Guest List</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddDialog" Class="mr-2">Add New</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv">Export CSV</MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.FirstName" Title="First Name" />
+        <PropertyColumn Property="x => x.LastName" Title="Last Name" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <PropertyColumn Property="x => x.Phone" Title="Phone" />
+        <PropertyColumn Property="x => x.Preference" Title="Preference" />
+        <TemplateColumn CellClass="d-flex justify-end">
+            <CellTemplate>
+                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="@(() => Edit(context.Item))" />
+                <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" OnClick="@(() => Delete(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="Guest" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    List<Guest> GuestsList = new();
+    string searchString = "";
+
+    Func<Guest, bool> quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (x.FirstName.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.LastName.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.Email != null && x.Email.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (x.Phone != null && x.Phone.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        GuestsList = await DbContext.Guests.ToListAsync();
+    }
+
+    async Task OpenAddDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<GuestDialog>("Add Guest", options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled && result.Data is Guest newGuest)
+        {
+            DbContext.Guests.Add(newGuest);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Guest added", Severity.Success);
+        }
+    }
+
+    async Task Edit(Guest guest)
+    {
+        var editModel = new Guest { Id = guest.Id, FirstName = guest.FirstName, LastName = guest.LastName, Email = guest.Email, Phone = guest.Phone, Address = guest.Address, Preference = guest.Preference };
+        var parameters = new DialogParameters { ["Model"] = editModel };
+        var dialog = await DialogService.ShowAsync<GuestDialog>("Edit Guest", parameters);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled && result.Data is Guest updated)
+        {
+            var entity = await DbContext.Guests.FindAsync(updated.Id);
+            if(entity != null){
+                entity.FirstName = updated.FirstName;
+                entity.LastName = updated.LastName;
+                entity.Email = updated.Email;
+                entity.Phone = updated.Phone;
+                entity.Address = updated.Address;
+                entity.Preference = updated.Preference;
+                await DbContext.SaveChangesAsync();
+                await LoadData();
+                Snackbar.Add("Guest updated", Severity.Success);
+            }
+        }
+    }
+
+    async Task Delete(Guest guest)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Warning", 
+            $"Are you sure you want to delete {guest.FirstName} {guest.LastName}?", 
+            yesText: "Delete", cancelText: "Cancel");
+            
+        if (result == true)
+        {
+            DbContext.Guests.Remove(guest);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Guest deleted", Severity.Success);
+        }
+    }
+
+    async Task ExportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("FirstName,LastName,Email,Phone,Preference");
+        foreach (var item in GuestsList)
+        {
+            var pref = item.Preference?.Replace(",", " ") ?? "";
+            sb.AppendLine($"{item.FirstName},{item.LastName},{item.Email},{item.Phone},{pref}");
+        }
+        await JSRuntime.InvokeVoidAsync("downloadFile", "Guests.csv", "text/csv", sb.ToString());
+    }
+}

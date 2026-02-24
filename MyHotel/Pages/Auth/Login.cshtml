@@ -1,0 +1,37 @@
+@page "/login"
+@model MyHotel.Pages.Auth.LoginModel
+@using Microsoft.AspNetCore.Components.Web
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="~/" />
+    <link href="css/site.css" rel="stylesheet" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <title>Login - MyHotel</title>
+</head>
+<body class="mud-theme-manager-background" style="background-color: #f5f5f5;">
+    <div style="max-width: 400px; margin: 100px auto; padding: 30px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h2 style="text-align: center; font-family: Roboto, sans-serif; color: #333;">Login to MyHotel</h2>
+        @if (Model.HasError)
+        {
+            <div style="color: white; background-color: #f44336; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; font-family: Roboto, sans-serif;">
+                Invalid username or password
+            </div>
+        }
+        <form method="post">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-family: Roboto, sans-serif; color: #555;">Username</label>
+                <input type="text" name="Username" required style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; box-sizing: border-box;" />
+            </div>
+            <div style="margin-bottom: 25px;">
+                <label style="display: block; margin-bottom: 5px; font-family: Roboto, sans-serif; color: #555;">Password</label>
+                <input type="password" name="Password" required style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; box-sizing: border-box;" />
+            </div>
+            <button type="submit" style="width: 100%; padding: 12px; background-color: #594AE2; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-family: Roboto, sans-serif;">Login</button>
+        </form>
+    </div>
+</body>
+</html>
