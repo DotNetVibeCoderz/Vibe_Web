@@ -1,0 +1,73 @@
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudSelect T="Patient" Label="Pasien" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="MedicalRecord.Patient" ToStringFunc="@(p => p == null ? null : $"{p.FullName} ({p.MedicalRecordNumber})")">
+                @foreach (var patient in Patients)
+                {
+                    <MudSelectItem Value="@patient" />
+                }
+            </MudSelect>
+
+            <MudSelect T="Employee" Label="Dokter" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="MedicalRecord.Doctor" ToStringFunc="@(d => d == null ? null : $"{d.FullName} - {d.Specialization}")">
+                @foreach (var doctor in Doctors)
+                {
+                    <MudSelectItem Value="@doctor" />
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Tanggal Periksa" @bind-Date="date" Required="true" />
+            
+            <MudTextField @bind-Value="MedicalRecord.Diagnosis" Label="Diagnosa" Lines="2" Required="true" />
+            <MudTextField @bind-Value="MedicalRecord.Treatment" Label="Tindakan / Pengobatan" Lines="3" />
+            <MudTextField @bind-Value="MedicalRecord.Notes" Label="Catatan Dokter" Lines="3" />
+
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public MedicalRecord MedicalRecord { get; set; } = new MedicalRecord();
+
+    private List<Patient> Patients = new();
+    private List<Employee> Doctors = new();
+    private DateTime? date = DateTime.Today;
+    private MudForm form;
+    private bool success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Patients = await ClinicService.GetPatientsAsync();
+        var allEmployees = await ClinicService.GetEmployeesAsync();
+        Doctors = allEmployees.Where(e => e.Role == "Doctor").ToList();
+
+        if (MedicalRecord.Date != default)
+        {
+            date = MedicalRecord.Date;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            if (date.HasValue) MedicalRecord.Date = date.Value;
+            
+            if (MedicalRecord.Patient != null) MedicalRecord.PatientId = MedicalRecord.Patient.Id;
+            if (MedicalRecord.Doctor != null) MedicalRecord.DoctorId = MedicalRecord.Doctor.Id;
+
+            MudDialog.Close(DialogResult.Ok(MedicalRecord));
+        }
+    }
+}

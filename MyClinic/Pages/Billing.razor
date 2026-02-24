@@ -1,0 +1,139 @@
+@page "/billing"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Billing & Keuangan - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Billing, Keuangan & BPJS</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Bill,bool>(FilterFunc)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Daftar Tagihan Pasien</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Cari Pasien/Metode..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddBill">Buat Tagihan</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<Bill, object>(x=>x.Date)">Tanggal</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Bill, object>(x=>x.Patient.FullName)">Pasien</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Bill, object>(x=>x.TotalAmount)">Total (Rp)</MudTableSortLabel></MudTh>
+        <MudTh>Status Bayar</MudTh>
+        <MudTh>Metode</MudTh>
+        <MudTh>Klaim BPJS</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tanggal">@context.Date.ToString("dd-MM-yyyy")</MudTd>
+        <MudTd DataLabel="Pasien">@context.Patient?.FullName</MudTd>
+        <MudTd DataLabel="Total">@context.TotalAmount.ToString("N0")</MudTd>
+        <MudTd DataLabel="Status Bayar">
+            <MudChip T="string" Color="@(context.IsPaid ? Color.Success : Color.Error)" Size="Size.Small">
+                @(context.IsPaid ? "Lunas" : "Belum Lunas")
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Metode">
+            <MudChip T="string" Color="Color.Info" Size="Size.Small">@context.PaymentMethod</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Klaim BPJS">
+            @if(context.PaymentMethod == "BPJS")
+            {
+                <MudChip T="string" Color="@GetBpjsColor(context.BpjsClaimStatus)" Size="Size.Small">
+                    @context.BpjsClaimStatus
+                </MudChip>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Surface">-</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditBill(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteBill(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString = "";
+    private List<Bill> Elements = new List<Bill>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetBillsAsync();
+    }
+
+    private Color GetBpjsColor(string status)
+    {
+        return status switch
+        {
+            "Claimed" => Color.Success,
+            "Pending" => Color.Warning,
+            "None" => Color.Error,
+            _ => Color.Default
+        };
+    }
+
+    private bool FilterFunc(Bill element)
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (element.PaymentMethod.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.Patient?.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase) == true) return true;
+        return false;
+    }
+
+    private async Task AddBill()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<BillDialog>("Buat Tagihan Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddBillAsync((Bill)result.Data);
+            Snackbar.Add("Tagihan berhasil dibuat", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditBill(Bill bill)
+    {
+        var parameters = new DialogParameters { ["Bill"] = bill };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<BillDialog>("Ubah Tagihan", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateBillAsync((Bill)result.Data);
+            Snackbar.Add("Tagihan diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteBill(Bill bill)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            "Yakin ingin menghapus tagihan ini?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteBillAsync(bill.Id);
+            Snackbar.Add("Tagihan dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

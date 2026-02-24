@@ -1,0 +1,20 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@rendermode InteractiveServer
+
+<AuthorizeView>
+    <Authorized>
+		<MudMenu Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Label="@context.User.Identity.Name" Dense="true">
+              	<MudMenuItem>
+					<MudButton Variant="Variant.Filled" Href="Identity/Account/Manage" EndIcon="@Icons.Material.Filled.Person" Color="Color.Primary">Profile</MudButton>
+				</MudMenuItem>  
+				<MudMenuItem>
+					<MudButton Variant="Variant.Filled" Href="Identity/Account/LogOut" EndIcon="@Icons.Material.Filled.Close" Color="Color.Error">Logout</MudButton>
+                </MudMenuItem>
+		</MudMenu>
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Href="Identity/Account/Register" Color="Color.Inherit">Register</MudButton>
+        <MudButton Href="Identity/Account/Login" Color="Color.Inherit">Log in</MudButton>
+    </NotAuthorized>
+</AuthorizeView>

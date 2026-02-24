@@ -1,0 +1,121 @@
+@page "/patients"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Data Pasien - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Manajemen Pasien</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Patient,bool>(FilterFunc1)" @bind-SelectedItem="selectedItem1">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Daftar Pasien</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString1" Placeholder="Cari Nama/RM/NIK..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddPatient">Tambah Pasien</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<Patient, object>(x=>x.MedicalRecordNumber)">No. RM</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Patient, object>(x=>x.FullName)">Nama Lengkap</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Patient, object>(x=>x.Nik)">NIK</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Patient, object>(x=>x.DoB)">Tgl Lahir</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Patient, object>(x=>x.Gender)">Gender</MudTableSortLabel></MudTh>
+        <MudTh>Telepon</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="No. RM">@context.MedicalRecordNumber</MudTd>
+        <MudTd DataLabel="Nama Lengkap">@context.FullName</MudTd>
+        <MudTd DataLabel="NIK">@context.Nik</MudTd>
+        <MudTd DataLabel="Tgl Lahir">@context.DoB.ToString("dd-MM-yyyy")</MudTd>
+        <MudTd DataLabel="Gender">@context.Gender</MudTd>
+        <MudTd DataLabel="Telepon">@context.Phone</MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditPatient(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeletePatient(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString1 = "";
+    private Patient selectedItem1 = new Patient();
+    private List<Patient> Elements = new List<Patient>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetPatientsAsync();
+    }
+
+    private bool FilterFunc1(Patient element) => FilterFunc(element, searchString1);
+
+    private bool FilterFunc(Patient element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.FullName != null && element.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.MedicalRecordNumber != null && element.MedicalRecordNumber.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Nik != null && element.Nik.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task AddPatient()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<PatientDialog>("Tambah Pasien Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var newPatient = (Patient)result.Data;
+            await ClinicService.AddPatientAsync(newPatient);
+            Snackbar.Add("Pasien berhasil ditambahkan", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditPatient(Patient patient)
+    {
+        var parameters = new DialogParameters { ["Patient"] = patient };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<PatientDialog>("Edit Pasien", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var editedPatient = (Patient)result.Data;
+            await ClinicService.UpdatePatientAsync(editedPatient);
+            Snackbar.Add("Data Pasien berhasil diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeletePatient(Patient patient)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            $"Yakin ingin menghapus pasien {patient.FullName}?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeletePatientAsync(patient.Id);
+            Snackbar.Add("Data Pasien dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

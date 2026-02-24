@@ -1,0 +1,58 @@
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudSelect T="MedicalRecord" Label="Rekam Medis (Pasien - Tanggal)" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="LabResult.MedicalRecord" ToStringFunc="@(m => m == null ? null : $"{m.Patient?.FullName} - {m.Date:dd/MM/yyyy}")">
+                @foreach (var record in MedicalRecords)
+                {
+                    <MudSelectItem Value="@record" />
+                }
+            </MudSelect>
+
+            <MudTextField @bind-Value="LabResult.TestName" Label="Nama Pemeriksaan Lab" Required="true" />
+            <MudTextField @bind-Value="LabResult.Result" Label="Hasil Lab" Lines="3" Required="true" />
+            <MudDatePicker Label="Tanggal Hasil" @bind-Date="date" Required="true" />
+
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public LabResult LabResult { get; set; } = new LabResult();
+
+    private List<MedicalRecord> MedicalRecords = new();
+    private DateTime? date = DateTime.Today;
+    private MudForm form;
+    private bool success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        MedicalRecords = await ClinicService.GetMedicalRecordsAsync();
+        if (LabResult.Date != default)
+        {
+            date = LabResult.Date;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            if (date.HasValue) LabResult.Date = date.Value;
+            if (LabResult.MedicalRecord != null) LabResult.MedicalRecordId = LabResult.MedicalRecord.Id;
+
+            MudDialog.Close(DialogResult.Ok(LabResult));
+        }
+    }
+}

@@ -1,0 +1,82 @@
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudSelect T="Patient" Label="Pasien" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="Bill.Patient" ToStringFunc="@(p => p == null ? null : $"{p.FullName} ({p.MedicalRecordNumber})")">
+                @foreach (var patient in Patients)
+                {
+                    <MudSelectItem Value="@patient" />
+                }
+            </MudSelect>
+
+            <MudNumericField @bind-Value="Bill.TotalAmount" Label="Total Tagihan (Rp)" Min="0" Required="true" Format="N0" />
+            
+            <MudDatePicker Label="Tanggal Tagihan" @bind-Date="date" Required="true" />
+
+            <MudCheckBox T="bool" @bind-Value="Bill.IsPaid" Label="Lunas (Paid)" Color="Color.Success" />
+
+            <MudSelect T="string" Label="Metode Pembayaran" @bind-Value="Bill.PaymentMethod" Required="true">
+                <MudSelectItem Value="@("Cash")">Cash (Tunai)</MudSelectItem>
+                <MudSelectItem Value="@("Transfer")">Transfer Bank/QRIS</MudSelectItem>
+                <MudSelectItem Value="@("BPJS")">BPJS Kesehatan</MudSelectItem>
+                <MudSelectItem Value="@("Insurance")">Asuransi Lain</MudSelectItem>
+            </MudSelect>
+
+            @if (Bill.PaymentMethod == "BPJS")
+            {
+                <MudSelect T="string" Label="Status Klaim BPJS" @bind-Value="Bill.BpjsClaimStatus" Required="true">
+                    <MudSelectItem Value="@("Pending")">Pending</MudSelectItem>
+                    <MudSelectItem Value="@("Claimed")">Claimed (Berhasil)</MudSelectItem>
+                    <MudSelectItem Value="@("Rejected")">Rejected (Ditolak)</MudSelectItem>
+                </MudSelect>
+            }
+            else
+            {
+                // Reset BPJS status if not BPJS
+                Bill.BpjsClaimStatus = "None"; 
+            }
+
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public Bill Bill { get; set; } = new Bill();
+
+    private List<Patient> Patients = new();
+    private DateTime? date = DateTime.Today;
+    private MudForm form;
+    private bool success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Patients = await ClinicService.GetPatientsAsync();
+        if (Bill.Date != default)
+        {
+            date = Bill.Date;
+        }
+        if (string.IsNullOrEmpty(Bill.BpjsClaimStatus)) Bill.BpjsClaimStatus = "None";
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            if (date.HasValue) Bill.Date = date.Value;
+            if (Bill.Patient != null) Bill.PatientId = Bill.Patient.Id;
+
+            MudDialog.Close(DialogResult.Ok(Bill));
+        }
+    }
+}

@@ -1,0 +1,66 @@
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudSelect T="MedicalRecord" Label="Rekam Medis (Pasien - Tanggal)" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="Prescription.MedicalRecord" ToStringFunc="@(m => m == null ? null : $"{m.Patient?.FullName} - {m.Date:dd/MM/yyyy}")">
+                @foreach (var record in MedicalRecords)
+                {
+                    <MudSelectItem Value="@record" />
+                }
+            </MudSelect>
+
+            <MudSelect T="Medicine" Label="Obat" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="Prescription.Medicine" ToStringFunc="@(m => m == null ? null : $"{m.Name} (Stok: {m.Stock})")">
+                @foreach (var med in Medicines)
+                {
+                    <MudSelectItem Value="@med" />
+                }
+            </MudSelect>
+
+            <MudNumericField @bind-Value="Prescription.Quantity" Label="Jumlah (Qty)" Min="1" Required="true" />
+            <MudTextField @bind-Value="Prescription.Dosage" Label="Dosis (Aturan Pakai)" Required="true" Placeholder="Contoh: 3x1 Sesudah Makan" />
+            
+            <MudSelect T="string" Label="Status" @bind-Value="Prescription.Status" Required="true">
+                <MudSelectItem Value="@("Pending")">Pending</MudSelectItem>
+                <MudSelectItem Value="@("Dispensed")">Dispensed (Sudah Diambil)</MudSelectItem>
+            </MudSelect>
+
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public Prescription Prescription { get; set; } = new Prescription();
+
+    private List<MedicalRecord> MedicalRecords = new();
+    private List<Medicine> Medicines = new();
+    private MudForm form;
+    private bool success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        MedicalRecords = await ClinicService.GetMedicalRecordsAsync();
+        Medicines = await ClinicService.GetMedicinesAsync();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            if (Prescription.MedicalRecord != null) Prescription.MedicalRecordId = Prescription.MedicalRecord.Id;
+            if (Prescription.Medicine != null) Prescription.MedicineId = Prescription.Medicine.Id;
+
+            MudDialog.Close(DialogResult.Ok(Prescription));
+        }
+    }
+}

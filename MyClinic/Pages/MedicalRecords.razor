@@ -1,0 +1,116 @@
+@page "/medical-records"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Rekam Medis Elektronik - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Rekam Medis Elektronik (EMR)</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<MedicalRecord,bool>(FilterFunc1)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Daftar Rekam Medis</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString1" Placeholder="Cari Pasien/Diagnosa..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddMedicalRecord">Input Rekam Medis</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<MedicalRecord, object>(x=>x.Date)">Tanggal</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<MedicalRecord, object>(x=>x.Patient.FullName)">Pasien</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<MedicalRecord, object>(x=>x.Doctor.FullName)">Dokter</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<MedicalRecord, object>(x=>x.Diagnosis)">Diagnosa</MudTableSortLabel></MudTh>
+        <MudTh>Tindakan</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tanggal">@context.Date.ToString("dd-MM-yyyy")</MudTd>
+        <MudTd DataLabel="Pasien">@context.Patient?.FullName</MudTd>
+        <MudTd DataLabel="Dokter">@context.Doctor?.FullName</MudTd>
+        <MudTd DataLabel="Diagnosa">@context.Diagnosis</MudTd>
+        <MudTd DataLabel="Tindakan">@context.Treatment</MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditMedicalRecord(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteMedicalRecord(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString1 = "";
+    private List<MedicalRecord> Elements = new List<MedicalRecord>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetMedicalRecordsAsync();
+    }
+
+    private bool FilterFunc1(MedicalRecord element) => FilterFunc(element, searchString1);
+
+    private bool FilterFunc(MedicalRecord element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Patient != null && element.Patient.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Diagnosis != null && element.Diagnosis.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Doctor != null && element.Doctor.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task AddMedicalRecord()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<MedicalRecordDialog>("Input Rekam Medis Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddMedicalRecordAsync((MedicalRecord)result.Data);
+            Snackbar.Add("Rekam Medis tersimpan", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditMedicalRecord(MedicalRecord record)
+    {
+        var parameters = new DialogParameters { ["MedicalRecord"] = record };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<MedicalRecordDialog>("Edit Rekam Medis", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateMedicalRecordAsync((MedicalRecord)result.Data);
+            Snackbar.Add("Rekam Medis diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteMedicalRecord(MedicalRecord record)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            "Yakin ingin menghapus rekam medis ini?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteMedicalRecordAsync(record.Id);
+            Snackbar.Add("Rekam Medis dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

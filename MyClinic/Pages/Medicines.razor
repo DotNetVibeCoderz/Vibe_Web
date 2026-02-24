@@ -1,0 +1,214 @@
+@page "/medicines"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Apotek & Resep - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Manajemen Apotek & Resep Digital</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" Class="pa-6">
+    <MudTabPanel Text="Stok Obat" Icon="@Icons.Material.Filled.LocalPharmacy">
+        <MudTable Items="@MedicineElements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Medicine,bool>(FilterFuncMed)">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">Daftar Obat</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="searchMed" Placeholder="Cari Obat..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddMedicine">Tambah Obat</MudButton>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<Medicine, object>(x=>x.Name)">Nama Obat</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Medicine, object>(x=>x.Category)">Kategori</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Medicine, object>(x=>x.Stock)">Stok</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Medicine, object>(x=>x.Price)">Harga (Rp)</MudTableSortLabel></MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nama">@context.Name</MudTd>
+                <MudTd DataLabel="Kategori">@context.Category</MudTd>
+                <MudTd DataLabel="Stok">
+                    @if (context.Stock < 50)
+                    {
+                        <MudText Color="Color.Error"><b>@context.Stock (Low)</b></MudText>
+                    }
+                    else
+                    {
+                        @context.Stock
+                    }
+                </MudTd>
+                <MudTd DataLabel="Harga">@context.Price.ToString("N0")</MudTd>
+                <MudTd DataLabel="Aksi">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditMedicine(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteMedicine(context))" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Resep Digital (E-Prescription)" Icon="@Icons.Material.Filled.Receipt">
+        <MudTable Items="@PrescriptionElements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Prescription,bool>(FilterFuncPres)">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">Daftar Resep</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="searchPres" Placeholder="Cari Pasien/Obat..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddPrescription">Buat Resep</MudButton>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>Pasien</MudTh>
+                <MudTh>Obat</MudTh>
+                <MudTh>Dosis</MudTh>
+                <MudTh>Qty</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Pasien">@context.MedicalRecord?.Patient?.FullName</MudTd>
+                <MudTd DataLabel="Obat">@context.Medicine?.Name</MudTd>
+                <MudTd DataLabel="Dosis">@context.Dosage</MudTd>
+                <MudTd DataLabel="Qty">@context.Quantity</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Color="@(context.Status == "Pending" ? Color.Warning : Color.Success)" Size="Size.Small">
+                        @context.Status
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Aksi">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditPrescription(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeletePrescription(context))" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private string searchMed = "";
+    private string searchPres = "";
+    private List<Medicine> MedicineElements = new List<Medicine>();
+    private List<Prescription> PrescriptionElements = new List<Prescription>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        MedicineElements = await ClinicService.GetMedicinesAsync();
+        PrescriptionElements = await ClinicService.GetPrescriptionsAsync();
+    }
+
+    // --- MEDICINE LOGIC ---
+    private bool FilterFuncMed(Medicine element)
+    {
+        if (string.IsNullOrWhiteSpace(searchMed)) return true;
+        if (element.Name.Contains(searchMed, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.Category.Contains(searchMed, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private async Task AddMedicine()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<MedicineDialog>("Tambah Obat Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddMedicineAsync((Medicine)result.Data);
+            Snackbar.Add("Obat berhasil ditambahkan", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditMedicine(Medicine med)
+    {
+        var parameters = new DialogParameters { ["Medicine"] = med };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<MedicineDialog>("Edit Data Obat", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateMedicineAsync((Medicine)result.Data);
+            Snackbar.Add("Data Obat diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteMedicine(Medicine med)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            $"Yakin ingin menghapus obat {med.Name}?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteMedicineAsync(med.Id);
+            Snackbar.Add("Data Obat dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+
+    // --- PRESCRIPTION LOGIC ---
+    private bool FilterFuncPres(Prescription element)
+    {
+        if (string.IsNullOrWhiteSpace(searchPres)) return true;
+        if (element.Medicine?.Name.Contains(searchPres, StringComparison.OrdinalIgnoreCase) == true) return true;
+        if (element.MedicalRecord?.Patient?.FullName.Contains(searchPres, StringComparison.OrdinalIgnoreCase) == true) return true;
+        return false;
+    }
+
+    private async Task AddPrescription()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<PrescriptionDialog>("Buat Resep Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddPrescriptionAsync((Prescription)result.Data);
+            Snackbar.Add("Resep berhasil dibuat", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditPrescription(Prescription pres)
+    {
+        var parameters = new DialogParameters { ["Prescription"] = pres };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<PrescriptionDialog>("Ubah Resep", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdatePrescriptionAsync((Prescription)result.Data);
+            Snackbar.Add("Resep diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeletePrescription(Prescription pres)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            "Yakin ingin menghapus resep ini?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeletePrescriptionAsync(pres.Id);
+            Snackbar.Add("Resep dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

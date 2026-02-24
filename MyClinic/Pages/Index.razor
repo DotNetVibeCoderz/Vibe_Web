@@ -1,0 +1,107 @@
+@page "/"
+@using MyClinic.Services
+@using MyClinic.Data
+@inject ClinicService ClinicService
+
+<PageTitle>Dashboard - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Dashboard My Clinic</MudText>
+<MudText Class="mb-8">Selamat datang di sistem manajemen Puskesmas / Klinik terpadu.</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center flex-column justify-center mud-theme-primary">
+            <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2">@TotalPatients</MudText>
+            <MudText Typo="Typo.subtitle2">Total Pasien</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center flex-column justify-center mud-theme-info">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2">@TotalAppointments</MudText>
+            <MudText Typo="Typo.subtitle2">Antrian & Jadwal</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center flex-column justify-center mud-theme-success">
+            <MudIcon Icon="@Icons.Material.Filled.Medication" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2">@TotalMedicines</MudText>
+            <MudText Typo="Typo.subtitle2">Stok Apotek</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center flex-column justify-center mud-theme-warning">
+            <MudIcon Icon="@Icons.Material.Filled.MedicalServices" Size="Size.Large" />
+            <MudText Typo="Typo.h4" Class="mt-2">@TotalDoctors</MudText>
+            <MudText Typo="Typo.subtitle2">Tenaga Medis</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Antrian Hari Ini</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="Appointment">
+                    @foreach (var appt in RecentAppointments.Take(5))
+                    {
+                        <MudListItem>
+                            <div class="d-flex flex-row justify-space-between align-center">
+                                <div>
+                                    <MudText><b>@appt.Patient?.FullName</b></MudText>
+                                    <MudText Typo="Typo.body2">Dr. @appt.Doctor?.FullName - @appt.Status</MudText>
+                                </div>
+                                <MudChip T="string" Color="@(appt.Status == "Completed" ? Color.Success : Color.Info)" Size="Size.Small">
+                                    Queue: @appt.QueueNumber
+                                </MudChip>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Simulasi Telemedicine & Dinkes</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudAlert Severity="Severity.Info" Class="mb-3">Simulasi: 15 Konsultasi Online (Telemedicine) sedang berlangsung.</MudAlert>
+                <MudAlert Severity="Severity.Success" Class="mb-3">Simulasi: Data epidemiologi (Penyakit terbanyak minggu ini) telah disinkronisasi ke Dinkes.</MudAlert>
+                <MudAlert Severity="Severity.Warning">Simulasi: 5 Klaim BPJS sedang diproses secara otomatis.</MudAlert>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    int TotalPatients;
+    int TotalAppointments;
+    int TotalMedicines;
+    int TotalDoctors;
+    List<Appointment> RecentAppointments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var patients = await ClinicService.GetPatientsAsync();
+        var appointments = await ClinicService.GetAppointmentsAsync();
+        var medicines = await ClinicService.GetMedicinesAsync();
+        var doctors = await ClinicService.GetEmployeesAsync();
+
+        TotalPatients = patients.Count;
+        TotalAppointments = appointments.Count;
+        TotalMedicines = medicines.Count;
+        TotalDoctors = doctors.Count;
+        RecentAppointments = appointments.OrderByDescending(a => a.AppointmentDate).ToList();
+    }
+}

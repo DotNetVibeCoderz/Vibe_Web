@@ -1,0 +1,90 @@
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudSelect T="Patient" Label="Pasien" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="Appointment.Patient" ToStringFunc="@(p => p == null ? null : $"{p.FullName} ({p.MedicalRecordNumber})")">
+                @foreach (var patient in Patients)
+                {
+                    <MudSelectItem Value="@patient" />
+                }
+            </MudSelect>
+
+            <MudSelect T="Employee" Label="Dokter" AnchorOrigin="Origin.BottomCenter" Required="true" @bind-Value="Appointment.Doctor" ToStringFunc="@(d => d == null ? null : $"{d.FullName} - {d.Specialization}")">
+                @foreach (var doctor in Doctors)
+                {
+                    <MudSelectItem Value="@doctor" />
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Tanggal Janji Temu" @bind-Date="date" Required="true" />
+            <MudTimePicker Label="Waktu" @bind-Time="time" Required="true" />
+
+            <MudSelect T="string" Label="Status" @bind-Value="Appointment.Status" Required="true">
+                <MudSelectItem Value="@("Scheduled")">Scheduled</MudSelectItem>
+                <MudSelectItem Value="@("InProgress")">InProgress</MudSelectItem>
+                <MudSelectItem Value="@("Completed")">Completed</MudSelectItem>
+                <MudSelectItem Value="@("Cancelled")">Cancelled</MudSelectItem>
+            </MudSelect>
+
+            <MudNumericField @bind-Value="Appointment.QueueNumber" Label="Nomor Antrian" Min="1" />
+            <MudCheckBox T="bool" @bind-Value="Appointment.IsTelemedicine" Label="Telemedicine (Online)" Color="Color.Primary" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public Appointment Appointment { get; set; } = new Appointment();
+
+    private List<Patient> Patients = new();
+    private List<Employee> Doctors = new();
+    private DateTime? date = DateTime.Today;
+    private TimeSpan? time = new TimeSpan(9, 0, 0);
+    private MudForm form;
+    private bool success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Patients = await ClinicService.GetPatientsAsync();
+        // Filter only doctors ideally, but relying on Role text for now or just getting all employees
+        var allEmployees = await ClinicService.GetEmployeesAsync();
+        Doctors = allEmployees.Where(e => e.Role == "Doctor").ToList();
+
+        if (Appointment.AppointmentDate != default)
+        {
+            date = Appointment.AppointmentDate.Date;
+            time = Appointment.AppointmentDate.TimeOfDay;
+        }
+        else
+        {
+            Appointment.AppointmentDate = DateTime.Now; 
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            if (date.HasValue && time.HasValue)
+            {
+                Appointment.AppointmentDate = date.Value.Add(time.Value);
+            }
+            
+            // Ensure IDs are set correctly if objects are selected
+            if (Appointment.Patient != null) Appointment.PatientId = Appointment.Patient.Id;
+            if (Appointment.Doctor != null) Appointment.DoctorId = Appointment.Doctor.Id;
+
+            MudDialog.Close(DialogResult.Ok(Appointment));
+        }
+    }
+}

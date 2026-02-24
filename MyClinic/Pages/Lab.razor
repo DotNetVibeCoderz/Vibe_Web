@@ -1,0 +1,109 @@
+@page "/lab"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Laboratorium - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Hasil Laboratorium</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<LabResult,bool>(FilterFunc)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Pemeriksaan Lab Terakhir</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Cari Pasien/Test..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddLabResult">Input Hasil Lab</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<LabResult, object>(x=>x.Date)">Tanggal</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<LabResult, object>(x=>x.MedicalRecord.Patient.FullName)">Pasien</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<LabResult, object>(x=>x.TestName)">Jenis Test</MudTableSortLabel></MudTh>
+        <MudTh>Hasil</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tanggal">@context.Date.ToString("dd-MM-yyyy")</MudTd>
+        <MudTd DataLabel="Pasien">@context.MedicalRecord?.Patient?.FullName</MudTd>
+        <MudTd DataLabel="Jenis Test">
+            <MudChip T="string" Color="Color.Info" Size="Size.Small">@context.TestName</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Hasil">@context.Result</MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditLabResult(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteLabResult(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString = "";
+    private List<LabResult> Elements = new List<LabResult>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetLabResultsAsync();
+    }
+
+    private bool FilterFunc(LabResult element)
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (element.TestName.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.MedicalRecord?.Patient?.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase) == true) return true;
+        return false;
+    }
+
+    private async Task AddLabResult()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<LabResultDialog>("Input Hasil Lab", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddLabResultAsync((LabResult)result.Data);
+            Snackbar.Add("Hasil Lab berhasil disimpan", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditLabResult(LabResult lab)
+    {
+        var parameters = new DialogParameters { ["LabResult"] = lab };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<LabResultDialog>("Edit Hasil Lab", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateLabResultAsync((LabResult)result.Data);
+            Snackbar.Add("Hasil Lab diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteLabResult(LabResult lab)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            "Yakin ingin menghapus data lab ini?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteLabResultAsync(lab.Id);
+            Snackbar.Add("Data Lab dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

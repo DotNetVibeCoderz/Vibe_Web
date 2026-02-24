@@ -1,0 +1,264 @@
+@page "/reports"
+@using MyClinic.Data
+@using MyClinic.Services
+@inject ClinicService ClinicService
+@inject ExportService ExportService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Laporan Manajemen - MyClinic</PageTitle>
+
+<MudGrid Class="mb-4 d-flex align-center">
+    <MudItem xs="12" sm="8">
+        <MudText Typo="Typo.h4">Laporan & Dashboard Manajemen</MudText>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudSelect T="int" Label="Filter Tahun" Variant="Variant.Outlined" Value="@SelectedYear" ValueChanged="OnYearChanged" AnchorOrigin="Origin.BottomCenter">
+            @foreach (var year in AvailableYears)
+            {
+                <MudSelectItem Value="@year">@year</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    <!-- Revenue Chart -->
+    <MudItem xs="12" md="8">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Grafik Pendapatan Bulanan (@SelectedYear)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (RevenueData.Any())
+                {
+                    <MudChart ChartType="ChartType.Bar" ChartSeries="@RevenueSeries" @bind-SelectedIndex="Index" ChartLabels="@RevenueLabels" Width="100%" Height="350px"></MudChart>
+                }
+                else
+                {
+                    <MudText>Tidak ada data pendapatan untuk tahun ini.</MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Payment Methods (Pie Chart) -->
+    <MudItem xs="12" md="4">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Metode Pembayaran</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (PaymentData.Any())
+                {
+                    <MudChart T="double" ChartType="ChartType.Pie" ChartSeries="@PaymentChartData.AsChartDataSet()" ChartLabels="@PaymentChartLabels" Width="100%" Height="300px" />
+                }
+                else
+                {
+                    <MudText>Tidak ada data pembayaran.</MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Patient Visits Chart -->
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Tren Kunjungan Pasien Bulanan</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (VisitsData.Any())
+                {
+                    <MudChart ChartType="ChartType.Line" ChartSeries="@VisitsSeries" @bind-SelectedIndex="Index" ChartLabels="@VisitsLabels" Width="100%" Height="300px"></MudChart>
+                }
+                else
+                {
+                    <MudText>Tidak ada data kunjungan.</MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Top Diagnoses (Donut Chart) -->
+    <MudItem xs="12" md="6">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Top 5 Diagnosa Penyakit</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (DiagnosisData.Any())
+                {
+                    <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="@DiagnosisChartData.AsChartDataSet()" ChartLabels="@DiagnosisChartLabels" Width="100%" Height="300px" />
+                }
+                else
+                {
+                    <MudText>Tidak ada data diagnosa.</MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Doctor Performance (Bar Chart) -->
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Kinerja Dokter (Jumlah Pasien Ditangani)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                 @if (DoctorData.Any())
+                {
+                    <MudChart ChartType="ChartType.Bar" ChartSeries="@DoctorSeries" ChartLabels="@DoctorLabels" Width="100%" Height="300px"></MudChart>
+                }
+                else
+                {
+                    <MudText>Tidak ada data kinerja dokter.</MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Export Section -->
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Ekspor Laporan Pendapatan</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Class="mb-4">Ekspor data pendapatan tahun @SelectedYear ke berbagai format.</MudText>
+                <MudButton StartIcon="@Icons.Material.Filled.TableChart" Variant="Variant.Filled" Color="Color.Success" Class="mr-2" OnClick="ExportExcel">Ekspor ke Excel</MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.ListAlt" Variant="Variant.Filled" Color="Color.Primary" Class="mr-2" OnClick="ExportCsv">Ekspor ke CSV</MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.PictureAsPdf" Variant="Variant.Filled" Color="Color.Error" OnClick="ExportPdf">Ekspor ke PDF</MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int Index = -1;
+    private int SelectedYear = DateTime.Now.Year;
+    private List<int> AvailableYears = new();
+
+    // 1. Revenue
+    private List<MonthlyRevenue> RevenueData = new();
+    private List<ChartSeries<double>> RevenueSeries = new List<ChartSeries<double>>();
+    private string[] RevenueLabels = Array.Empty<string>();
+
+    // 2. Visits
+    private List<PatientVisitStats> VisitsData = new();
+    private List<ChartSeries<double>> VisitsSeries = new List<ChartSeries<double>>();
+    private string[] VisitsLabels = Array.Empty<string>();
+
+    // 3. Payment Methods
+    private List<PaymentMethodStats> PaymentData = new();
+    private double[] PaymentChartData = Array.Empty<double>();
+    private string[] PaymentChartLabels = Array.Empty<string>();
+
+    // 4. Diagnoses
+    private List<DiagnosisStats> DiagnosisData = new();
+    private double[] DiagnosisChartData = Array.Empty<double>();
+    private string[] DiagnosisChartLabels = Array.Empty<string>();
+
+    // 5. Doctor Performance
+    private List<DoctorPerformanceStats> DoctorData = new();
+    private List<ChartSeries<double>> DoctorSeries = new List<ChartSeries<double>>();
+    private string[] DoctorLabels = Array.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        AvailableYears = await ClinicService.GetAvailableYearsAsync();
+        if (!AvailableYears.Contains(SelectedYear))
+        {
+            if (AvailableYears.Any()) SelectedYear = AvailableYears.First();
+            else AvailableYears.Add(SelectedYear);
+        }
+
+        await LoadData();
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        SelectedYear = year;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        // 1. Revenue
+        RevenueData = await ClinicService.GetMonthlyRevenueStatsAsync(SelectedYear);
+        RevenueLabels = RevenueData.Select(x => x.Month).ToArray();
+        RevenueSeries.Clear();
+        RevenueSeries.Add(new ChartSeries<double> 
+        { 
+            Name = "Pendapatan (Rp)", 
+            Data = RevenueData.Select(x => Convert.ToDouble(x.TotalRevenue)).ToArray() 
+        });
+
+        // 2. Visits
+        VisitsData = await ClinicService.GetPatientVisitsStatsAsync(SelectedYear);
+        VisitsLabels = VisitsData.Select(x => x.Month).ToArray();
+        VisitsSeries.Clear();
+        VisitsSeries.Add(new ChartSeries<double> 
+        { 
+            Name = "Jumlah Kunjungan", 
+            Data = VisitsData.Select(x => Convert.ToDouble(x.VisitCount)).ToArray() 
+        });
+
+        // 3. Payment Methods
+        PaymentData = await ClinicService.GetRevenueByPaymentMethodAsync(SelectedYear);
+        PaymentChartData = PaymentData.Select(x => Convert.ToDouble(x.Amount)).ToArray();
+        PaymentChartLabels = PaymentData.Select(x => $"{x.Method} ({x.Amount:N0})").ToArray();
+
+        // 4. Diagnoses
+        DiagnosisData = await ClinicService.GetTopDiagnosesAsync(SelectedYear);
+        DiagnosisChartData = DiagnosisData.Select(x => Convert.ToDouble(x.Count)).ToArray();
+        DiagnosisChartLabels = DiagnosisData.Select(x => $"{x.Diagnosis} ({x.Count})").ToArray();
+
+        // 5. Doctor Performance
+        DoctorData = await ClinicService.GetDoctorPerformanceAsync(SelectedYear);
+        DoctorLabels = DoctorData.Select(x => x.DoctorName).ToArray();
+        DoctorSeries.Clear();
+        DoctorSeries.Add(new ChartSeries<double>
+        {
+            Name = "Pasien Ditangani",
+            Data = DoctorData.Select(x => Convert.ToDouble(x.PatientCount)).ToArray()
+        });
+    }
+
+    private async Task ExportExcel()
+    {
+        var fileData = ExportService.ExportToExcel(RevenueData, $"Pendapatan {SelectedYear}");
+        await DownloadFile($"Laporan_Pendapatan_{SelectedYear}.xlsx", fileData);
+    }
+
+    private async Task ExportCsv()
+    {
+        var fileData = ExportService.ExportToCsv(RevenueData);
+        await DownloadFile($"Laporan_Pendapatan_{SelectedYear}.csv", fileData);
+    }
+
+    private async Task ExportPdf()
+    {
+        var fileData = ExportService.ExportRevenueToPdf(RevenueData);
+        await DownloadFile($"Laporan_Pendapatan_{SelectedYear}.pdf", fileData);
+    }
+
+    private async Task DownloadFile(string fileName, byte[] data)
+    {
+        using var stream = new DotNetStreamReference(stream: new System.IO.MemoryStream(data));
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, stream);
+        Snackbar.Add($"Laporan berhasil diekspor: {fileName}", Severity.Success);
+    }
+}

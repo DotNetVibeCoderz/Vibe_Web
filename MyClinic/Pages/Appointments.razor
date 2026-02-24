@@ -1,0 +1,141 @@
+@page "/appointments"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Jadwal & Antrian - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Jadwal & Antrian Pasien</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Appointment,bool>(FilterFunc1)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Antrian Hari Ini</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString1" Placeholder="Cari Pasien/Dokter..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddAppointment">Buat Janji Temu</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Antrian</MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Appointment, object>(x=>x.Patient.FullName)">Pasien</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Appointment, object>(x=>x.Doctor.FullName)">Dokter</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Appointment, object>(x=>x.AppointmentDate)">Waktu</MudTableSortLabel></MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Telemedicine</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Antrian"><MudChip T="string" Color="Color.Primary" Size="Size.Small">@context.QueueNumber</MudChip></MudTd>
+        <MudTd DataLabel="Pasien">@context.Patient?.FullName</MudTd>
+        <MudTd DataLabel="Dokter">@context.Doctor?.FullName</MudTd>
+        <MudTd DataLabel="Waktu">@context.AppointmentDate.ToString("dd-MM-yyyy HH:mm")</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Color="@GetStatusColor(context.Status)" Size="Size.Small">@context.Status</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Telemedicine">
+            @if (context.IsTelemedicine)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Videocam" Color="Color.Info" />
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.DirectionsWalk" Color="Color.Default" />
+            }
+        </MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditAppointment(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteAppointment(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString1 = "";
+    private List<Appointment> Elements = new List<Appointment>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetAppointmentsAsync();
+    }
+
+    private bool FilterFunc1(Appointment element) => FilterFunc(element, searchString1);
+
+    private bool FilterFunc(Appointment element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Patient != null && element.Patient.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Doctor != null && element.Doctor.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Status.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private Color GetStatusColor(string status)
+    {
+        return status switch
+        {
+            "Scheduled" => Color.Primary,
+            "InProgress" => Color.Warning,
+            "Completed" => Color.Success,
+            "Cancelled" => Color.Error,
+            _ => Color.Default
+        };
+    }
+
+    private async Task AddAppointment()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AppointmentDialog>("Buat Janji Temu Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddAppointmentAsync((Appointment)result.Data);
+            Snackbar.Add("Janji Temu berhasil dibuat", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditAppointment(Appointment appt)
+    {
+        var parameters = new DialogParameters { ["Appointment"] = appt };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AppointmentDialog>("Ubah Janji Temu", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateAppointmentAsync((Appointment)result.Data);
+            Snackbar.Add("Janji Temu diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteAppointment(Appointment appt)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            "Yakin ingin menghapus janji temu ini?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteAppointmentAsync(appt.Id);
+            Snackbar.Add("Janji Temu dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}

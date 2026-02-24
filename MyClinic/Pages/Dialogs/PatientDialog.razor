@@ -1,0 +1,50 @@
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudTextField @bind-Value="Patient.MedicalRecordNumber" Label="Nomor Rekam Medis" Required="true"/>
+            <MudTextField @bind-Value="Patient.FullName" Label="Nama Lengkap" Required="true"/>
+            <MudTextField @bind-Value="Patient.Nik" Label="NIK" Required="true"/>
+            <MudDatePicker @bind-Date="dob" Label="Tanggal Lahir" Required="true"/>
+            <MudSelect @bind-Value="Patient.Gender" Label="Gender" Required="true">
+                <MudSelectItem Value="@("Male")">Laki-Laki (Male)</MudSelectItem>
+                <MudSelectItem Value="@("Female")">Perempuan (Female)</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="Patient.Phone" Label="Nomor Telepon" Required="true"/>
+            <MudTextField @bind-Value="Patient.Address" Label="Alamat" Lines="3" Required="true"/>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public MyClinic.Data.Patient Patient { get; set; } = new MyClinic.Data.Patient();
+
+    MudForm form;
+    bool success;
+    DateTime? dob = DateTime.Today;
+
+    protected override void OnInitialized()
+    {
+        if (Patient.DoB != default)
+            dob = Patient.DoB;
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            Patient.DoB = dob ?? DateTime.Today;
+            MudDialog.Close(DialogResult.Ok(Patient));
+        }
+    }
+}

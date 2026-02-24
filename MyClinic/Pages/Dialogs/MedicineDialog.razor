@@ -1,0 +1,42 @@
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudTextField @bind-Value="Medicine.Name" Label="Nama Obat" Required="true"/>
+            <MudSelect @bind-Value="Medicine.Category" Label="Kategori" Required="true">
+                <MudSelectItem Value="@("Tablet")">Tablet</MudSelectItem>
+                <MudSelectItem Value="@("Syrup")">Syrup</MudSelectItem>
+                <MudSelectItem Value="@("Capsule")">Capsule</MudSelectItem>
+                <MudSelectItem Value="@("Injection")">Injection</MudSelectItem>
+                <MudSelectItem Value="@("Ointment")">Ointment (Salep)</MudSelectItem>
+            </MudSelect>
+            <MudNumericField @bind-Value="Medicine.Stock" Label="Stok Obat" Required="true" Min="0" />
+            <MudNumericField @bind-Value="Medicine.Price" Label="Harga Satuan (Rp)" Required="true" Min="0" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public MyClinic.Data.Medicine Medicine { get; set; } = new MyClinic.Data.Medicine();
+
+    MudForm form;
+    bool success;
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Medicine));
+        }
+    }
+}

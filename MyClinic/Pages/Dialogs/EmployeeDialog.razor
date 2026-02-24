@@ -1,0 +1,41 @@
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" IsValid="@success">
+            <MudTextField @bind-Value="Employee.FullName" Label="Nama Lengkap" Required="true"/>
+            <MudSelect @bind-Value="Employee.Role" Label="Role (Jabatan)" Required="true">
+                <MudSelectItem Value="@("Doctor")">Doctor</MudSelectItem>
+                <MudSelectItem Value="@("Nurse")">Nurse</MudSelectItem>
+                <MudSelectItem Value="@("Pharmacist")">Pharmacist</MudSelectItem>
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="Employee.Specialization" Label="Spesialisasi"/>
+            <MudTextField @bind-Value="Employee.Phone" Label="Nomor Telepon" Required="true"/>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public MyClinic.Data.Employee Employee { get; set; } = new MyClinic.Data.Employee();
+
+    MudForm form;
+    bool success;
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Employee));
+        }
+    }
+}

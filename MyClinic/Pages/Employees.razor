@@ -1,0 +1,112 @@
+@page "/employees"
+@using MyClinic.Data
+@using MyClinic.Services
+@using MyClinic.Pages.Dialogs
+@inject ClinicService ClinicService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>SDM & Dokter - MyClinic</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Manajemen SDM & Tenaga Medis</MudText>
+
+<MudTable Items="@Elements" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Employee,bool>(FilterFunc)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Daftar Pegawai</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Cari Nama/Spesialisasi..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0 mr-4"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddEmployee">Tambah Pegawai</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<Employee, object>(x=>x.FullName)">Nama Lengkap</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Employee, object>(x=>x.Role)">Role</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Employee, object>(x=>x.Specialization)">Spesialisasi</MudTableSortLabel></MudTh>
+        <MudTh>Telepon</MudTh>
+        <MudTh>Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Nama">@context.FullName</MudTd>
+        <MudTd DataLabel="Role">
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small">@context.Role</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Spesialisasi">
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small">@context.Specialization</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Telepon">@context.Phone</MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" Size="Size.Small" OnClick="@(() => EditEmployee(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteEmployee(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private string searchString = "";
+    private List<Employee> Elements = new List<Employee>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Elements = await ClinicService.GetEmployeesAsync();
+    }
+
+    private bool FilterFunc(Employee element)
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (element.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.Role.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.Specialization != null && element.Specialization.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private async Task AddEmployee()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Tambah Pegawai Baru", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.AddEmployeeAsync((Employee)result.Data);
+            Snackbar.Add("Pegawai berhasil ditambahkan", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditEmployee(Employee emp)
+    {
+        var parameters = new DialogParameters { ["Employee"] = emp };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Edit Pegawai", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await ClinicService.UpdateEmployeeAsync((Employee)result.Data);
+            Snackbar.Add("Data Pegawai diperbarui", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteEmployee(Employee emp)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Konfirmasi Hapus", 
+            $"Yakin ingin menghapus {emp.FullName}?", 
+            yesText:"Hapus", cancelText:"Batal");
+
+        if (result == true)
+        {
+            await ClinicService.DeleteEmployeeAsync(emp.Id);
+            Snackbar.Add("Data Pegawai dihapus", Severity.Warning);
+            await LoadData();
+        }
+    }
+}
