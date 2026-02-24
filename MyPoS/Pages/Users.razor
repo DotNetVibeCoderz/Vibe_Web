@@ -1,0 +1,217 @@
+@page "/users"
+@using Microsoft.EntityFrameworkCore
+@using MyPoS.Data
+@using System.Text
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+@inject MyPoS.Services.ExportService ExportService
+@attribute [Authorize(Roles = "Admin")]
+
+<MudText Typo="Typo.h4" Class="mb-6">Users Management</MudText>
+
+<MudCard Class="glass-container pa-4">
+    <MudTable Items="@UsersList" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
+              Filter="new Func<AppUser,bool>(FilterFunc1)"
+              Style="background: transparent;">
+        <ToolBarContent>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewDialog">Add</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString1" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Username)">Username</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Role)">Role</MudTableSortLabel></MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="ID">@context.Id</MudTd>
+            <MudTd DataLabel="Username">@context.Username</MudTd>
+            <MudTd DataLabel="Role">@context.Role</MudTd>
+            <MudTd DataLabel="Actions">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => OpenEditDialog(context)" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteUser(context)" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudCard>
+
+@if (isDialogOpen)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" AutoClose="false">
+        <MudCard Class="glass-container pa-6" Style="width:400px; max-width:90vw;">
+            <MudText Typo="Typo.h6" Class="mb-4">@(isEdit ? "Edit User" : "New User")</MudText>
+            
+            <MudTextField @bind-Value="editingUser.Username" Label="Username" Required="true" Class="mb-2" />
+            
+            @if(!isEdit)
+            {
+                <MudTextField @bind-Value="newPassword" Label="Password" InputType="InputType.Password" Required="true" Class="mb-2" />
+            }
+            else
+            {
+                <MudTextField @bind-Value="newPassword" Label="New Password (Leave blank to keep current)" InputType="InputType.Password" Class="mb-2" />
+            }
+            
+            <MudSelect T="string" @bind-Value="editingUser.Role" Label="Role" Class="mb-4">
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                <MudSelectItem Value="@("Manager")">Manager</MudSelectItem>
+                <MudSelectItem Value="@("Operator")">Operator</MudSelectItem>
+            </MudSelect>
+            
+            <div class="d-flex justify-end">
+                <MudButton OnClick="CloseDialog" Class="mr-2">Cancel</MudButton>
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveUser">Save</MudButton>
+            </div>
+        </MudCard>
+    </MudOverlay>
+}
+
+@code {
+    List<AppUser> UsersList = new();
+    string searchString1 = "";
+
+    bool isDialogOpen = false;
+    bool isEdit = false;
+    AppUser editingUser = new AppUser();
+    string newPassword = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        using var db = DbFactory.CreateDbContext();
+        UsersList = await db.Users.ToListAsync();
+    }
+
+    private bool FilterFunc1(AppUser element) => FilterFunc(element, searchString1);
+
+    private bool FilterFunc(AppUser element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Username != null && element.Username.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Role != null && element.Role.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    async Task ExportExcel()
+    {
+        var data = UsersList.Select(x => new { x.Id, x.Username, x.Role }).ToList();
+        var bytes = ExportService.ExportToExcel(data, "Users");
+        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
+        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Users.xlsx", streamRef);
+    }
+
+    async Task ExportCsv()
+    {
+        var data = UsersList.Select(x => new { x.Id, x.Username, x.Role }).ToList();
+        var bytes = ExportService.ExportToCsv(data);
+        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
+        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Users.csv", streamRef);
+    }
+
+    void OpenNewDialog()
+    {
+        editingUser = new AppUser { Role = "Operator" };
+        newPassword = "";
+        isEdit = false;
+        isDialogOpen = true;
+    }
+
+    void OpenEditDialog(AppUser u)
+    {
+        editingUser = new AppUser
+        {
+            Id = u.Id,
+            Username = u.Username,
+            Role = u.Role,
+            PasswordHash = u.PasswordHash
+        };
+        newPassword = "";
+        isEdit = true;
+        isDialogOpen = true;
+    }
+
+    void CloseDialog()
+    {
+        isDialogOpen = false;
+    }
+
+    async Task SaveUser()
+    {
+        if (string.IsNullOrWhiteSpace(editingUser.Username))
+        {
+            Snackbar.Add("Username is required", Severity.Warning);
+            return;
+        }
+        
+        if (!isEdit && string.IsNullOrWhiteSpace(newPassword))
+        {
+            Snackbar.Add("Password is required for new user", Severity.Warning);
+            return;
+        }
+
+        using var db = DbFactory.CreateDbContext();
+        if (isEdit)
+        {
+            var item = await db.Users.FindAsync(editingUser.Id);
+            if (item != null)
+            {
+                item.Username = editingUser.Username;
+                item.Role = editingUser.Role;
+                
+                if (!string.IsNullOrWhiteSpace(newPassword))
+                {
+                    item.PasswordHash = Convert.ToBase64String(Encoding.UTF8.GetBytes(newPassword));
+                }
+                
+                db.Users.Update(item);
+            }
+        }
+        else
+        {
+            editingUser.PasswordHash = Convert.ToBase64String(Encoding.UTF8.GetBytes(newPassword));
+            db.Users.Add(editingUser);
+        }
+
+        await db.SaveChangesAsync();
+        Snackbar.Add("User saved", Severity.Success);
+        isDialogOpen = false;
+        await LoadData();
+    }
+
+    async Task DeleteUser(AppUser u)
+    {
+        if(u.Username.ToLower() == "admin")
+        {
+            Snackbar.Add("Cannot delete default admin user", Severity.Error);
+            return;
+        }
+
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this user?");
+        if (confirmed)
+        {
+            using var db = DbFactory.CreateDbContext();
+            var item = await db.Users.FindAsync(u.Id);
+            if (item != null)
+            {
+                db.Users.Remove(item);
+                await db.SaveChangesAsync();
+                Snackbar.Add("User deleted", Severity.Info);
+                await LoadData();
+            }
+        }
+    }
+}

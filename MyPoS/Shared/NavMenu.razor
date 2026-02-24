@@ -1,0 +1,13 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/pos" Icon="@Icons.Material.Filled.PointOfSale">Cashier (POS)</MudNavLink>
+    <MudNavGroup Title="Master Data" Icon="@Icons.Material.Filled.Storage" Expanded="false">
+        <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory">Products</MudNavLink>
+        <MudNavLink Href="/categories" Icon="@Icons.Material.Filled.Category">Categories</MudNavLink>
+        <MudNavLink Href="/customers" Icon="@Icons.Material.Filled.People">Customers</MudNavLink>
+        <MudNavLink Href="/users" Icon="@Icons.Material.Filled.ManageAccounts">Users</MudNavLink>
+    </MudNavGroup>
+    <MudNavGroup Title="Reports" Icon="@Icons.Material.Filled.Assessment" Expanded="true">
+        <MudNavLink Href="/sales-report" Icon="@Icons.Material.Filled.ReceiptLong">Sales Report</MudNavLink>
+    </MudNavGroup>
+</MudNavMenu>

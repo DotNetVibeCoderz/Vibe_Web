@@ -1,0 +1,266 @@
+@page "/pos"
+@using Microsoft.EntityFrameworkCore
+@using MyPoS.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize(Roles = "Admin,Operator")]
+
+<MudText Typo="Typo.h4" Class="mb-6">Point of Sales</MudText>
+
+<MudGrid>
+    <!-- Left side: Products catalog -->
+    <MudItem xs="12" md="7">
+        <MudCard Class="glass-container pa-4 d-flex flex-column" >
+            <MudTextField @bind-Value="SearchTerm" Placeholder="Search Product / Barcode..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" @onkeyup="OnSearchKeyPress" Immediate="true" />
+            
+            <div class="mt-4" style="flex: 0 0 auto; overflow-x: auto; white-space: nowrap;">
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Color="Color.Primary" Outlined="true" Style="min-width: min-content;">
+                    <MudTabPanel Text="All" OnClick="() => SelectCategory(0)" />
+                    @foreach (var cat in Categories)
+                    {
+                        <MudTabPanel Text="@cat.Name" OnClick="() => SelectCategory(cat.Id)" />
+                    }
+                </MudTabs>
+            </div>
+
+            <div class="mt-4" style="flex: 1; overflow-y:auto; min-height: 0;">
+                <MudGrid>
+                    @foreach (var p in FilteredProducts)
+                    {
+                        <MudItem xs="12" sm="6" md="4" lg="4">
+                            <MudCard Outlined="true" Class="product-card" @onclick="() => AddToCart(p)" Style="cursor:pointer; background: rgba(255,255,255,0.1); height: 100%;">
+                                @if (!string.IsNullOrEmpty(p.ImageUrl))
+                                {
+                                    <MudCardMedia Image="@p.ImageUrl" Height="140" />
+                                }
+                                else
+                                {
+                                    <div class="d-flex justify-center align-center" style="height:140px; background: rgba(0,0,0,0.05);">
+                                        <MudIcon Icon="@Icons.Material.Filled.Fastfood" Size="Size.Large" Color="Color.Primary" />
+                                    </div>
+                                }
+                                <MudCardContent Class="text-center pa-2">
+                                    <MudText Typo="Typo.subtitle2" Style="font-weight:bold;">@p.Name</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Success">@p.Price.ToString("C0")</MudText>
+                                    <MudText Typo="Typo.caption">Stock: @p.Stock</MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                    }
+                </MudGrid>
+            </div>
+        </MudCard>
+    </MudItem>
+
+    <!-- Right side: Cart / Receipt -->
+    <MudItem xs="12" md="5">
+        <MudCard Class="glass-container pa-4 d-flex flex-column" Style="height:calc(100vh - 140px);">
+            <MudText Typo="Typo.h6" Class="mb-2" Style="flex: 0 0 auto;">Current Order</MudText>
+            
+            <div style="flex:1; overflow-y:auto; min-height: 0; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <MudTable Items="@CartItems" Hover="true" Breakpoint="Breakpoint.None" Elevation="0" Style="background: transparent;" FixedHeader="true" Height="100%">
+                    <HeaderContent>
+                        <MudTh>Item</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Price</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Item">@context.Product.Name</MudTd>
+                        <MudTd DataLabel="Qty">
+                            <div class="d-flex align-center">
+                                <MudIconButton Icon="@Icons.Material.Filled.RemoveCircle" Size="Size.Small" OnClick="() => DecreaseQty(context)" />
+                                <MudText Class="mx-1">@context.Quantity</MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.AddCircle" Size="Size.Small" OnClick="() => IncreaseQty(context)" />
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Price">@context.SubTotal.ToString("C0")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveItem(context)" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+
+            <div style="flex: 0 0 auto;">
+                <MudDivider Class="my-4" />
+                
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText>Subtotal</MudText>
+                    <MudText>@SubTotal.ToString("C0")</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText>Tax (11%)</MudText>
+                    <MudText>@TaxAmount.ToString("C0")</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-4">
+                    <MudText Typo="Typo.h5" Style="font-weight:bold;">Total</MudText>
+                    <MudText Typo="Typo.h5" Color="Color.Primary" Style="font-weight:bold;">@TotalAmount.ToString("C0")</MudText>
+                </div>
+
+                <MudSelect T="string" @bind-Value="PaymentMethod" Label="Payment Method" Variant="Variant.Outlined" Class="mb-4">
+                    <MudSelectItem Value="@("Cash")" />
+                    <MudSelectItem Value="@("Credit Card")" />
+                    <MudSelectItem Value="@("E-Wallet")" />
+                </MudSelect>
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth OnClick="ProcessPayment" Disabled="@(!CartItems.Any())">Pay Now</MudButton>
+            </div>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    List<Product> Products = new();
+    List<Category> Categories = new();
+    List<Product> FilteredProducts = new();
+    List<TransactionDetail> CartItems = new();
+    
+    string SearchTerm = "";
+    int SelectedCategoryId = 0;
+    string PaymentMethod = "Cash";
+
+    decimal SubTotal => CartItems.Sum(c => c.SubTotal);
+    decimal TaxAmount => SubTotal * 0.11m;
+    decimal TotalAmount => SubTotal + TaxAmount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        using var db = DbFactory.CreateDbContext();
+        Products = await db.Products.Include(p => p.Category).Where(p => p.Stock > 0).ToListAsync();
+        Categories = await db.Categories.ToListAsync();
+        FilterProducts();
+    }
+
+    void FilterProducts()
+    {
+        FilteredProducts = Products.Where(p => 
+            (SelectedCategoryId == 0 || p.CategoryId == SelectedCategoryId) &&
+            (string.IsNullOrWhiteSpace(SearchTerm) || 
+             p.Name.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
+             p.Barcode == SearchTerm)).ToList();
+    }
+
+    void SelectCategory(int id)
+    {
+        SelectedCategoryId = id;
+        FilterProducts();
+    }
+
+    void OnSearchKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            var p = FilteredProducts.FirstOrDefault(x => x.Barcode == SearchTerm);
+            if (p != null)
+            {
+                AddToCart(p);
+                SearchTerm = "";
+                FilterProducts();
+            }
+        }
+        else
+        {
+            FilterProducts();
+        }
+    }
+
+    void AddToCart(Product p)
+    {
+        var existing = CartItems.FirstOrDefault(c => c.ProductId == p.Id);
+        if (existing != null)
+        {
+            if (existing.Quantity < p.Stock)
+            {
+                existing.Quantity++;
+                existing.SubTotal = existing.Quantity * p.Price;
+            }
+            else
+            {
+                Snackbar.Add("Not enough stock!", Severity.Warning);
+            }
+        }
+        else
+        {
+            CartItems.Add(new TransactionDetail
+            {
+                ProductId = p.Id,
+                Product = p,
+                Quantity = 1,
+                UnitPrice = p.Price,
+                SubTotal = p.Price
+            });
+        }
+    }
+
+    void IncreaseQty(TransactionDetail item)
+    {
+        if (item.Quantity < item.Product.Stock)
+        {
+            item.Quantity++;
+            item.SubTotal = item.Quantity * item.UnitPrice;
+        }
+    }
+
+    void DecreaseQty(TransactionDetail item)
+    {
+        if (item.Quantity > 1)
+        {
+            item.Quantity--;
+            item.SubTotal = item.Quantity * item.UnitPrice;
+        }
+    }
+
+    void RemoveItem(TransactionDetail item)
+    {
+        CartItems.Remove(item);
+    }
+
+    async Task ProcessPayment()
+    {
+        if (!CartItems.Any()) return;
+
+        using var db = DbFactory.CreateDbContext();
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        var tx = new Transaction
+        {
+            Date = DateTime.Now,
+            TotalAmount = TotalAmount,
+            TaxAmount = TaxAmount,
+            DiscountAmount = 0,
+            PaymentMethod = PaymentMethod,
+            CashierName = user.Identity.IsAuthenticated ? user.Identity.Name : "Unknown"
+        };
+
+        foreach (var item in CartItems)
+        {
+            var p = await db.Products.FindAsync(item.ProductId);
+            if (p != null && p.Stock >= item.Quantity)
+            {
+                p.Stock -= item.Quantity; // deduct stock
+                tx.Details.Add(new TransactionDetail
+                {
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPrice,
+                    SubTotal = item.SubTotal
+                });
+            }
+        }
+
+        db.Transactions.Add(tx);
+        await db.SaveChangesAsync();
+
+        Snackbar.Add($"Payment Successful! Total: {TotalAmount.ToString("C0")}", Severity.Success);
+        CartItems.Clear();
+        await LoadData(); // Refresh stock
+    }
+}

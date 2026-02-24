@@ -1,0 +1,191 @@
+@page "/sales-report"
+@using Microsoft.EntityFrameworkCore
+@using MyPoS.Data
+@using System.Globalization
+@using System.IO
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JSRuntime
+@inject MyPoS.Services.ExportService ExportService
+@attribute [Authorize(Roles = "Admin,Manager")]
+
+<MudText Typo="Typo.h4" Class="mb-6">Sales Report</MudText>
+
+<MudCard Class="glass-container pa-4 mb-4">
+    <div class="d-flex flex-wrap gap-4 align-center">
+        <MudSelect T="int" @bind-Value="SelectedYear" Label="Year" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 150px;">
+            <MudSelectItem Value="0">All Years</MudSelectItem>
+            @if(AvailableYears != null)
+            {
+                @foreach(var y in AvailableYears)
+                {
+                    <MudSelectItem Value="y">@y</MudSelectItem>
+                }
+            }
+        </MudSelect>
+        
+        <MudSelect T="int" @bind-Value="SelectedMonth" Label="Month" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 150px;">
+            <MudSelectItem Value="0">All Months</MudSelectItem>
+            @for(int i=1; i<=12; i++)
+            {
+                int monthIndex = i; // local copy for lambda/blazor binding
+                <MudSelectItem Value="monthIndex">@CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(monthIndex)</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="SearchTerm" Placeholder="Search Product / Category / Cashier..." 
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" 
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" 
+                      Style="max-width: 300px; flex-grow: 1;">
+        </MudTextField>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Filter Data</MudButton>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv">CSV</MudButton>
+    </div>
+</MudCard>
+
+<MudCard Class="glass-container pa-4">
+    <MudTable Items="@FilteredReportData" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
+              Filter="new Func<ReportItem,bool>(FilterFunc)"
+              Style="background: transparent;">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Date)">Date</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.TransactionId)">Inv #</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Cashier)">Cashier</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.ProductName)">Product</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.CategoryName)">Category</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Quantity)">Qty</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.UnitPrice)">Price</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.SubTotal)">SubTotal</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date">@context.Date.ToString("yyyy-MM-dd HH:mm")</MudTd>
+            <MudTd DataLabel="Inv #">@context.TransactionId</MudTd>
+            <MudTd DataLabel="Cashier">@context.Cashier</MudTd>
+            <MudTd DataLabel="Product">@context.ProductName</MudTd>
+            <MudTd DataLabel="Category">@context.CategoryName</MudTd>
+            <MudTd DataLabel="Qty">@context.Quantity</MudTd>
+            <MudTd DataLabel="Price">@context.UnitPrice.ToString("C0")</MudTd>
+            <MudTd DataLabel="SubTotal">@context.SubTotal.ToString("C0")</MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudCard>
+
+@code {
+    public class ReportItem 
+    {
+        public int TransactionId { get; set; }
+        public DateTime Date { get; set; }
+        public string Cashier { get; set; }
+        public string ProductName { get; set; }
+        public string CategoryName { get; set; }
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal SubTotal { get; set; }
+    }
+
+    List<ReportItem> AllReportData = new();
+    List<int> AvailableYears = new();
+    
+    int SelectedYear = 0;
+    int SelectedMonth = 0;
+    string SearchTerm = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var db = DbFactory.CreateDbContext();
+        
+        // Find min and max dates
+        var hasTransactions = await db.Transactions.AnyAsync();
+        int startYear = DateTime.Now.Year;
+        int endYear = DateTime.Now.Year;
+        
+        if (hasTransactions)
+        {
+            var minDate = await db.Transactions.MinAsync(t => (DateTime?)t.Date);
+            var maxDate = await db.Transactions.MaxAsync(t => (DateTime?)t.Date);
+            startYear = minDate?.Year ?? DateTime.Now.Year;
+            endYear = maxDate?.Year ?? DateTime.Now.Year;
+        }
+
+        AvailableYears.Clear();
+        for (int y = startYear; y <= endYear; y++)
+        {
+            AvailableYears.Add(y);
+        }
+
+        SelectedYear = DateTime.Now.Year;
+        SelectedMonth = DateTime.Now.Month;
+
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        using var db = DbFactory.CreateDbContext();
+        var query = db.TransactionDetails
+            .Include(d => d.Transaction)
+            .Include(d => d.Product)
+            .ThenInclude(p => p.Category)
+            .AsQueryable();
+
+        if (SelectedYear > 0)
+        {
+            var startDate = new DateTime(SelectedYear, SelectedMonth > 0 ? SelectedMonth : 1, 1);
+            var endDate = SelectedMonth > 0 
+                ? startDate.AddMonths(1).AddTicks(-1) 
+                : new DateTime(SelectedYear, 12, 31, 23, 59, 59);
+
+            query = query.Where(d => d.Transaction.Date >= startDate && d.Transaction.Date <= endDate);
+        }
+
+        var results = await query.ToListAsync();
+
+        AllReportData = results.Select(d => new ReportItem
+        {
+            TransactionId = d.TransactionId,
+            Date = d.Transaction.Date,
+            Cashier = d.Transaction.CashierName ?? "Unknown",
+            ProductName = d.Product?.Name ?? "Deleted Product",
+            CategoryName = d.Product?.Category?.Name ?? "Uncategorized",
+            Quantity = d.Quantity,
+            UnitPrice = d.UnitPrice,
+            SubTotal = d.SubTotal
+        }).OrderByDescending(r => r.Date).ToList();
+    }
+
+    IEnumerable<ReportItem> FilteredReportData => AllReportData.Where(FilterFunc);
+
+    private bool FilterFunc(ReportItem item)
+    {
+        if (string.IsNullOrWhiteSpace(SearchTerm))
+            return true;
+        
+        if (item.ProductName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
+        if (item.CategoryName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
+        if (item.Cashier.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
+        if (item.TransactionId.ToString().Contains(SearchTerm)) return true;
+        
+        return false;
+    }
+
+    async Task ExportExcel()
+    {
+        var data = FilteredReportData.ToList();
+        var bytes = ExportService.ExportToExcel(data, "Sales_Report");
+        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
+        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", $"SalesReport_{DateTime.Now:yyyyMMdd}.xlsx", streamRef);
+    }
+
+    async Task ExportCsv()
+    {
+        var data = FilteredReportData.ToList();
+        var bytes = ExportService.ExportToCsv(data);
+        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
+        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", $"SalesReport_{DateTime.Now:yyyyMMdd}.csv", streamRef);
+    }
+}

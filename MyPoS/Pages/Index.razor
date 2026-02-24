@@ -1,0 +1,123 @@
+@page "/"
+@using Microsoft.EntityFrameworkCore
+@using MyPoS.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<MudText Typo="Typo.h4" Class="mb-6">Dashboard</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Class="glass-container text-center">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Total Sales Today</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Primary">@TotalSales.ToString("C0")</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Class="glass-container text-center">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Transactions Today</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Secondary">@TransactionsCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Class="glass-container text-center">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Low Stock Items</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Error">@LowStockCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Class="glass-container text-center">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Total Products</MudText>
+                <MudText Typo="Typo.h4" Color="Color.Info">@TotalProducts</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mt-6">
+    <MudItem xs="12" md="8">
+        <MudCard Class="glass-container" Style="height:400px;">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Recent Transactions</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTable Items="@RecentTransactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Style="background: transparent;">
+                    <HeaderContent>
+                        <MudTh>ID</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Cashier</MudTh>
+                        <MudTh>Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="ID">@context.Id</MudTd>
+                        <MudTd DataLabel="Date">@context.Date.ToString("g")</MudTd>
+                        <MudTd DataLabel="Cashier">@context.CashierName</MudTd>
+                        <MudTd DataLabel="Total">@context.TotalAmount.ToString("C0")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudCard Class="glass-container" Style="height:400px;">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Top Selling Products</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="string">
+                    @foreach(var item in TopProducts)
+                    {
+                        <MudListItem>
+                            <div class="d-flex justify-space-between w-100">
+                                <MudText>@item.Name</MudText>
+                                <MudText Color="Color.Primary"><b>@item.Qty</b> sold</MudText>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    decimal TotalSales = 0;
+    int TransactionsCount = 0;
+    int LowStockCount = 0;
+    int TotalProducts = 0;
+    List<Transaction> RecentTransactions = new List<Transaction>();
+    List<dynamic> TopProducts = new List<dynamic>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var db = DbFactory.CreateDbContext();
+        
+        var today = DateTime.Today;
+        
+        TotalSales = await db.Transactions.Where(t => t.Date >= today).SumAsync(t => t.TotalAmount);
+        TransactionsCount = await db.Transactions.CountAsync(t => t.Date >= today);
+        LowStockCount = await db.Products.CountAsync(p => p.Stock <= 10);
+        TotalProducts = await db.Products.CountAsync();
+
+        RecentTransactions = await db.Transactions.OrderByDescending(t => t.Date).Take(5).ToListAsync();
+
+        var topSold = await db.TransactionDetails
+            .GroupBy(d => d.Product.Name)
+            .Select(g => new { Name = g.Key, Qty = g.Sum(d => d.Quantity) })
+            .OrderByDescending(x => x.Qty)
+            .Take(5)
+            .ToListAsync();
+            
+        TopProducts = topSold.Cast<dynamic>().ToList();
+    }
+}
