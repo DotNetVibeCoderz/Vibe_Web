@@ -1,0 +1,61 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.h6" Class="mb-2">Order #@Order.Id.ToString("D5")</MudText>
+        <MudGrid Class="mb-4">
+            <MudItem xs="6">
+                <MudText Typo="Typo.body2"><strong>Date:</strong> @Order.CreatedAt.ToLocalTime().ToString("g")</MudText>
+                <MudText Typo="Typo.body2"><strong>Table:</strong> @(Order.Table?.Name ?? "Takeaway")</MudText>
+            </MudItem>
+            <MudItem xs="6" Class="text-right">
+                <MudText Typo="Typo.body2"><strong>Status:</strong> @Order.Status</MudText>
+                <MudText Typo="Typo.body2"><strong>Payment:</strong> @Order.PaymentMethod</MudText>
+            </MudItem>
+        </MudGrid>
+
+        <MudTable Items="@OrderItems" Dense="true" Hover="true" Elevation="0">
+            <HeaderContent>
+                <MudTh>Product</MudTh>
+                <MudTh>Qty</MudTh>
+                <MudTh>Price</MudTh>
+                <MudTh>Subtotal</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Product?.Name</MudTd>
+                <MudTd>@context.Quantity</MudTd>
+                <MudTd>Rp @context.UnitPrice.ToString("N0")</MudTd>
+                <MudTd><strong>Rp @context.SubTotal.ToString("N0")</strong></MudTd>
+            </RowTemplate>
+        </MudTable>
+        
+        <div class="d-flex justify-end mt-4">
+            <MudText Typo="Typo.h5" Color="Color.Primary"><strong>Total: Rp @Order.TotalAmount.ToString("N0")</strong></MudText>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Order Order { get; set; } = null!;
+    
+    private List<OrderItem> OrderItems = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = DbFactory.CreateDbContext();
+        OrderItems = await context.OrderItems
+            .Include(i => i.Product)
+            .Where(i => i.OrderId == Order.Id)
+            .ToListAsync();
+    }
+
+    private void Close() => MudDialog.Close();
+}

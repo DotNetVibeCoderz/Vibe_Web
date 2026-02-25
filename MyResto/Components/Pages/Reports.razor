@@ -1,0 +1,212 @@
+@page "/reports"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Analytics & Reporting</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Analytics & Reporting</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Elevation="2" Class="h-100">
+                <MudCardContent>
+                    <MudText Typo="Typo.h6">Total Sales (All Time)</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Primary">Rp @TotalSales.ToString("N0")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Success" Class="d-flex align-center mt-2">
+                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" Class="mr-1" /> Lifetime Revenue
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Elevation="2" Class="h-100">
+                <MudCardContent>
+                    <MudText Typo="Typo.h6">Total Orders</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Secondary">@TotalOrders</MudText>
+                    <MudText Typo="Typo.caption" Class="mt-2">Completed Transactions</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Elevation="2" Class="h-100">
+                <MudCardContent>
+                    <MudText Typo="Typo.h6">Top Selling Item</MudText>
+                    <MudText Typo="Typo.h5" Color="Color.Success" Class="mb-1">@TopItem</MudText>
+                    <MudText Typo="Typo.caption">@TopItemQty portions sold</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Charts Section -->
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2" Class="pa-4" Style="height:400px;">
+                <MudText Typo="Typo.h6" Class="mb-4">Revenue Trend (Last 7 Days)</MudText>
+                @if (RevenueSeries.Any() && RevenueSeries[0].Data.Sum() > 0)
+                {
+                    <MudChart ChartType="ChartType.Line" ChartSeries="@RevenueSeries" ChartLabels="@Last7DaysLabels" Width="100%" Height="300px" ChartOptions="@(new ChartOptions {   })" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">No sales data recorded for the last 7 days.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+        
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4" Style="height:400px;">
+                <MudText Typo="Typo.h6" Class="mb-4">Orders by Category</MudText>
+                @if (CategoryData.Sum() > 0)
+                {
+                    <MudChart ChartType="ChartType.Donut" ChartSeries="@CategoryData.AsChartDataSet()" ChartLabels="@CategoryLabels" Width="100%" Height="300px" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">No category data available.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4" Style="height:350px;">
+                <MudText Typo="Typo.h6" Class="mb-4">Payment Methods</MudText>
+                @if (PaymentData.Sum() > 0)
+                {
+                    <MudChart ChartType="ChartType.Pie" ChartSeries="@PaymentData.AsChartDataSet()" ChartLabels="@PaymentLabels" Width="100%" Height="250px" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">No payment method data available.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4" Style="height:350px; overflow-y:auto;">
+                <MudText Typo="Typo.h6" Class="mb-4">Recent Sales Data</MudText>
+                <MudTable Items="@RecentOrders" Dense="true" Hover="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Order ID</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>#@context.Id.ToString("D5")</MudTd>
+                        <MudTd>@context.CreatedAt.ToLocalTime().ToString("g")</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Color="@(context.Status == OrderStatus.Completed ? Color.Success : Color.Warning)" Size="Size.Small">@context.Status</MudChip>
+                        </MudTd>
+                        <MudTd>Rp @context.TotalAmount.ToString("N0")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private bool _loading = true;
+
+    // KPI Cards
+    private decimal TotalSales = 0;
+    private int TotalOrders = 0;
+    private string TopItem = "-";
+    private int TopItemQty = 0;
+    private List<Order> RecentOrders = new();
+
+    // Chart: Revenue Line
+    private List<ChartSeries<double>> RevenueSeries = new();
+    private string[] Last7DaysLabels = Array.Empty<string>();
+
+    // Chart: Category Donut
+    private double[] CategoryData = Array.Empty<double>();
+    private string[] CategoryLabels = Array.Empty<string>();
+
+    // Chart: Payment Pie
+    private double[] PaymentData = Array.Empty<double>();
+    private string[] PaymentLabels = Array.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        var completedOrders = await context.Orders.Where(o => o.Status == OrderStatus.Completed).ToListAsync();
+        TotalSales = completedOrders.Sum(o => o.TotalAmount);
+        TotalOrders = completedOrders.Count;
+        RecentOrders = await context.Orders.OrderByDescending(o => o.CreatedAt).Take(5).ToListAsync();
+
+        var topSelling = await context.OrderItems
+            .GroupBy(i => i.ProductId)
+            .OrderByDescending(g => g.Sum(i => i.Quantity))
+            .Select(g => new { ProductId = g.Key, Qty = g.Sum(i => i.Quantity) })
+            .FirstOrDefaultAsync();
+
+        if (topSelling != null && topSelling.ProductId > 0)
+        {
+            var product = await context.Products.FindAsync(topSelling.ProductId);
+            TopItem = product?.Name ?? "-";
+            TopItemQty = topSelling.Qty;
+        }
+
+        // 1. Revenue Trend (Last 7 Days)
+        var today = DateTime.UtcNow.Date;
+        var last7Days = Enumerable.Range(0, 7).Select(i => today.AddDays(-6 + i)).ToList();
+        var minDate = last7Days.First();
+        
+        var weeklyOrders = completedOrders.Where(o => o.CreatedAt >= minDate).ToList();
+
+        var salesData = new double[7];
+        Last7DaysLabels = new string[7];
+
+        for (int i = 0; i < 7; i++)
+        {
+            var date = last7Days[i];
+            Last7DaysLabels[i] = date.ToString("dd MMM");
+            salesData[i] = (double)weeklyOrders.Where(o => o.CreatedAt.Date == date).Sum(o => o.TotalAmount);
+        }
+        RevenueSeries.Add(new ChartSeries<double> { Name = "Revenue (Rp)", Data = salesData });
+
+        // 2. Orders by Category (Donut Chart)
+        // Grouping items sold by Category
+        var itemsSold = await context.OrderItems
+            .Include(i => i.Product)
+            .ThenInclude(p => p.Category)
+            .Where(i => i.Order!.Status == OrderStatus.Completed)
+            .ToListAsync();
+
+        var categoryGrouping = itemsSold
+            .Where(i => i.Product?.Category != null)
+            .GroupBy(i => i.Product!.Category!.Name)
+            .Select(g => new { CategoryName = g.Key, TotalSold = g.Sum(i => i.Quantity) })
+            .ToList();
+
+        if (categoryGrouping.Any())
+        {
+            CategoryLabels = categoryGrouping.Select(c => c.CategoryName).ToArray();
+            CategoryData = categoryGrouping.Select(c => (double)c.TotalSold).ToArray();
+        }
+
+        // 3. Payment Methods (Pie Chart)
+        var paymentGrouping = completedOrders
+            .GroupBy(o => o.PaymentMethod)
+            .Select(g => new { Method = g.Key.ToString(), Count = g.Count() })
+            .ToList();
+
+        if (paymentGrouping.Any())
+        {
+            PaymentLabels = paymentGrouping.Select(p => p.Method).ToArray();
+            PaymentData = paymentGrouping.Select(p => (double)p.Count).ToArray();
+        }
+
+        _loading = false;
+    }
+}

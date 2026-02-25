@@ -1,0 +1,202 @@
+@page "/"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Welcome to MyResto Dashboard</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+                <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Color="Color.Primary" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+                <div>
+                    <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Today's Sales</MudText>
+                    <MudText Typo="Typo.h5">Rp @TodaySales.ToString("N0")</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+                <MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Secondary" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+                <div>
+                    <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Today's Orders</MudText>
+                    <MudText Typo="Typo.h5">@TodayOrders</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+                <MudIcon Icon="@Icons.Material.Filled.TableRestaurant" Color="Color.Success" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+                <div>
+                    <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Occupied Tables</MudText>
+                    <MudText Typo="Typo.h5">@OccupiedTables / @TotalTables</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="d-flex flex-row pt-6 pb-4" Style="height:100px;">
+                <MudIcon Icon="@Icons.Material.Filled.People" Color="Color.Warning" Class="mx-4" Style="width:54px; height:54px;"></MudIcon>
+                <div>
+                    <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mb-n1">Active Staff</MudText>
+                    <MudText Typo="Typo.h5">@ActiveStaff</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Class="mt-4">
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4" Style="height:420px;">
+                <MudText Typo="Typo.h6" Class="mb-4">Weekly Sales Trend (Last 7 Days)</MudText>
+                @if (Series.Any() && Series[0].Data.Sum() > 0)
+                {
+                    <MudChart ChartType="ChartType.Bar" ChartSeries="@Series" ChartLabels="@ChartLabels" Width="100%" Height="300px" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">No sales data recorded for the last 7 days.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Style="height:420px; overflow-y:auto;">
+                <MudText Typo="Typo.h6">Low Stock Alerts</MudText>
+                @if (!StockAlerts.Any())
+                {
+                    <MudAlert Severity="Severity.Success" Class="mt-4">All stocks are in good condition!</MudAlert>
+                }
+                else
+                {
+                    <MudList T="StockAlertModel">
+                        @foreach (var alert in StockAlerts)
+                        {
+                            <MudListItem Icon="@(alert.IsCritical ? Icons.Material.Filled.Error : Icons.Material.Filled.Warning)" 
+                                         IconColor="@(alert.IsCritical ? Color.Error : Color.Warning)">
+                                <div class="d-flex flex-column">
+                                    <MudText Typo="Typo.body1">@alert.Name</MudText>
+                                    <MudText Typo="Typo.caption" Color="@(alert.IsCritical ? Color.Error : Color.Warning)">
+                                        Only @alert.StockText left
+                                    </MudText>
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private bool _loading = true;
+
+    // KPI Stats
+    private decimal TodaySales = 0;
+    private int TodayOrders = 0;
+    private int OccupiedTables = 0;
+    private int TotalTables = 0;
+    private int ActiveStaff = 0;
+
+    // Chart Data
+    private List<ChartSeries<double>> Series = new List<ChartSeries<double>>();
+    private string[] ChartLabels = Array.Empty<string>();
+
+    // Alerts Data
+    private List<StockAlertModel> StockAlerts = new();
+
+    private class StockAlertModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string StockText { get; set; } = string.Empty;
+        public bool IsCritical { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        // Use local time for date comparison to make it realistic for the dashboard
+        var today = DateTime.UtcNow.Date;
+
+        // 1. KPI Stats
+        var todaysOrders = await context.Orders
+            .Where(o => o.CreatedAt >= today)
+            .ToListAsync();
+
+        TodaySales = todaysOrders.Where(o => o.Status == OrderStatus.Completed).Sum(o => o.TotalAmount);
+        TodayOrders = todaysOrders.Count;
+
+        TotalTables = await context.Tables.CountAsync();
+        OccupiedTables = await context.Tables.CountAsync(t => t.Status == TableStatus.Occupied);
+
+        ActiveStaff = await context.Employees.CountAsync(e => e.IsActive);
+
+        // 2. Chart Data (Last 7 Days)
+        var last7Days = Enumerable.Range(0, 7).Select(i => today.AddDays(-6 + i)).ToList();
+        var minDate = last7Days.First();
+        
+        var weeklyOrders = await context.Orders
+            .Where(o => o.CreatedAt >= minDate && o.Status == OrderStatus.Completed)
+            .ToListAsync();
+
+        var salesData = new double[7];
+        ChartLabels = new string[7];
+
+        for (int i = 0; i < 7; i++)
+        {
+            var date = last7Days[i];
+            ChartLabels[i] = date.ToString("dd MMM");
+            
+            // Sum sales for each specific day
+            salesData[i] = (double)weeklyOrders
+                .Where(o => o.CreatedAt.Date == date)
+                .Sum(o => o.TotalAmount);
+        }
+
+        Series.Add(new ChartSeries<double> { Name = "Sales (Rp)", Data = salesData });
+
+        // 3. Low Stock Alerts (Ingredients & Products)
+        var lowIngredients = await context.Ingredients
+            .Where(i => i.CurrentStock <= i.MinimumStock)
+            .ToListAsync();
+            
+        foreach (var ing in lowIngredients)
+        {
+            StockAlerts.Add(new StockAlertModel 
+            { 
+                Name = $"Ingredient: {ing.Name}", 
+                StockText = $"{ing.CurrentStock} {ing.Unit}", 
+                IsCritical = ing.CurrentStock == 0 
+            });
+        }
+
+        var lowProducts = await context.Products
+            .Where(p => p.StockQuantity <= 10 && p.IsActive)
+            .ToListAsync();
+            
+        foreach (var prod in lowProducts)
+        {
+            StockAlerts.Add(new StockAlertModel 
+            { 
+                Name = $"Menu: {prod.Name}", 
+                StockText = $"{prod.StockQuantity} portions", 
+                IsCritical = prod.StockQuantity == 0 
+            });
+        }
+
+        // Sort alerts: critical first
+        StockAlerts = StockAlerts.OrderByDescending(a => a.IsCritical).ToList();
+
+        _loading = false;
+    }
+}

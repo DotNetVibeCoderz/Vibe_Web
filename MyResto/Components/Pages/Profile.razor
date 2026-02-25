@@ -1,0 +1,47 @@
+@page "/profile"
+@using MudBlazor
+@inject ISnackbar Snackbar
+
+<PageTitle>User Profile</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">User Profile</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Edit Profile</MudText>
+            
+            <MudTextField Label="Full Name" @bind-Value="FullName" />
+            <MudTextField Label="Email" @bind-Value="Email" ReadOnly="true" Disabled="true" />
+            
+            <MudText Typo="Typo.h6" Class="mt-6 mb-4">Change Password</MudText>
+            <MudTextField Label="Current Password" @bind-Value="CurrentPassword" InputType="InputType.Password" />
+            <MudTextField Label="New Password" @bind-Value="NewPassword" InputType="InputType.Password" />
+            <MudTextField Label="Confirm Password" @bind-Value="ConfirmPassword" InputType="InputType.Password" />
+            
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-6" OnClick="SaveProfile">Save Changes</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string FullName = "Super Administrator";
+    private string Email = "admin@myresto.com";
+    private string CurrentPassword = "";
+    private string NewPassword = "";
+    private string ConfirmPassword = "";
+
+    private void SaveProfile()
+    {
+        if (!string.IsNullOrEmpty(NewPassword) && NewPassword != ConfirmPassword)
+        {
+            Snackbar.Add("Passwords do not match!", Severity.Error);
+            return;
+        }
+
+        Snackbar.Add("Profile updated successfully!", Severity.Success);
+        CurrentPassword = "";
+        NewPassword = "";
+        ConfirmPassword = "";
+    }
+}

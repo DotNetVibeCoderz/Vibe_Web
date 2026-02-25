@@ -1,0 +1,174 @@
+@page "/crm"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Customer Relationship Management</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Customer Relationship Management (CRM)</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateCustomer">Add Customer</MudButton>
+<MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+
+<MudTable T="Customer" ServerData="ServerReload"
+          Dense="true" Hover="true" @ref="table" SortLabel="Sort By">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Customers & Membership</MudText>
+        <MudSpacer />
+        <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name or Phone" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="id_field" T="Customer">Id</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="name_field" T="Customer">Name</MudTableSortLabel></MudTh>
+        <MudTh>Phone</MudTh>
+        <MudTh>Email</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="points_field" T="Customer">Loyalty Points</MudTableSortLabel></MudTh>
+        <MudTh>Last Visit</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Id">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Phone">@context.PhoneNumber</MudTd>
+        <MudTd DataLabel="Email">@context.Email</MudTd>
+        <MudTd DataLabel="Loyalty Points">
+            <MudChip Color="Color.Warning" T="int" Size="Size.Small" Icon="@Icons.Material.Filled.Star">@context.LoyaltyPoints Pts</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Last Visit">@(context.LastVisit?.ToShortDateString() ?? "-")</MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditCustomer(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteCustomer(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<Customer> table = null!;
+    private string searchString = "";
+    
+    private async Task<TableData<Customer>> ServerReload(TableState state,CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<Customer> query = context.Customers.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(searchString.ToLower()) || 
+                                    (p.PhoneNumber != null && p.PhoneNumber.Contains(searchString)));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "points_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.LoyaltyPoints) : query.OrderByDescending(p => p.LoyaltyPoints);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query.Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync();
+
+        return new TableData<Customer>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+
+    private async Task CreateCustomer()
+    {
+        var parameters = new DialogParameters { ["Customer"] = new Customer() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.CustomerDialog>("Add Customer", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var customer = (Customer)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Customers.Add(customer);
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Customer added", Severity.Success);
+        }
+    }
+
+    private async Task EditCustomer(Customer item)
+    {
+        var itemToEdit = new Customer
+        {
+            Id = item.Id, Name = item.Name, PhoneNumber = item.PhoneNumber,
+            Email = item.Email, LoyaltyPoints = item.LoyaltyPoints, LastVisit = item.LastVisit
+        };
+
+        var parameters = new DialogParameters { ["Customer"] = itemToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.CustomerDialog>("Edit Customer", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updated = (Customer)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Entry(updated).State = EntityState.Modified;
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Customer updated", Severity.Success);
+        }
+    }
+
+    private async Task DeleteCustomer(Customer item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync("Warning", $"Delete {item.Name}?", yesText: "Delete!", cancelText: "Cancel");
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var cust = await context.Customers.FindAsync(item.Id);
+            if (cust != null)
+            {
+                context.Customers.Remove(cust);
+                await context.SaveChangesAsync();
+                await table.ReloadServerData();
+                Snackbar.Add("Customer deleted", Severity.Success);
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Customers.ToListAsync();
+        
+        var csv = "Id,Name,Phone,Email,LoyaltyPoints,LastVisit\n";
+        foreach(var p in data)
+        {
+            csv += $"{p.Id},{p.Name},{p.PhoneNumber},{p.Email},{p.LoyaltyPoints},{p.LastVisit?.ToString("yyyy-MM-dd") ?? "-"}\n";
+        }
+        
+        await JS.InvokeVoidAsync("downloadFile", "customers.csv", csv);
+        Snackbar.Add("Data exported to CSV", Severity.Info);
+    }
+}

@@ -1,0 +1,419 @@
+@page "/pos"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Point of Sale (POS)</PageTitle>
+
+<MudGrid>
+    <!-- Left Side: Menu Items -->
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4" Style="height: calc(100vh - 120px); overflow-y: auto;">
+            <MudGrid>
+                <MudItem xs="12" Class="mb-4 d-flex align-center gap-4">
+                    <MudTextField @bind-Value="searchQuery" Placeholder="Search Menu..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" OnKeyUp="FilterProducts" Style="flex-grow:1;"></MudTextField>
+                    <MudSelect T="int?" Label="Load Table Order" @bind-Value="SelectedTableId" SelectedValuesChanged="LoadTableOrder" Dense="true" Style="width:200px;">
+                        <MudSelectItem T="int?" Value="null">Takeaway / New</MudSelectItem>
+                        @foreach(var table in ActiveTables)
+                        {
+                            <MudSelectItem T="int?" Value="table.Id">@table.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" Class="mb-4">
+                    <MudChipSet T="int" SelectedChipChanged="OnCategoryChanged" Class="mt-2">
+                        <MudChip Text="All" Default="true" Color="Color.Primary" Variant="Variant.Filled" />
+                        @foreach (var cat in Categories)
+                        {
+                            <MudChip Text="@cat.Name" Value="@cat.Id" Color="Color.Primary" Variant="Variant.Outlined" />
+                        }
+                    </MudChipSet>
+                </MudItem>
+
+                @foreach (var product in FilteredProducts)
+                {
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCard Elevation="2" Style="cursor:pointer;" @onclick="() => AddToCart(product)">
+                            <MudCardMedia Image="@(string.IsNullOrEmpty(product.ImageUrl) ? "https://placehold.co/400x300?text=No+Image" : product.ImageUrl)" Height="120" />
+                            <MudCardContent Class="pa-2">
+                                <MudText Typo="Typo.subtitle2" Style="font-weight:bold; height: 40px; overflow:hidden;">@product.Name</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Primary">Rp @product.Price.ToString("N0")</MudText>
+                                <MudText Typo="Typo.caption" Color="@(product.StockQuantity > 0 ? Color.Success : Color.Error)">
+                                    @(product.StockQuantity > 0 ? $"Stock: {product.StockQuantity}" : "Out of Stock")
+                                </MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Right Side: Cart -->
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4 d-flex flex-column" Style="height: calc(100vh - 120px);">
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.h6">
+                    @if(CurrentOrderId.HasValue) 
+                    {
+                        <span>Order #@CurrentOrderId.Value.ToString("D5")</span>
+                    } 
+                    else 
+                    {
+                        <span>Current Order</span>
+                    }
+                </MudText>
+                @if(SelectedTableId.HasValue)
+                {
+                    <MudChip Size="Size.Small" T="string" Color="Color.Info">Table @ActiveTables.FirstOrDefault(t => t.Id == SelectedTableId)?.Name</MudChip>
+                }
+            </div>
+            
+            <div style="flex-grow: 1; overflow-y: auto;">
+                @if (!CartItems.Any())
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Surface" Class="mt-4 text-center">Cart is empty</MudText>
+                }
+                else
+                {
+                    <MudList T="OrderItem" Dense="true">
+                        @foreach (var item in CartItems)
+                        {
+                            <MudListItem>
+                                <div class="d-flex justify-space-between align-center w-100">
+                                    <div>
+                                        <MudText Typo="Typo.body2" Style="font-weight:bold;">@item.Product?.Name</MudText>
+                                        <MudText Typo="Typo.caption">Rp @item.UnitPrice.ToString("N0") x @item.Quantity</MudText>
+                                    </div>
+                                    <div class="d-flex align-center">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" OnClick="() => UpdateQuantity(item, -1)" />
+                                        <MudText Typo="Typo.body2" Class="mx-2">@item.Quantity</MudText>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="() => UpdateQuantity(item, 1)" />
+                                    </div>
+                                    <MudText Typo="Typo.body2" Style="font-weight:bold;">Rp @item.SubTotal.ToString("N0")</MudText>
+                                </div>
+                            </MudListItem>
+                            <MudDivider />
+                        }
+                    </MudList>
+                }
+            </div>
+
+            <div class="mt-4 pt-4" style="border-top: 1px solid var(--mud-palette-lines-default);">
+                <MudSelect T="PaymentMethod" Label="Payment Method" @bind-Value="SelectedPaymentMethod" Dense="true" Class="mb-4">
+                    <MudSelectItem Value="@(PaymentMethod.Cash)">Cash</MudSelectItem>
+                    <MudSelectItem Value="@(PaymentMethod.CreditCard)">Credit Card</MudSelectItem>
+                    <MudSelectItem Value="@(PaymentMethod.QRCode)">QR Code / E-Wallet</MudSelectItem>
+                    <MudSelectItem Value="@(PaymentMethod.Split)">Split Bill</MudSelectItem>
+                </MudSelect>
+
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle1">Subtotal</MudText>
+                    <MudText Typo="Typo.subtitle1">Rp @SubTotal.ToString("N0")</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle1">Tax (11%)</MudText>
+                    <MudText Typo="Typo.subtitle1">Rp @Tax.ToString("N0")</MudText>
+                </div>
+                <div class="d-flex justify-space-between mb-4">
+                    <MudText Typo="Typo.h6" Style="font-weight:bold;">Total</MudText>
+                    <MudText Typo="Typo.h6" Style="font-weight:bold;" Color="Color.Primary">Rp @Total.ToString("N0")</MudText>
+                </div>
+
+                <MudGrid>
+                    <MudItem xs="4">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true" OnClick="ClearCart">Clear</MudButton>
+                    </MudItem>
+                    <MudItem xs="4">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" FullWidth="true" Disabled="@(!CartItems.Any())" OnClick="SaveOrderOnly">Save</MudButton>
+                    </MudItem>
+                    <MudItem xs="4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Disabled="@(!CartItems.Any())" OnClick="ProcessPayment">Pay</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<Product> Products = new();
+    private List<Product> FilteredProducts = new();
+    private List<Category> Categories = new();
+    private List<OrderItem> CartItems = new();
+    private List<RestaurantTable> ActiveTables = new();
+    
+    private string searchQuery = "";
+    private int? selectedCategoryId = null;
+
+    private int? SelectedTableId = null;
+    private int? CurrentOrderId = null;
+    private PaymentMethod SelectedPaymentMethod = PaymentMethod.Cash;
+
+    private decimal SubTotal => CartItems.Sum(i => i.SubTotal);
+    private decimal Tax => SubTotal * 0.11m;
+    private decimal Total => SubTotal + Tax;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadResources();
+    }
+
+    private async Task LoadResources()
+    {
+        using var context = DbFactory.CreateDbContext();
+        Products = await context.Products.Include(p => p.Category).Where(p => p.IsActive).ToListAsync();
+        Categories = await context.Categories.ToListAsync();
+        
+        // Load tables that have a pending order or are occupied
+        var occupiedTableIds = await context.Orders
+            .Where(o => o.Status == OrderStatus.Pending && o.TableId != null)
+            .Select(o => o.TableId)
+            .Distinct()
+            .ToListAsync();
+            
+        ActiveTables = await context.Tables
+            .Where(t => occupiedTableIds.Contains(t.Id) || t.Status == TableStatus.Occupied)
+            .ToListAsync();
+
+        FilteredProducts = Products;
+    }
+
+    private async Task LoadTableOrder(IEnumerable<int?> values)
+    {
+        if (SelectedTableId == null)
+        {
+            ClearCart();
+            return;
+        }
+
+        using var context = DbFactory.CreateDbContext();
+        var pendingOrder = await context.Orders
+            .Include(o => o.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(o => o.TableId == SelectedTableId && o.Status == OrderStatus.Pending);
+
+        if (pendingOrder != null)
+        {
+            CurrentOrderId = pendingOrder.Id;
+            CartItems = pendingOrder.Items.Select(i => new OrderItem
+            {
+                Id = i.Id,
+                ProductId = i.ProductId,
+                Product = i.Product,
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice,
+                OrderId = pendingOrder.Id
+            }).ToList();
+        }
+        else
+        {
+            CurrentOrderId = null;
+            CartItems.Clear();
+            Snackbar.Add("No pending orders for this table, starting a new one.", Severity.Info);
+        }
+    }
+
+    private void FilterProducts()
+    {
+        FilteredProducts = Products.Where(p => 
+            (string.IsNullOrEmpty(searchQuery) || p.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) &&
+            (!selectedCategoryId.HasValue || p.CategoryId == selectedCategoryId)
+        ).ToList();
+    }
+
+    private void OnCategoryChanged(MudChip<int> chip)
+    {
+        if (chip?.Text == "All")
+            selectedCategoryId = null;
+        else
+            selectedCategoryId = (int?)chip?.Value;
+            
+        FilterProducts();
+    }
+
+    private void AddToCart(Product product)
+    {
+        if (product.StockQuantity <= 0)
+        {
+            Snackbar.Add("Product out of stock!", Severity.Warning);
+            return;
+        }
+
+        var existingItem = CartItems.FirstOrDefault(i => i.ProductId == product.Id);
+        if (existingItem != null)
+        {
+            if (existingItem.Quantity < product.StockQuantity)
+                existingItem.Quantity++;
+            else
+                Snackbar.Add("Cannot exceed available stock!", Severity.Warning);
+        }
+        else
+        {
+            CartItems.Add(new OrderItem
+            {
+                ProductId = product.Id,
+                Product = product,
+                Quantity = 1,
+                UnitPrice = product.Price
+            });
+        }
+    }
+
+    private void UpdateQuantity(OrderItem item, int change)
+    {
+        item.Quantity += change;
+        if (item.Quantity <= 0)
+        {
+            CartItems.Remove(item);
+        }
+        else if (item.Quantity > item.Product!.StockQuantity)
+        {
+            item.Quantity = item.Product.StockQuantity;
+            Snackbar.Add("Cannot exceed available stock!", Severity.Warning);
+        }
+    }
+
+    private void ClearCart()
+    {
+        CartItems.Clear();
+        CurrentOrderId = null;
+        SelectedTableId = null;
+        SelectedPaymentMethod = PaymentMethod.Cash;
+    }
+
+    private async Task SaveOrderOnly()
+    {
+        using var context = DbFactory.CreateDbContext();
+
+        Order order;
+        if (CurrentOrderId.HasValue)
+        {
+            order = await context.Orders.Include(o => o.Items).FirstAsync(o => o.Id == CurrentOrderId.Value);
+            order.TotalAmount = Total;
+            
+            // Re-sync items
+            context.OrderItems.RemoveRange(order.Items);
+            foreach (var item in CartItems)
+            {
+                order.Items.Add(new OrderItem
+                {
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPrice
+                });
+            }
+            context.Orders.Update(order);
+        }
+        else
+        {
+            order = new Order
+            {
+                TotalAmount = Total,
+                Status = OrderStatus.Pending,
+                PaymentMethod = SelectedPaymentMethod,
+                CreatedAt = DateTime.UtcNow,
+                TableId = SelectedTableId
+            };
+
+            foreach (var item in CartItems)
+            {
+                order.Items.Add(new OrderItem
+                {
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPrice
+                });
+            }
+            context.Orders.Add(order);
+            
+            // Mark table occupied
+            if (SelectedTableId.HasValue)
+            {
+                var table = await context.Tables.FindAsync(SelectedTableId);
+                if (table != null) table.Status = TableStatus.Occupied;
+            }
+        }
+
+        await context.SaveChangesAsync();
+        Snackbar.Add("Order saved successfully. You can pay it later.", Severity.Success);
+        
+        ClearCart();
+        await LoadResources(); // reload active tables
+    }
+
+    private async Task ProcessPayment()
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Process Payment", 
+            $"Payment Method: {SelectedPaymentMethod}\nTotal Amount: Rp {Total:N0}\n\nProceed with payment?", 
+            yesText: "Pay", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            
+            Order order;
+            if (CurrentOrderId.HasValue)
+            {
+                order = await context.Orders.Include(o => o.Items).FirstAsync(o => o.Id == CurrentOrderId.Value);
+                order.TotalAmount = Total;
+                order.Status = OrderStatus.Completed;
+                order.PaymentMethod = SelectedPaymentMethod;
+                
+                // Remove old, replace with exact current state
+                context.OrderItems.RemoveRange(order.Items);
+                foreach (var item in CartItems)
+                {
+                    order.Items.Add(new OrderItem { ProductId = item.ProductId, Quantity = item.Quantity, UnitPrice = item.UnitPrice });
+                }
+            }
+            else
+            {
+                order = new Order
+                {
+                    TotalAmount = Total,
+                    Status = OrderStatus.Completed,
+                    PaymentMethod = SelectedPaymentMethod,
+                    CreatedAt = DateTime.UtcNow,
+                    TableId = SelectedTableId
+                };
+                foreach (var item in CartItems)
+                {
+                    order.Items.Add(new OrderItem { ProductId = item.ProductId, Quantity = item.Quantity, UnitPrice = item.UnitPrice });
+                }
+                context.Orders.Add(order);
+            }
+
+            // Update Stock
+            foreach (var item in CartItems)
+            {
+                var product = await context.Products.FindAsync(item.ProductId);
+                if (product != null)
+                {
+                    product.StockQuantity -= item.Quantity;
+                }
+            }
+            
+            // Clear table status
+            if (SelectedTableId.HasValue)
+            {
+                var table = await context.Tables.FindAsync(SelectedTableId);
+                if (table != null) table.Status = TableStatus.Cleaning;
+            }
+
+            await context.SaveChangesAsync();
+
+            Snackbar.Add("Payment successful! Order saved.", Severity.Success);
+            ClearCart();
+            await LoadResources();
+            FilterProducts();
+        }
+    }
+}

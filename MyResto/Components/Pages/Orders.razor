@@ -1,0 +1,137 @@
+@page "/orders"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Orders</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Order History & Management</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Class="mb-4" OnClick="CreateNewOrder">New Order</MudButton>
+
+<MudTable Items="@OrdersList" Hover="true" Breakpoint="Breakpoint.Sm" Loading="@_loading" LoadingProgressColor="Color.Info" Filter="new Func<Order,bool>(FilterFunc1)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Past & Active Orders</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString1" Placeholder="Search by ID" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Order ID</MudTh>
+        <MudTh>Date</MudTh>
+        <MudTh>Table</MudTh>
+        <MudTh>Total Amount</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Order ID">#@context.Id.ToString("D5")</MudTd>
+        <MudTd DataLabel="Date">@context.CreatedAt.ToLocalTime().ToString("g")</MudTd>
+        <MudTd DataLabel="Table">@(context.Table?.Name ?? "Takeaway")</MudTd>
+        <MudTd DataLabel="Total Amount">Rp @context.TotalAmount.ToString("N0")</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip Color="@GetStatusColor(context.Status)" T="string" Size="Size.Small">@context.Status</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Actions">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="@(() => ViewOrder(context))">View</MudButton>
+            @if(context.Status == OrderStatus.Pending)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" Class="ml-2" OnClick="@(() => ContinueOrder(context))">Edit / Pay</MudButton>
+            }
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private List<Order> OrdersList = new();
+    private bool _loading = true;
+    private string searchString1 = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        using var context = DbFactory.CreateDbContext();
+        OrdersList = await context.Orders
+            .Include(o => o.Table)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(100)
+            .ToListAsync();
+        _loading = false;
+    }
+
+    private async Task CreateNewOrder()
+    {
+        var parameters = new DialogParameters { ["Order"] = new Order() };
+        var dialog = await DialogService.ShowAsync <Components.Dialogs.CreateOrderDialog>("Create New Order", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var newOrder = (Order)result.Data;
+            newOrder.CreatedAt = DateTime.UtcNow;
+            newOrder.Status = OrderStatus.Pending;
+
+            using var context = DbFactory.CreateDbContext();
+            context.Orders.Add(newOrder);
+
+            if (newOrder.TableId.HasValue)
+            {
+                var table = await context.Tables.FindAsync(newOrder.TableId);
+                if (table != null) table.Status = TableStatus.Occupied;
+            }
+
+            await context.SaveChangesAsync();
+            
+            Snackbar.Add($"Order #{newOrder.Id} created. Redirecting to POS...", Severity.Success);
+            
+            // Redirect to POS with table pre-selected implicitly, but for now we just load POS
+            NavigationManager.NavigateTo("/pos");
+        }
+    }
+
+    private async void ViewOrder(Order order)
+    {
+        var parameters = new DialogParameters { ["Order"] = order };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        await DialogService.ShowAsync<Components.Dialogs.OrderDetailDialog>("Order Details", parameters, options);
+    }
+
+    private void ContinueOrder(Order order)
+    {
+        // For simplicity, navigate to POS. The user can select the table from the dropdown in POS
+        Snackbar.Add($"Select Table {(order.Table?.Name ?? "Takeaway")} in POS to continue editing this order.", Severity.Info);
+        NavigationManager.NavigateTo("/pos");
+    }
+
+    private bool FilterFunc1(Order element) => FilterFunc(element, searchString1);
+
+    private bool FilterFunc(Order element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Id.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private Color GetStatusColor(OrderStatus status) => status switch
+    {
+        OrderStatus.Pending => Color.Warning,
+        OrderStatus.Paid => Color.Info,
+        OrderStatus.Completed => Color.Success,
+        OrderStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+}

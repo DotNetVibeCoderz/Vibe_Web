@@ -1,0 +1,35 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Category" @ref="form">
+            <MudTextField Label="Category Name" @bind-Value="Category.Name" Required="true" RequiredError="Name is required" />
+            <MudTextField Label="Description" @bind-Value="Category.Description" Lines="3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Category Category { get; set; } = new Category();
+    
+    private MudForm form = null!;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Category));
+        }
+    }
+}

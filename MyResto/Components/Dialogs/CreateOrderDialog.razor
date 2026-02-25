@@ -1,0 +1,49 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Order" @ref="form">
+            <MudSelect T="int?" Label="Select Table (Leave empty for Takeaway)" @bind-Value="Order.TableId" Clearable="true" Class="mb-4">
+                @foreach (var table in Tables)
+                {
+                    <MudSelectItem T="int?" Value="table.Id">@table.Name - Capacity: @table.Capacity</MudSelectItem>
+                }
+            </MudSelect>
+            <MudAlert Severity="Severity.Info" Class="mt-2">Products will be added directly in the POS view after this order is created.</MudAlert>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Create Draft Order</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Order Order { get; set; } = new Order();
+    
+    [Inject] private IDbContextFactory<ApplicationDbContext> DbFactory { get; set; } = null!;
+    
+    private List<RestaurantTable> Tables = new();
+    private MudForm form = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = DbFactory.CreateDbContext();
+        Tables = await context.Tables.Where(t => t.Status == TableStatus.Available).ToListAsync();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Order));
+        }
+    }
+}

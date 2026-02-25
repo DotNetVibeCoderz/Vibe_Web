@@ -1,0 +1,205 @@
+@page "/products"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h5" Class="mb-4">Menu Management</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(CreateProduct)">Add Menu Item</MudButton>
+<MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="@(ExportData)">Export CSV</MudButton>
+
+<MudTable T="Product" ServerData="ServerReload"
+          Dense="true" Hover="true" @ref="table"
+          SortLabel="Sort By">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Products</MudText>
+        <MudSpacer />
+        <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name or Category" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="id_field" T="Product">Id</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="name_field" T="Product">Name</MudTableSortLabel></MudTh>
+        <MudTh>Category</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="price_field" T="Product">Price</MudTableSortLabel></MudTh>
+        <MudTh>Stock</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Id">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Category">@context.Category?.Name</MudTd>
+        <MudTd DataLabel="Price">Rp @context.Price.ToString("N0")</MudTd>
+        <MudTd DataLabel="Stock">
+            <MudChip T="string" Color="@(context.StockQuantity < 10 ? Color.Error : Color.Success)" Size="Size.Small">@context.StockQuantity</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Status">
+            <MudSwitch T="bool" Value="@context.IsActive" ValueChanged="@((bool v) => ToggleActive(context, v))" Color="Color.Success" />
+        </MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProduct(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteProduct(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<Product> table = null!;
+    private string searchString = "";
+    
+    // Server-side Processing
+    private async Task<TableData<Product>> ServerReload(TableState state, CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<Product> query = context.Products
+            .Include(p => p.Category)
+            .AsNoTracking(); // Optimization
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => 
+                p.Name.ToLower().Contains(searchString.ToLower()) || 
+                (p.Category != null && p.Category.Name.ToLower().Contains(searchString.ToLower())));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "price_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Price) : query.OrderByDescending(p => p.Price);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query
+            .Skip(state.Page * state.PageSize)
+            .Take(state.PageSize)
+            .ToListAsync();
+
+        return new TableData<Product>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+
+    private async Task CreateProduct()
+    {
+        var parameters = new DialogParameters { ["Product"] = new Product() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.ProductDialog>("Add Product", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var product = (Product)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Products.Add(product);
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Product added successfully", Severity.Success);
+        }
+    }
+
+    private async Task EditProduct(Product item)
+    {
+        var productToEdit = new Product
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Description = item.Description,
+            Price = item.Price,
+            StockQuantity = item.StockQuantity,
+            CategoryId = item.CategoryId,
+            IsActive = item.IsActive,
+            ImageUrl = item.ImageUrl
+        };
+
+        var parameters = new DialogParameters { ["Product"] = productToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.ProductDialog>("Edit Product", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updatedProduct = (Product)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            
+            context.Entry(updatedProduct).State = EntityState.Modified;
+            
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Product updated successfully", Severity.Success);
+        }
+    }
+
+    private async Task DeleteProduct(Product item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Warning", 
+            $"Delete {item.Name}?", 
+            yesText: "Delete!", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var product = await context.Products.FindAsync(item.Id);
+            if (product != null)
+            {
+                context.Products.Remove(product);
+                await context.SaveChangesAsync();
+                await table.ReloadServerData();
+                Snackbar.Add("Product deleted", Severity.Success);
+            }
+        }
+    }
+    
+    private async Task ToggleActive(Product item, bool isActive)
+    {
+        using var context = DbFactory.CreateDbContext();
+        var product = await context.Products.FindAsync(item.Id);
+        if (product != null)
+        {
+            product.IsActive = isActive;
+            await context.SaveChangesAsync();
+            item.IsActive = isActive; // Update UI state locally
+            Snackbar.Add($"Product {(isActive ? "Activated" : "Deactivated")}", Severity.Info);
+        }
+    }
+
+    private async Task ExportData()
+    {
+        Snackbar.Add("Exporting data... (Mock: check console or implement file download)", Severity.Info);
+        
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Products.Include(p => p.Category).ToListAsync();
+        
+        var csv = "Id,Name,Category,Price,Stock\n";
+        foreach(var p in data)
+        {
+            csv += $"{p.Id},{p.Name},{p.Category?.Name},{p.Price},{p.StockQuantity}\n";
+        }
+    }
+}

@@ -1,0 +1,177 @@
+@page "/inventory"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Inventory Management</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Inventory & Stock Control</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateIngredient">Add Ingredient</MudButton>
+<MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+
+<MudTable ServerData="ServerReload"
+          Dense="true" Hover="true" @ref="table" SortLabel="Sort By">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Raw Materials</MudText>
+        <MudSpacer />
+        <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="id_field" T="Ingredient">Id</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="name_field" T="Ingredient">Name</MudTableSortLabel></MudTh>
+        <MudTh>Unit</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="stock_field" T="Ingredient">Current Stock</MudTableSortLabel></MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Last Restocked</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Id">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Unit">@context.Unit</MudTd>
+        <MudTd DataLabel="Current Stock">@context.CurrentStock</MudTd>
+        <MudTd DataLabel="Status">
+            @if(context.CurrentStock <= context.MinimumStock) {
+                <MudChip Color="Color.Error" T="string" Size="Size.Small">Low Stock</MudChip>
+            } else {
+                <MudChip Color="Color.Success" T="string" Size="Size.Small">Good</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Last Restocked">@context.LastRestocked.ToShortDateString()</MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditIngredient(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteIngredient(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<Ingredient> table = null!;
+    private string searchString = "";
+    
+    private async Task<TableData<Ingredient>> ServerReload(TableState state, CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<Ingredient> query = context.Ingredients.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(searchString.ToLower()));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "stock_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.CurrentStock) : query.OrderByDescending(p => p.CurrentStock);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query.Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync();
+
+        return new TableData<Ingredient>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+
+    private async Task CreateIngredient()
+    {
+        var parameters = new DialogParameters { ["Ingredient"] = new Ingredient() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.IngredientDialog>("Add Ingredient", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var ingredient = (Ingredient)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Ingredients.Add(ingredient);
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Ingredient added", Severity.Success);
+        }
+    }
+
+    private async Task EditIngredient(Ingredient item)
+    {
+        var itemToEdit = new Ingredient
+        {
+            Id = item.Id, Name = item.Name, Unit = item.Unit, 
+            CurrentStock = item.CurrentStock, MinimumStock = item.MinimumStock, LastRestocked = item.LastRestocked
+        };
+
+        var parameters = new DialogParameters { ["Ingredient"] = itemToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.IngredientDialog>("Edit Ingredient", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updated = (Ingredient)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Entry(updated).State = EntityState.Modified;
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Ingredient updated", Severity.Success);
+        }
+    }
+
+    private async Task DeleteIngredient(Ingredient item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync("Warning", $"Delete {item.Name}?", yesText: "Delete!", cancelText: "Cancel");
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var ing = await context.Ingredients.FindAsync(item.Id);
+            if (ing != null)
+            {
+                context.Ingredients.Remove(ing);
+                await context.SaveChangesAsync();
+                await table.ReloadServerData();
+                Snackbar.Add("Ingredient deleted", Severity.Success);
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Ingredients.ToListAsync();
+        
+        var csv = "Id,Name,Unit,CurrentStock,MinimumStock,LastRestocked\n";
+        foreach(var p in data)
+        {
+            csv += $"{p.Id},{p.Name},{p.Unit},{p.CurrentStock},{p.MinimumStock},{p.LastRestocked:yyyy-MM-dd}\n";
+        }
+        
+        await JS.InvokeVoidAsync("downloadFile", "inventory.csv", csv);
+        Snackbar.Add("Data exported to CSV", Severity.Info);
+    }
+}

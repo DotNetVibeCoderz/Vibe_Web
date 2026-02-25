@@ -1,0 +1,260 @@
+@page "/tables"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Table Management</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Table Management</MudText>
+    <div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateTable">Add Table</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+    </div>
+</div>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+    <MudTabPanel Text="Visual View" Icon="@Icons.Material.Filled.Dashboard">
+        <MudGrid>
+            @foreach (var table in TablesList)
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Elevation="3" Class="pa-4">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@table.Name</MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Color="Color.Default">
+                                    <MudMenuItem OnClick="@(() => EditTable(table))">Edit Table</MudMenuItem>
+                                    <MudMenuItem OnClick="@(() => DeleteTable(table))">Delete</MudMenuItem>
+                                </MudMenu>
+                            </CardHeaderActions>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText>Capacity: @table.Capacity Persons</MudText>
+                            <MudChip T="string" Color="@GetStatusColor(table.Status)">@table.Status</MudChip>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => ViewActiveOrder(table))">View Order</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    </MudTabPanel>
+
+    <MudTabPanel Text="List View" Icon="@Icons.Material.Filled.List">
+        <MudTable ServerData="ServerReload"
+                  Dense="true" Hover="true" @ref="mudTable" SortLabel="Sort By">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">All Tables</MudText>
+                <MudSpacer />
+                <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortLabel="id_field" T="RestaurantTable">Id</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortLabel="name_field" T="RestaurantTable">Name</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortLabel="cap_field" T="RestaurantTable">Capacity</MudTableSortLabel></MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Id">@context.Id</MudTd>
+                <MudTd DataLabel="Name">@context.Name</MudTd>
+                <MudTd DataLabel="Capacity">@context.Capacity</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Color="@GetStatusColor(context.Status)" Size="Size.Small">@context.Status</MudChip>
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditTable(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteTable(context))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>No matching tables found</MudText>
+            </NoRecordsContent>
+            <LoadingContent>
+                <MudText>Loading...</MudText>
+            </LoadingContent>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private List<RestaurantTable> TablesList = new();
+    private MudTable<RestaurantTable> mudTable = null!;
+    private string searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTables();
+    }
+
+    private async Task LoadTables()
+    {
+        using var context = DbFactory.CreateDbContext();
+        TablesList = await context.Tables.OrderBy(t => t.Id).ToListAsync();
+    }
+
+    // Server-side Processing for List View
+    private async Task<TableData<RestaurantTable>> ServerReload(TableState state,CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<RestaurantTable> query = context.Tables.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(searchString.ToLower()));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "cap_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Capacity) : query.OrderByDescending(p => p.Capacity);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query.Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync();
+
+        return new TableData<RestaurantTable>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private async Task OnSearch(string text)
+    {
+        searchString = text;
+        await mudTable.ReloadServerData();
+    }
+
+    // CRUD Operations
+    private async Task CreateTable()
+    {
+        var parameters = new DialogParameters { ["Table"] = new RestaurantTable() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.TableDialog>("Add Table", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var table = (RestaurantTable)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Tables.Add(table);
+            await context.SaveChangesAsync();
+            
+            Snackbar.Add("Table added successfully", Severity.Success);
+            await LoadTables();
+            if(mudTable != null) await mudTable.ReloadServerData();
+        }
+    }
+
+    private async Task EditTable(RestaurantTable item)
+    {
+        var tableToEdit = new RestaurantTable
+        {
+            Id = item.Id, Name = item.Name, Capacity = item.Capacity, Status = item.Status
+        };
+
+        var parameters = new DialogParameters { ["Table"] = tableToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.TableDialog>("Edit Table", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updated = (RestaurantTable)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Entry(updated).State = EntityState.Modified;
+            await context.SaveChangesAsync();
+            
+            Snackbar.Add("Table updated successfully", Severity.Success);
+            await LoadTables();
+            if(mudTable != null) await mudTable.ReloadServerData();
+        }
+    }
+
+    private async Task DeleteTable(RestaurantTable item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+            "Warning", 
+            $"Delete {item.Name}? This might affect past orders linked to this table.", 
+            yesText: "Delete!", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var table = await context.Tables.FindAsync(item.Id);
+            if (table != null)
+            {
+                context.Tables.Remove(table);
+                await context.SaveChangesAsync();
+                
+                Snackbar.Add("Table deleted", Severity.Success);
+                await LoadTables();
+                if(mudTable != null) await mudTable.ReloadServerData();
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Tables.ToListAsync();
+        
+        var csv = "Id,Name,Capacity,Status\n";
+        foreach(var p in data)
+        {
+            csv += $"{p.Id},{p.Name},{p.Capacity},{p.Status}\n";
+        }
+        
+        await JS.InvokeVoidAsync("downloadFile", "tables.csv", csv);
+        Snackbar.Add("Data exported to CSV", Severity.Info);
+    }
+
+    private async Task ViewActiveOrder(RestaurantTable table)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        var activeOrder = await context.Orders
+            .Include(o => o.Table)
+            .Where(o => o.TableId == table.Id && (o.Status == OrderStatus.Pending || o.Status == OrderStatus.Paid))
+            .OrderByDescending(o => o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (activeOrder != null)
+        {
+            var parameters = new DialogParameters { ["Order"] = activeOrder };
+            var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+            await DialogService.ShowAsync<Components.Dialogs.OrderDetailDialog>($"Active Order - {table.Name}", parameters, options);
+        }
+        else
+        {
+            Snackbar.Add($"No active or pending orders found for {table.Name}.", Severity.Info);
+        }
+    }
+
+    private Color GetStatusColor(TableStatus status) => status switch
+    {
+        TableStatus.Available => Color.Success,
+        TableStatus.Occupied => Color.Error,
+        TableStatus.Reserved => Color.Warning,
+        TableStatus.Cleaning => Color.Info,
+        _ => Color.Default
+    };
+}

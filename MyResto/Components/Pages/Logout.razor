@@ -1,0 +1,21 @@
+@page "/logout"
+@layout Layout.EmptyLayout
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Logging out...</PageTitle>
+
+<MudPaper Class="pa-8 w-100 text-center" Elevation="0">
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+    <MudText Typo="Typo.h5">Signing out...</MudText>
+</MudPaper>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Simulate sign out process delay
+        await Task.Delay(1000);
+        Snackbar.Add("You have been signed out.", Severity.Info);
+        NavigationManager.NavigateTo("/login");
+    }
+}

@@ -1,0 +1,20 @@
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    
+    <MudNavGroup Title="Master Data" Icon="@Icons.Material.Filled.Folder" Expanded="true">
+        <MudNavLink Href="/categories" Icon="@Icons.Material.Filled.Category">Categories</MudNavLink>
+        <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Fastfood">Products/Menu</MudNavLink>
+        <MudNavLink Href="/tables" Icon="@Icons.Material.Filled.TableRestaurant">Tables</MudNavLink>
+    </MudNavGroup>
+    
+    <MudNavLink Href="/pos" Icon="@Icons.Material.Filled.PointOfSale">Point of Sale (POS)</MudNavLink>
+    <MudNavLink Href="/orders" Icon="@Icons.Material.Filled.ListAlt">Orders</MudNavLink>
+    <MudNavLink Href="/inventory" Icon="@Icons.Material.Filled.Inventory">Inventory</MudNavLink>
+    <MudNavLink Href="/staff" Icon="@Icons.Material.Filled.People">Staff</MudNavLink>
+    <MudNavLink Href="/crm" Icon="@Icons.Material.Filled.CardMembership">CRM</MudNavLink>
+    <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.Analytics">Reports</MudNavLink>
+    <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+</MudNavMenu>

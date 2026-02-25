@@ -1,0 +1,37 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Ingredient" @ref="form">
+            <MudTextField Label="Ingredient Name" @bind-Value="Ingredient.Name" Required="true" RequiredError="Name is required" />
+            <MudTextField Label="Unit (kg, L, pcs)" @bind-Value="Ingredient.Unit" Required="true" />
+            <MudNumericField Label="Current Stock" @bind-Value="Ingredient.CurrentStock" Min="0" Required="true" />
+            <MudNumericField Label="Minimum Stock" @bind-Value="Ingredient.MinimumStock" Min="0" Required="true" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Ingredient Ingredient { get; set; } = new Ingredient();
+    
+    private MudForm form = null!;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Ingredient));
+        }
+    }
+}

@@ -1,0 +1,54 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Product" @ref="form">
+            <MudTextField Label="Product Name" @bind-Value="Product.Name" Required="true" RequiredError="Name is required" />
+            <MudTextField Label="Description" @bind-Value="Product.Description" Lines="3" />
+            <MudNumericField Label="Price" @bind-Value="Product.Price" Min="0" Format="N2" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" Required="true" />
+            <MudNumericField Label="Stock Quantity" @bind-Value="Product.StockQuantity" Min="0" Required="true" />
+            
+            <MudSelect T="int" Label="Category" @bind-Value="Product.CategoryId" Required="true" RequiredError="Category is required">
+                @foreach (var category in CategoriesList)
+                {
+                    <MudSelectItem Value="@category.Id">@category.Name</MudSelectItem>
+                }
+            </MudSelect>
+            
+            <MudSwitch T="bool" @bind-Value="Product.IsActive" Label="Active" Color="Color.Primary" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Product Product { get; set; } = new Product();
+    
+    private List<Category> CategoriesList = new();
+    private MudForm form = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = DbFactory.CreateDbContext();
+        CategoriesList = await context.Categories.ToListAsync();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Product));
+        }
+    }
+}

@@ -1,0 +1,47 @@
+@page "/login"
+@layout Layout.EmptyLayout
+@using MudBlazor
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Login - MyResto</PageTitle>
+
+<MudPaper Class="pa-8 w-100" Elevation="3">
+    <div class="d-flex justify-center mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.RestaurantMenu" Color="Color.Primary" Style="font-size: 3rem;" />
+    </div>
+    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-6">Sign In to MyResto</MudText>
+    
+    <MudForm @ref="form">
+        <MudTextField T="string" Label="Email or Username" @bind-Value="Username" Required="true" RequiredError="Email is required!" Class="mb-4" />
+        <MudTextField T="string" Label="Password" @bind-Value="Password" InputType="InputType.Password" Required="true" RequiredError="Password is required!" Class="mb-6" />
+        
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" OnClick="LoginAsync">Sign In</MudButton>
+        
+        <div class="d-flex justify-space-between mt-4">
+            <MudLink Href="/reset-password" Typo="Typo.body2">Forgot Password?</MudLink>
+        </div>
+    </MudForm>
+</MudPaper>
+
+@code {
+    private MudForm form = null!;
+    private string Username = "admin";
+    private string Password = "password";
+
+    private async Task LoginAsync()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            // Simulate Authentication delay
+            Snackbar.Add("Authenticating...", Severity.Info);
+            await Task.Delay(1000);
+            
+            // In a real Blazor App with Identity, you'd post to a form endpoint. 
+            // For now, we simulate a successful login redirection.
+            Snackbar.Add($"Welcome back, {Username}!", Severity.Success);
+            NavigationManager.NavigateTo("/");
+        }
+    }
+}

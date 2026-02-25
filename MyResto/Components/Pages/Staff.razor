@@ -1,0 +1,175 @@
+@page "/staff"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Staff Management</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Staff</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateEmployee">Add Employee</MudButton>
+<MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+
+<MudTable ServerData="ServerReload"
+          Dense="true" Hover="true" @ref="table" SortLabel="Sort By">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Employee Directory</MudText>
+        <MudSpacer />
+        <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name or Role" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="id_field" T="Employee">Id</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="name_field" T="Employee">Name</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="role_field" T="Employee">Role</MudTableSortLabel></MudTh>
+        <MudTh>Phone</MudTh>
+        <MudTh>Email</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Id">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Role">@context.Role</MudTd>
+        <MudTd DataLabel="Phone">@context.PhoneNumber</MudTd>
+        <MudTd DataLabel="Email">@context.Email</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Color="@(context.IsActive? Color.Success: Color.Default)" Size="Size.Small">
+                @(context.IsActive ? "Active" : "Inactive")
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditEmployee(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteEmployee(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<Employee> table = null!;
+    private string searchString = "";
+    
+    private async Task<TableData<Employee>> ServerReload(TableState state,CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<Employee> query = context.Employees.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(searchString.ToLower()) || p.Role.ToLower().Contains(searchString.ToLower()));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "role_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Role) : query.OrderByDescending(p => p.Role);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query.Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync();
+
+        return new TableData<Employee>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+
+    private async Task CreateEmployee()
+    {
+        var parameters = new DialogParameters { ["Employee"] = new Employee() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.EmployeeDialog>("Add Employee", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var employee = (Employee)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Employees.Add(employee);
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Employee added", Severity.Success);
+        }
+    }
+
+    private async Task EditEmployee(Employee item)
+    {
+        var itemToEdit = new Employee
+        {
+            Id = item.Id, Name = item.Name, Role = item.Role, PhoneNumber = item.PhoneNumber,
+            Email = item.Email, HireDate = item.HireDate, IsActive = item.IsActive
+        };
+
+        var parameters = new DialogParameters { ["Employee"] = itemToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.EmployeeDialog>("Edit Employee", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updated = (Employee)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Entry(updated).State = EntityState.Modified;
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Employee updated", Severity.Success);
+        }
+    }
+
+    private async Task DeleteEmployee(Employee item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync("Warning", $"Delete {item.Name}?", yesText: "Delete!", cancelText: "Cancel");
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var emp = await context.Employees.FindAsync(item.Id);
+            if (emp != null)
+            {
+                context.Employees.Remove(emp);
+                await context.SaveChangesAsync();
+                await table.ReloadServerData();
+                Snackbar.Add("Employee deleted", Severity.Success);
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Employees.ToListAsync();
+        
+        var csv = "Id,Name,Role,Phone,Email,HireDate,IsActive\n";
+        foreach(var p in data)
+        {
+            csv += $"{p.Id},{p.Name},{p.Role},{p.PhoneNumber},{p.Email},{p.HireDate:yyyy-MM-dd},{p.IsActive}\n";
+        }
+        
+        await JS.InvokeVoidAsync("downloadFile", "staff.csv", csv);
+        Snackbar.Add("Data exported to CSV", Severity.Info);
+    }
+}

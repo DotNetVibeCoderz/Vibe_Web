@@ -1,0 +1,41 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Table" @ref="form">
+            <MudTextField Label="Table Name" @bind-Value="Table.Name" Required="true" RequiredError="Name is required" HelperText="e.g. Table 01, VIP 2" />
+            <MudNumericField Label="Capacity" @bind-Value="Table.Capacity" Min="1" Required="true" HelperText="Number of seats" />
+            <MudSelect T="TableStatus" Label="Status" @bind-Value="Table.Status" Required="true">
+                <MudSelectItem Value="@(TableStatus.Available)">Available</MudSelectItem>
+                <MudSelectItem Value="@(TableStatus.Occupied)">Occupied</MudSelectItem>
+                <MudSelectItem Value="@(TableStatus.Reserved)">Reserved</MudSelectItem>
+                <MudSelectItem Value="@(TableStatus.Cleaning)">Cleaning</MudSelectItem>
+            </MudSelect>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public RestaurantTable Table { get; set; } = new RestaurantTable();
+    
+    private MudForm form = null!;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Table));
+        }
+    }
+}

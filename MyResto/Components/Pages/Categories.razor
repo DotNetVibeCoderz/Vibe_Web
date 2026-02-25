@@ -1,0 +1,167 @@
+@page "/categories"
+@using MudBlazor
+@using MyResto.Models
+@using MyResto.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Categories Management</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Categories Management</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateCategory">Add Category</MudButton>
+<MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+
+<MudTable ServerData="ServerReload"
+          Dense="true" Hover="true" @ref="table" SortLabel="Sort By">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Menu Categories</MudText>
+        <MudSpacer />
+        <MudTextField T="string" ValueChanged="@(s => OnSearch(s))" Placeholder="Search by Name or Desc" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="id_field" T="Category">Id</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="name_field" T="Category">Name</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="desc_field" T="Category">Description</MudTableSortLabel></MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Id">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Description">@context.Description</MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditCategory(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteCategory(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<Category> table = null!;
+    private string searchString = "";
+    
+    private async Task<TableData<Category>> ServerReload(TableState state, CancellationToken x)
+    {
+        using var context = DbFactory.CreateDbContext();
+        
+        IQueryable<Category> query = context.Categories.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchString))
+        {
+            query = query.Where(p => p.Name.ToLower().Contains(searchString.ToLower()) || 
+                                     (p.Description != null && p.Description.ToLower().Contains(searchString.ToLower())));
+        }
+
+        switch (state.SortLabel)
+        {
+            case "id_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id);
+                break;
+            case "name_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name);
+                break;
+            case "desc_field":
+                query = state.SortDirection == SortDirection.Ascending ? query.OrderBy(p => p.Description) : query.OrderByDescending(p => p.Description);
+                break;
+            default:
+                query = query.OrderBy(p => p.Id);
+                break;
+        }
+
+        var totalItems = await query.CountAsync();
+        var pagedData = await query.Skip(state.Page * state.PageSize).Take(state.PageSize).ToListAsync();
+
+        return new TableData<Category>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+
+    private async Task CreateCategory()
+    {
+        var parameters = new DialogParameters { ["Category"] = new Category() };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.CategoryDialog>("Add Category", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var category = (Category)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Categories.Add(category);
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Category added", Severity.Success);
+        }
+    }
+
+    private async Task EditCategory(Category item)
+    {
+        var itemToEdit = new Category
+        {
+            Id = item.Id, Name = item.Name, Description = item.Description
+        };
+
+        var parameters = new DialogParameters { ["Category"] = itemToEdit };
+        var dialog = await DialogService.ShowAsync<Components.Dialogs.CategoryDialog>("Edit Category", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updated = (Category)result.Data;
+            using var context = DbFactory.CreateDbContext();
+            context.Entry(updated).State = EntityState.Modified;
+            await context.SaveChangesAsync();
+            await table.ReloadServerData();
+            Snackbar.Add("Category updated", Severity.Success);
+        }
+    }
+
+    private async Task DeleteCategory(Category item)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync("Warning", $"Delete {item.Name}? This might affect products linked to it.", yesText: "Delete!", cancelText: "Cancel");
+        if (result == true)
+        {
+            using var context = DbFactory.CreateDbContext();
+            var cat = await context.Categories.FindAsync(item.Id);
+            if (cat != null)
+            {
+                context.Categories.Remove(cat);
+                await context.SaveChangesAsync();
+                await table.ReloadServerData();
+                Snackbar.Add("Category deleted", Severity.Success);
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        using var context = DbFactory.CreateDbContext();
+        var data = await context.Categories.ToListAsync();
+        
+        var csv = "Id,Name,Description\n";
+        foreach(var p in data)
+        {
+            // Escape commas in description
+            var safeDesc = p.Description?.Replace(",", " ") ?? "";
+            csv += $"{p.Id},{p.Name},{safeDesc}\n";
+        }
+        
+        await JS.InvokeVoidAsync("downloadFile", "categories.csv", csv);
+        Snackbar.Add("Data exported to CSV", Severity.Info);
+    }
+}

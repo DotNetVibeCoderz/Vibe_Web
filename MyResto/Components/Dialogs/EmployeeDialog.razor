@@ -1,0 +1,43 @@
+@using MudBlazor
+@using MyResto.Models
+@using Microsoft.EntityFrameworkCore
+@using MyResto.Data
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Employee" @ref="form">
+            <MudTextField Label="Name" @bind-Value="Employee.Name" Required="true" RequiredError="Name is required" />
+            <MudSelect T="string" Label="Role" @bind-Value="Employee.Role" Required="true" RequiredError="Role is required">
+                <MudSelectItem Value="@("Manager")">Manager</MudSelectItem>
+                <MudSelectItem Value="@("Chef")">Chef</MudSelectItem>
+                <MudSelectItem Value="@("Waiter")">Waiter</MudSelectItem>
+                <MudSelectItem Value="@("Cashier")">Cashier</MudSelectItem>
+            </MudSelect>
+            <MudTextField Label="Phone Number" @bind-Value="Employee.PhoneNumber" />
+            <MudTextField Label="Email" @bind-Value="Employee.Email" InputType="InputType.Email" />
+            <MudSwitch T="bool" @bind-Value="Employee.IsActive" Label="Active Employee" Color="Color.Primary" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Employee Employee { get; set; } = new Employee();
+    
+    private MudForm form = null!;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(Employee));
+        }
+    }
+}
