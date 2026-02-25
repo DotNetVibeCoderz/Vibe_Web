@@ -1,0 +1,20 @@
+@inject NavigationManager NavMgr
+<AuthorizeView>
+    <Authorized>
+        <div class="brutal-card mb-0">
+            <strong>@context.User.Identity?.Name</strong>
+            <button type="button" @onclick="LogOut" class="brutal-btn danger" style="width: 100%; margin-top: 10px;">Log out</button>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <a href="Account/Register" class="brutal-btn mb-2" style="width: 100%;">Register</a>
+        <a href="Account/Login" class="brutal-btn secondary" style="width: 100%;">Log in</a>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code{
+    async Task LogOut()
+    {
+        NavMgr.NavigateTo("Account/Logout", forceLoad: true);
+    }
+}

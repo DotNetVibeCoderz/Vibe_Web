@@ -1,0 +1,154 @@
+@page "/maintenance"
+@using FMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <h1 class="brutal-title">Maintenance Schedule</h1>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="brutal-btn" @onclick="AddNew">Schedule Maintenance</button>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="brutal-card">
+                <table class="brutal-table">
+                    <thead>
+                        <tr>
+                            <th>Vehicle</th>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Cost</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(var m in _records)
+                        {
+                            <tr>
+                                <td>@(m.Vehicle?.Name ?? "N/A")</td>
+                                <td>@m.Date.ToShortDateString()</td>
+                                <td>@m.Description</td>
+                                <td>@m.Cost.ToString("C")</td>
+                                <td>
+                                    <span class="badge" style="background: @GetStatusColor(m.Status); color: white;">@m.Status</span>
+                                </td>
+                                <td>
+                                    <button class="brutal-btn secondary sm" @onclick="() => Edit(m)">Edit</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content brutal-card">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Maintenance</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>Vehicle</label>
+                        <select class="brutal-input" @bind="_currentRecord.VehicleId">
+                            @foreach(var v in _vehicles)
+                            {
+                                <option value="@v.Id">@v.Name (@v.LicensePlate)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Date</label>
+                        <input type="date" class="brutal-input" @bind="_currentRecord.Date" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Description</label>
+                        <input class="brutal-input" @bind="_currentRecord.Description" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Cost</label>
+                        <input type="number" class="brutal-input" @bind="_currentRecord.Cost" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Status</label>
+                         <select class="brutal-input" @bind="_currentRecord.Status">
+                            <option>Scheduled</option>
+                            <option>Completed</option>
+                            <option>Pending</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="brutal-btn secondary" @onclick="Save">Save</button>
+                    <button class="brutal-btn danger" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MaintenanceRecord> _records = new();
+    private List<Vehicle> _vehicles = new();
+    private MaintenanceRecord _currentRecord = new();
+    private bool _showModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        _vehicles = await DbContext.Vehicles.ToListAsync();
+    }
+
+    private async Task LoadData()
+    {
+        _records = await DbContext.MaintenanceRecords.Include(m => m.Vehicle).OrderByDescending(m => m.Date).ToListAsync();
+    }
+
+    private void AddNew()
+    {
+        _currentRecord = new MaintenanceRecord { Date = DateTime.Now };
+        _showModal = true;
+    }
+
+    private void Edit(MaintenanceRecord m)
+    {
+        _currentRecord = m;
+        _showModal = true;
+    }
+
+    private async Task Save()
+    {
+        if (_currentRecord.Id == 0)
+        {
+            DbContext.MaintenanceRecords.Add(_currentRecord);
+        }
+        else
+        {
+            DbContext.MaintenanceRecords.Update(_currentRecord);
+        }
+        await DbContext.SaveChangesAsync();
+        _showModal = false;
+        await LoadData();
+    }
+
+    private void CloseModal() => _showModal = false;
+
+    private string GetStatusColor(string status) => status switch
+    {
+        "Completed" => "green",
+        "Scheduled" => "blue",
+        _ => "orange"
+    };
+}

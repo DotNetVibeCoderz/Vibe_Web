@@ -1,0 +1,94 @@
+@page "/"
+@using FMSNet.Data
+@using FMSNet.Services
+@inject IVehicleService VehicleService
+@inject ApplicationDbContext DbContext
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="brutal-title">Dashboard</h1>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="brutal-card">
+                <h3>Total Vehicles</h3>
+                <h1>@_totalVehicles</h1>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="brutal-card">
+                <h3>Active</h3>
+                <h1>@_activeVehicles</h1>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="brutal-card">
+                <h3>Maintenance</h3>
+                <h1>@_maintenanceVehicles</h1>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="brutal-card">
+                <h3>Total Drivers</h3>
+                <h1>@_totalDrivers</h1>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="brutal-card">
+                <h3>Fuel Consumption (Liters)</h3>
+                <div style="height: 200px; background: #eee; border: 3px solid black; display: flex; align-items: flex-end; justify-content: space-around; padding-bottom: 10px;">
+                    <!-- Simple CSS Bar Chart -->
+                    @foreach (var log in _fuelLogs.Take(5))
+                    {
+                        <div style="width: 40px; background: black; height: @(log.AmountLiters * 2)px; position: relative;">
+                            <span style="position: absolute; top: -20px; width: 100%; text-align: center; font-size: 10px;">@log.AmountLiters</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+             <div class="brutal-card">
+                <h3>Recent Alerts</h3>
+                <ul class="list-unstyled">
+                    <li class="mb-2 p-2 border border-dark">Driver John Doe exceeded speed limit at 10:00 AM</li>
+                    <li class="mb-2 p-2 border border-dark">Truck-01 due for maintenance in 200km</li>
+                    <li class="mb-2 p-2 border border-dark">Van-02 low fuel warning</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int _totalVehicles;
+    private int _activeVehicles;
+    private int _maintenanceVehicles;
+    private int _totalDrivers;
+    private List<FuelLog> _fuelLogs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var vehicles = await VehicleService.GetVehiclesAsync();
+        _totalVehicles = vehicles.Count;
+        _activeVehicles = vehicles.Count(v => v.Status == "Active");
+        _maintenanceVehicles = vehicles.Count(v => v.Status == "Maintenance");
+        _totalDrivers = DbContext.Drivers.Count();
+        
+        // Mock Fuel Logs for Chart
+        _fuelLogs = new List<FuelLog>
+        {
+            new FuelLog { AmountLiters = 45 },
+            new FuelLog { AmountLiters = 60 },
+            new FuelLog { AmountLiters = 30 },
+            new FuelLog { AmountLiters = 80 },
+            new FuelLog { AmountLiters = 55 }
+        };
+    }
+}

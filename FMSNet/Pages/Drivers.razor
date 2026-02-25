@@ -1,0 +1,137 @@
+@page "/drivers"
+@using FMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <h1 class="brutal-title">Driver Management</h1>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="brutal-btn" @onclick="AddNew">Add Driver</button>
+        </div>
+    </div>
+
+    <div class="row">
+        @foreach (var driver in _drivers)
+        {
+            <div class="col-md-4 mb-4">
+                <div class="brutal-card">
+                    <h3>@driver.Name</h3>
+                    <p>License: @driver.LicenseNumber</p>
+                    <p>Status: <span class="badge" style="background: @GetStatusColor(driver.Status); color: white;">@driver.Status</span></p>
+                    <p>Safety Score: 
+                        <div style="width: 100%; background: #ddd; height: 10px; border: 1px solid black;">
+                            <div style="width: @driver.SafetyScore%; background: @GetScoreColor(driver.SafetyScore); height: 100%;"></div>
+                        </div>
+                        @driver.SafetyScore / 100
+                    </p>
+                    <button class="brutal-btn secondary sm" @onclick="() => Edit(driver)">Edit</button>
+                    <button class="brutal-btn danger sm" @onclick="() => Delete(driver)">Delete</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content brutal-card">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Driver</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>Name</label>
+                        <input class="brutal-input" @bind="_currentDriver.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label>License</label>
+                        <input class="brutal-input" @bind="_currentDriver.LicenseNumber" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Status</label>
+                         <select class="brutal-input" @bind="_currentDriver.Status">
+                            <option>Available</option>
+                            <option>OnDuty</option>
+                            <option>OffDuty</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Score</label>
+                        <input type="number" class="brutal-input" @bind="_currentDriver.SafetyScore" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="brutal-btn secondary" @onclick="Save">Save</button>
+                    <button class="brutal-btn danger" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Driver> _drivers = new();
+    private Driver _currentDriver = new();
+    private bool _showModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _drivers = await DbContext.Drivers.ToListAsync();
+    }
+
+    private void AddNew()
+    {
+        _currentDriver = new Driver();
+        _showModal = true;
+    }
+
+    private void Edit(Driver d)
+    {
+        _currentDriver = d;
+        _showModal = true;
+    }
+
+    private async Task Save()
+    {
+        if (_currentDriver.Id == 0)
+        {
+            DbContext.Drivers.Add(_currentDriver);
+        }
+        else
+        {
+            DbContext.Drivers.Update(_currentDriver);
+        }
+        await DbContext.SaveChangesAsync();
+        _showModal = false;
+        await LoadData();
+    }
+    
+    private async Task Delete(Driver d)
+    {
+        DbContext.Drivers.Remove(d);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private void CloseModal() => _showModal = false;
+
+    private string GetStatusColor(string status) => status switch
+    {
+        "Available" => "green",
+        "OnDuty" => "blue",
+        _ => "gray"
+    };
+
+    private string GetScoreColor(double score) => score > 90 ? "green" : score > 70 ? "orange" : "red";
+}

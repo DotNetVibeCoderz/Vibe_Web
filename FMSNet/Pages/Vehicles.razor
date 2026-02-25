@@ -1,0 +1,145 @@
+@page "/vehicles"
+@using FMSNet.Data
+@using FMSNet.Services
+@inject IVehicleService VehicleService
+
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <h1 class="brutal-title">Vehicle Management</h1>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="brutal-btn" @onclick="() => StartEdit(new Vehicle())">Add New Vehicle</button>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="brutal-card">
+                <table class="brutal-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Plate</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(var v in _vehicles)
+                        {
+                            <tr>
+                                <td>@v.Id</td>
+                                <td>@v.Name</td>
+                                <td>@v.Type</td>
+                                <td>@v.LicensePlate</td>
+                                <td>
+                                    <span class="badge" style="background: @(v.Status == "Active" ? "green" : "red"); color: white;">@v.Status</span>
+                                </td>
+                                <td>
+                                    <button class="brutal-btn secondary sm" @onclick="() => StartEdit(v)">Edit</button>
+                                    <button class="brutal-btn danger sm" @onclick="() => Delete(v.Id)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    @if (_isEditing)
+    {
+        <div class="row mt-4">
+            <div class="col-md-6 offset-md-3">
+                <div class="brutal-card">
+                    <h3>Edit Vehicle</h3>
+                    <div class="mb-3">
+                        <label>Name</label>
+                        <input class="brutal-input" @bind="_currentVehicle.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Type</label>
+                        <input class="brutal-input" @bind="_currentVehicle.Type" />
+                    </div>
+                    <div class="mb-3">
+                        <label>License Plate</label>
+                        <input class="brutal-input" @bind="_currentVehicle.LicensePlate" />
+                    </div>
+                    <div class="mb-3">
+                        <label>Status</label>
+                        <select class="brutal-input" @bind="_currentVehicle.Status">
+                            <option>Active</option>
+                            <option>Maintenance</option>
+                            <option>Idle</option>
+                        </select>
+                    </div>
+                     <div class="mb-3">
+                        <label>Initial Latitude</label>
+                        <input type="number" step="0.0001" class="brutal-input" @bind="_currentVehicle.Latitude" />
+                    </div>
+                     <div class="mb-3">
+                        <label>Initial Longitude</label>
+                        <input type="number" step="0.0001" class="brutal-input" @bind="_currentVehicle.Longitude" />
+                    </div>
+                    
+                    <button class="brutal-btn" @onclick="Save">Save</button>
+                    <button class="brutal-btn danger" @onclick="Cancel">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Vehicle> _vehicles = new();
+    private Vehicle _currentVehicle = new();
+    private bool _isEditing = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _vehicles = await VehicleService.GetVehiclesAsync();
+    }
+
+    private void StartEdit(Vehicle v)
+    {
+        _currentVehicle = v;
+        if (v.Id == 0)
+        {
+             // Defaults for new vehicle
+             _currentVehicle.Latitude = -6.2000;
+             _currentVehicle.Longitude = 106.8000;
+             _currentVehicle.FuelLevel = 100;
+        }
+        _isEditing = true;
+    }
+
+    private async Task Save()
+    {
+        if (_currentVehicle.Id == 0)
+            await VehicleService.CreateVehicleAsync(_currentVehicle);
+        else
+            await VehicleService.UpdateVehicleAsync(_currentVehicle);
+            
+        _isEditing = false;
+        await LoadData();
+    }
+
+    private void Cancel()
+    {
+        _isEditing = false;
+    }
+
+    private async Task Delete(int id)
+    {
+        await VehicleService.DeleteVehicleAsync(id);
+        await LoadData();
+    }
+}

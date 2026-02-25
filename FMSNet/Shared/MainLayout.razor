@@ -1,0 +1,27 @@
+@inherits LayoutComponentBase
+
+<div class="container-fluid brutal-container" style="background-color: var(--bg-primary); min-height: 100vh;">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 brutal-sidebar">
+            <h2 style="font-weight: 900; letter-spacing: -2px;">FMSNet</h2>
+            <hr style="border-top: 3px solid black; opacity: 1;">
+            
+            <a href="/" class="brutal-btn mb-2" style="width: 100%;">Dashboard</a>
+            <a href="/livemap" class="brutal-btn mb-2" style="width: 100%;">Live Map</a>
+            <a href="/vehicles" class="brutal-btn mb-2" style="width: 100%;">Vehicles</a>
+            <a href="/drivers" class="brutal-btn mb-2" style="width: 100%;">Drivers</a>
+            <a href="/maintenance" class="brutal-btn mb-2" style="width: 100%;">Maintenance</a>
+            <a href="/swagger" class="brutal-btn mb-2 secondary" style="width: 100%;" target="_blank">API Swagger</a>
+
+            <div style="margin-top: auto;">
+                 <LoginDisplay />
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10" style="padding: 20px;">
+            @Body
+        </div>
+    </div>
+</div>

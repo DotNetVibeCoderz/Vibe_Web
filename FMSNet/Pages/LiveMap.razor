@@ -1,0 +1,121 @@
+@page "/livemap"
+@using FMSNet.Services
+@using FMSNet.Data
+@inject IJSRuntime JS
+@inject IVehicleService VehicleService
+@inject ISimulationService SimulationService
+@implements IDisposable
+
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <h1 class="brutal-title">Live Map Tracking</h1>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="brutal-btn @(SimulationService.IsRunning ? "danger" : "secondary")" @onclick="ToggleSimulation">
+                @(SimulationService.IsRunning ? "Stop Simulation" : "Start Simulation")
+            </button>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div id="map" style="height: 600px; width: 100%; border: 3px solid black;"></div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="brutal-card">
+                <h3>Vehicle Details</h3>
+                <table class="brutal-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Lat/Lng</th>
+                            <th>Fuel</th>
+                            <th>Odometer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(var v in _vehicles)
+                        {
+                            <tr @onclick="() => PanTo(v)" style="cursor: pointer; background: @(v.Status == "Active" ? "#cfc" : "#fcc")">
+                                <td>@v.Name</td>
+                                <td>@v.Type</td>
+                                <td>@v.Status</td>
+                                <td>@v.Latitude.ToString("F4") / @v.Longitude.ToString("F4")</td>
+                                <td>@v.FuelLevel.ToString("F1")%</td>
+                                <td>@v.Odometer.ToString("F1") km</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Vehicle> _vehicles = new();
+    private System.Threading.Timer? _timer;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map.js");
+            // Center on Jakarta
+            await _module.InvokeVoidAsync("initializeMap", "map", -6.2088, 106.8456);
+            
+            // Start polling
+            _timer = new System.Threading.Timer(async _ =>
+            {
+                await InvokeAsync(RefreshMap);
+            }, null, 0, 2000); // 2 seconds update
+        }
+    }
+
+    private async Task RefreshMap()
+    {
+        _vehicles = await VehicleService.GetVehiclesAsync();
+        if (_module != null)
+        {
+            // Send Type to JS
+            var vehicleData = _vehicles.Select(v => new { 
+                id = v.Id, 
+                latitude = v.Latitude, 
+                longitude = v.Longitude, 
+                name = v.Name, 
+                status = v.Status,
+                type = v.Type
+            });
+            await _module.InvokeVoidAsync("updateMarkers", vehicleData);
+        }
+        StateHasChanged();
+    }
+    
+    private void ToggleSimulation()
+    {
+        if (SimulationService.IsRunning)
+            SimulationService.Stop();
+        else
+            SimulationService.Start();
+    }
+    
+    private async Task PanTo(Vehicle v)
+    {
+        if (_module != null)
+        {
+            await _module.InvokeVoidAsync("panTo", v.Latitude, v.Longitude);
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

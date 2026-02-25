@@ -1,0 +1,145 @@
+:root {
+    --bg-primary: #ffffff;
+    --fg-primary: #000000;
+    --border-color: #000000;
+    --accent: #ffcc00; /* Yellow */
+    --accent-secondary: #00ffcc; /* Cyan */
+    --accent-alert: #ff0055; /* Red */
+    --border-width: 3px;
+    --shadow-offset: 4px;
+}
+
+[data-theme="dark"] {
+    --bg-primary: #1a1a1a;
+    --fg-primary: #ffffff;
+    --border-color: #ffffff;
+    --accent: #ffcc00;
+    --accent-secondary: #00ffcc;
+    --accent-alert: #ff0055;
+}
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--fg-primary);
+    font-family: 'Courier New', Courier, monospace; /* Monospaced for that raw look */
+}
+
+.brutal-container {
+    padding: 20px;
+}
+
+.brutal-card {
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: var(--shadow-offset) var(--shadow-offset) 0px var(--border-color);
+    padding: 20px;
+    margin-bottom: 20px;
+    background-color: var(--bg-primary);
+    transition: transform 0.1s ease-in-out;
+}
+
+.brutal-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px var(--border-color);
+}
+
+.brutal-btn {
+    background-color: var(--accent);
+    color: #000;
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: var(--shadow-offset) var(--shadow-offset) 0px var(--border-color);
+    padding: 10px 20px;
+    font-weight: bold;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.1s;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.brutal-btn:hover {
+    background-color: #fff;
+    transform: translate(-2px, -2px);
+    box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px var(--border-color);
+}
+
+.brutal-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0px 0px 0px var(--border-color);
+}
+
+.brutal-btn.secondary {
+    background-color: var(--accent-secondary);
+}
+
+.brutal-btn.danger {
+    background-color: var(--accent-alert);
+    color: #fff;
+}
+
+.brutal-input {
+    border: var(--border-width) solid var(--border-color);
+    padding: 10px;
+    width: 100%;
+    background-color: var(--bg-primary);
+    color: var(--fg-primary);
+    font-family: inherit;
+    box-sizing: border-box; /* Fix width issues */
+}
+
+.brutal-input:focus {
+    outline: none;
+    background-color: #f0f0f0;
+    color: #000;
+}
+
+.brutal-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: var(--border-width) solid var(--border-color);
+}
+
+.brutal-table th, .brutal-table td {
+    border: 1px solid var(--border-color);
+    padding: 10px;
+    text-align: left;
+}
+
+.brutal-table th {
+    background-color: var(--fg-primary);
+    color: var(--bg-primary);
+    text-transform: uppercase;
+}
+
+/* Sidebar */
+.brutal-sidebar {
+    height: 100vh;
+    border-right: var(--border-width) solid var(--border-color);
+    background-color: var(--bg-primary);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.nav-link {
+    display: block;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 2px solid transparent;
+    color: var(--fg-primary);
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.nav-link:hover, .nav-link.active {
+    border: 2px solid var(--border-color);
+    background-color: var(--accent);
+    color: #000;
+}
+
+/* Map Container */
+#map {
+    height: 500px;
+    width: 100%;
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: var(--shadow-offset) var(--shadow-offset) 0px var(--border-color);
+}
