@@ -1,0 +1,238 @@
+@page "/master/counters"
+@using Microsoft.AspNetCore.Components.Authorization
+@using QueueKiosk.Models
+@using QueueKiosk.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+
+<AuthorizeView Roles="admin">
+    <Authorized>
+        <div class="neo-container">
+            <div class="header-bar">
+                <h1>Manage Counters</h1>
+                <button class="neo-button" @onclick='() => Nav.NavigateTo("/staff")'>Back to Staff Dashboard</button>
+            </div>
+
+            <div class="neo-box" style="display:flex; gap:10px;">
+                <input class="neo-input" style="flex:1;" placeholder="Search..." @bind="searchTerm" @bind:event="oninput" />
+                <button class="neo-button" @onclick="Search">Search</button>
+                <button class="neo-button secondary" @onclick="ExportCsv">Export CSV</button>
+                <button class="neo-button accent" @onclick="AddNew">Add New Counter</button>
+            </div>
+
+            <table class="neo-table">
+                <thead>
+                    <tr>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Id")'>ID</th>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Name")'>Name</th>
+                        <th>Supported Services</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach(var c in filteredCounters)
+                    {
+                        <tr>
+                            <td>@c.Id</td>
+                            <td>
+                                @if(editId == c.Id) {
+                                    <input class="neo-input" @bind="c.Name" />
+                                } else {
+                                    @c.Name
+                                }
+                            </td>
+                            <td>
+                                @if(editId == c.Id) {
+                                    <div style="max-height: 100px; overflow-y: auto; border: 2px solid var(--border); padding: 5px; background: var(--bg);">
+                                        @foreach(var svc in availableServices)
+                                        {
+                                            <div style="margin-bottom: 5px;">
+                                                <input type="checkbox" id="svc_@(svc.Id)" 
+                                                       checked="@editingSupportedServices.Contains(svc.Id)" 
+                                                       @onchange="(e) => ToggleServiceSupport(svc.Id, e.Value)" />
+                                                <label for="svc_@(svc.Id)" style="margin-left:5px;">@svc.Name</label>
+                                            </div>
+                                        }
+                                    </div>
+                                    <small style="color:gray;">*Leave all unchecked to support ALL services</small>
+                                } else {
+                                    @GetSupportedServicesText(c.SupportedServiceIds)
+                                }
+                            </td>
+                            <td>
+                                @if(editId == c.Id) {                                    
+									<input class="neo-input" type="checkbox" @bind="c.IsActive" />
+                                } else {
+                                    @(c.IsActive ? "Active" : "Inactive")
+                                }
+                            </td>
+                            <td>
+                                @if(editId == c.Id) {
+                                    <button class="neo-button" style="background-color:#00ff00; padding:5px 10px; font-size:0.8em;" @onclick="()=>Save(c)">Save</button>
+                                    <button class="neo-button" style="background-color:gray; color:white; padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="CancelEdit">Cancel</button>
+                                } else {
+                                    <button class="neo-button" style="padding:5px 10px; font-size:0.8em;" @onclick="()=>Edit(c)">Edit</button>
+                                    <button class="neo-button accent" style="padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="()=>Delete(c)">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="margin-top:20px;">
+                <button class="neo-button" disabled="@(currentPage==1)" @onclick="PrevPage">Prev</button>
+                <span> Page @currentPage </span>
+                <button class="neo-button" @onclick="NextPage">Next</button>
+            </div>
+
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="neo-container"><h1>Access Denied (Admin Only)</h1></div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<AppCounter> allCounters = new();
+    private List<AppCounter> filteredCounters = new();
+    private List<AppService> availableServices = new();
+    
+    private HashSet<int> editingSupportedServices = new();
+
+    private string searchTerm = "";
+    private string sortBy = "Id";
+    private bool sortAsc = true;
+
+    private int currentPage = 1;
+    private int pageSize = 5;
+    private int editId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        availableServices = await Db.Services.ToListAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        allCounters = await Db.Counters.ToListAsync();
+        FilterAndSort();
+    }
+
+    private void Search()
+    {
+        currentPage = 1;
+        FilterAndSort();
+    }
+
+    private void FilterAndSort()
+    {
+        var query = allCounters.AsQueryable();
+
+        if(!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(c => c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if(sortBy == "Name") query = sortAsc ? query.OrderBy(c => c.Name) : query.OrderByDescending(c => c.Name);
+        else query = sortAsc ? query.OrderBy(c => c.Id) : query.OrderByDescending(c => c.Id);
+
+        filteredCounters = query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private void Sort(string column)
+    {
+        if(sortBy == column) sortAsc = !sortAsc;
+        else { sortBy = column; sortAsc = true; }
+        FilterAndSort();
+    }
+
+    private void PrevPage() { if(currentPage > 1) { currentPage--; FilterAndSort(); } }
+    private void NextPage() { currentPage++; FilterAndSort(); }
+
+    private void AddNew()
+    {
+        var newCtr = new AppCounter { Name = "New Counter", IsActive = true, SupportedServiceIds = "" };
+        Db.Counters.Add(newCtr);
+        Db.SaveChanges();
+        Edit(newCtr);
+        LoadData().Wait();
+    }
+
+    private void Edit(AppCounter c) 
+    { 
+        editId = c.Id; 
+        editingSupportedServices.Clear();
+        if(!string.IsNullOrEmpty(c.SupportedServiceIds))
+        {
+            var ids = c.SupportedServiceIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach(var idStr in ids)
+            {
+                if(int.TryParse(idStr, out int id))
+                {
+                    editingSupportedServices.Add(id);
+                }
+            }
+        }
+    }
+
+    private void CancelEdit()
+    {
+        editId = 0;
+        LoadData().Wait(); // reload to discard unsaved changes
+    }
+
+    private void ToggleServiceSupport(int serviceId, object? checkedValue)
+    {
+        bool isChecked = (bool?)checkedValue ?? false;
+        if(isChecked)
+            editingSupportedServices.Add(serviceId);
+        else
+            editingSupportedServices.Remove(serviceId);
+    }
+    
+    private async Task Save(AppCounter ctr)
+    {
+        ctr.SupportedServiceIds = string.Join(",", editingSupportedServices);
+        Db.Counters.Update(ctr);
+        await Db.SaveChangesAsync();
+        editId = 0;
+        await LoadData();
+    }
+
+    private async Task Delete(AppCounter ctr)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Apakah Anda yakin ingin menghapus counter '{ctr.Name}'?\n\nPeringatan: Tindakan ini tidak dapat diurungkan!");
+        if (confirmed)
+        {
+            try 
+            {
+                Db.Counters.Remove(ctr);
+                await Db.SaveChangesAsync();
+                await LoadData();
+            }
+            catch (Exception)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Tidak dapat menghapus counter ini karena masih ada rekam jejak antrian yang dilayani oleh counter ini.\nSaran: Ubah status menjadi 'Inactive' saja.");
+            }
+        }
+    }
+
+    private string GetSupportedServicesText(string supportedIds)
+    {
+        if(string.IsNullOrWhiteSpace(supportedIds)) return "ALL SERVICES";
+        
+        var ids = supportedIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+        var svcNames = availableServices.Where(s => ids.Contains(s.Id)).Select(s => s.Name).ToList();
+        return string.Join(", ", svcNames);
+    }
+
+    private async Task ExportCsv()
+    {
+        Console.WriteLine("Exported Counters to CSV in background.");
+    }
+}

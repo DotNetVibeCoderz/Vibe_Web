@@ -1,0 +1,62 @@
+@page "/ticket/{Id:int}"
+@using QueueKiosk.Models
+@using QueueKiosk.Services
+@using QueueKiosk.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject NavigationManager NavManager
+
+<div class="neo-container">
+    <div style="margin-bottom:20px;">
+        <button class="neo-button" @onclick='() => NavManager.NavigateTo("/")'>Back to Home</button>
+        <button class="neo-button secondary" @onclick="PrintTicket">Print Ticket</button>
+    </div>
+
+    @if (ticket != null)
+    {
+        <div class="neo-box print-area" style="width:300px; margin:auto; text-align:center; padding:30px;">
+            <h2 style="margin:0;">QUEUE TICKET</h2>
+            <hr style="border: 2px solid var(--border);" />
+            
+            <p>Service: <strong>@ticket.Service?.Name</strong></p>
+            @if(ticket.IsPriority) {
+                <span class="neo-button accent" style="padding:5px; font-size:12px;">PRIORITY</span>
+            }
+            
+            <h1 style="font-size:3em; margin:20px 0;">@ticket.TicketNumber</h1>
+            
+            <p>Date: @ticket.CreatedAt.ToString("dd MMM yyyy HH:mm")</p>
+            <p>Please wait for your number to be called.</p>
+            
+            <img src="@qrCodeBase64" alt="QR Code" style="width:150px; height:150px; margin-top:20px;" />
+            
+            <p style="font-size:10px; margin-top:10px;">Scan to monitor queue status via mobile.</p>
+        </div>
+    }
+    else
+    {
+        <p>Loading ticket...</p>
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private AppQueueTicket? ticket;
+    private string qrCodeBase64 = string.Empty;
+    [Inject] IJSRuntime JSRuntime { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ticket = await Db.QueueTickets.Include(q => q.Service).FirstOrDefaultAsync(q => q.Id == Id);
+        if (ticket != null)
+        {
+            var url = NavManager.BaseUri + $"status/{ticket.TicketNumber}";
+            qrCodeBase64 = QRCodeGeneratorService.GenerateBase64QRCode(url);
+        }
+    }
+
+    private async Task PrintTicket()
+    {
+        await JSRuntime.InvokeVoidAsync("window.QueueKiosk.print");
+    }
+}

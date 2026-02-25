@@ -1,0 +1,142 @@
+@page "/analytics"
+@using Microsoft.AspNetCore.Components.Authorization
+@using QueueKiosk.Models
+@using QueueKiosk.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+
+<AuthorizeView Roles="admin">
+    <Authorized>
+        <div class="neo-container">
+            <div class="header-bar">
+                <h1>ANALYTICS & REPORTS</h1>
+            </div>
+
+            <div style="display:flex; gap:20px; margin-bottom:20px;">
+                <div class="neo-box" style="flex:1; background-color:var(--primary); text-align:center;">
+                    <h2>TOTAL TICKETS (TODAY)</h2>
+                    <h1 style="font-size:3em;">@totalToday</h1>
+                </div>
+                <div class="neo-box" style="flex:1; background-color:var(--secondary); text-align:center;">
+                    <h2>AVG WAIT TIME</h2>
+                    <h1 style="font-size:3em;">@avgWaitTime min</h1>
+                </div>
+                <div class="neo-box" style="flex:1; background-color:var(--accent); color:white; text-align:center;">
+                    <h2>PEAK HOUR</h2>
+                    <h1 style="font-size:3em;">@peakHour:00</h1>
+                </div>
+            </div>
+
+            <div class="neo-box">
+                <h2>Service Performance</h2>
+                <table class="neo-table">
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Total Served</th>
+                            <th>Average Wait (min)</th>
+                            <th>Average Service Time (min)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(var stat in serviceStats)
+                        {
+                            <tr>
+                                <td>@stat.ServiceName</td>
+                                <td>@stat.TotalServed</td>
+                                <td>@Math.Round(stat.AvgWait, 1)</td>
+                                <td>@Math.Round(stat.AvgService, 1)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="neo-box">
+                <h2>Queue History Log</h2>
+                <table class="neo-table" style="font-size:0.9em;">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Service</th>
+                            <th>Counter</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Called</th>
+                            <th>Completed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(var q in history)
+                        {
+                            <tr>
+                                <td>@q.TicketNumber</td>
+                                <td>@q.Service?.Name</td>
+                                <td>@q.Counter?.Name</td>
+                                <td>
+                                    <span style="background-color:@(q.Status=="Completed" ? "lightgreen" : (q.Status=="Skipped" ? "salmon" : "yellow")); padding:2px;">@q.Status</span>
+                                </td>
+                                <td>@q.CreatedAt.ToString("HH:mm")</td>
+                                <td>@(q.CalledAt?.ToString("HH:mm") ?? "-")</td>
+                                <td>@(q.CompletedAt?.ToString("HH:mm") ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="neo-container"><h1>Access Denied (Admin Only)</h1></div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private int totalToday = 0;
+    private double avgWaitTime = 0;
+    private string peakHour = "-";
+
+    private List<AppQueueTicket> history = new();
+    private List<ServiceStat> serviceStats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.Today;
+        var tix = await Db.QueueTickets.AsNoTracking()
+            .Include(q => q.Service)
+            .Include(q => q.Counter)
+            .Where(q => q.CreatedAt >= today)
+            .OrderByDescending(q => q.CreatedAt)
+            .ToListAsync();
+
+        history = tix;
+        totalToday = tix.Count;
+
+        var calledTix = tix.Where(t => t.CalledAt.HasValue).ToList();
+        if (calledTix.Any())
+        {
+            avgWaitTime = Math.Round(calledTix.Average(t => (t.CalledAt!.Value - t.CreatedAt).TotalMinutes), 1);
+            
+            var groups = tix.GroupBy(t => t.CreatedAt.Hour).OrderByDescending(g => g.Count()).FirstOrDefault();
+            if(groups != null) peakHour = groups.Key.ToString("00");
+        }
+
+        var completedTix = tix.Where(t => t.Status == "Completed").ToList();
+        var services = await Db.Services.AsNoTracking().ToListAsync(); // fetch services to memory first
+        
+        serviceStats = services.Select(s => new ServiceStat
+        {
+            ServiceName = s.Name,
+            TotalServed = completedTix.Count(c => c.ServiceId == s.Id),
+            AvgWait = completedTix.Where(c => c.ServiceId == s.Id).Select(c => (c.CalledAt!.Value - c.CreatedAt).TotalMinutes).DefaultIfEmpty(0).Average(),
+            AvgService = completedTix.Where(c => c.ServiceId == s.Id).Select(c => (c.CompletedAt!.Value - c.CalledAt!.Value).TotalMinutes).DefaultIfEmpty(0).Average()
+        }).ToList();
+    }
+
+    public class ServiceStat {
+        public string ServiceName {get;set;} = string.Empty;
+        public int TotalServed {get;set;}
+        public double AvgWait {get;set;}
+        public double AvgService {get;set;}
+    }
+}

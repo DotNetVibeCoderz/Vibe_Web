@@ -1,0 +1,111 @@
+:root {
+  --bg: #ffffff;
+  --text: #000000;
+  --primary: #fcee0a; /* Yellow */
+  --secondary: #00f0ff; /* Cyan */
+  --accent: #ff003c; /* Magenta */
+  --border: #000000;
+}
+
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --text: #ffffff;
+  --primary: #e6d700; 
+  --secondary: #00c6d9; 
+  --accent: #d90033;
+  --border: #ffffff;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', Courier, monospace; /* Neo-brutalist vibe */
+  margin: 0;
+  padding: 0;
+}
+
+.neo-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.neo-box {
+  background-color: var(--bg);
+  border: 4px solid var(--border);
+  box-shadow: 8px 8px 0 var(--border);
+  padding: 20px;
+  margin-bottom: 20px;
+  transition: transform 0.1s ease-in-out;
+}
+.neo-box:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 10px 10px 0 var(--border);
+}
+
+.neo-button {
+  background-color: var(--primary);
+  color: var(--border);
+  border: 3px solid var(--border);
+  box-shadow: 5px 5px 0 var(--border);
+  padding: 10px 20px;
+  font-weight: bold;
+  font-size: 1.1em;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.1s ease;
+}
+.neo-button:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 var(--border);
+}
+.neo-button:active {
+  transform: translate(5px, 5px);
+  box-shadow: 0 0 0 var(--border);
+}
+
+.neo-button.secondary { background-color: var(--secondary); }
+.neo-button.accent { background-color: var(--accent); color: white; }
+
+.neo-input {
+  width: 100%;
+  padding: 10px;
+  border: 3px solid var(--border);
+  box-shadow: 4px 4px 0 var(--border);
+  font-size: 1em;
+  margin-bottom: 10px;
+  background-color: var(--bg);
+  color: var(--text);
+}
+.neo-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.neo-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 3px solid var(--border);
+}
+.neo-table th, .neo-table td {
+  border: 2px solid var(--border);
+  padding: 10px;
+  text-align: left;
+}
+.neo-table th { background-color: var(--secondary); color: black; }
+
+.header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 4px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+.header-bar h1 { margin: 0; }
+
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; width: 100%; }
+}

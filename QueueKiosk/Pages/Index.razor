@@ -1,0 +1,74 @@
+@page "/"
+@using QueueKiosk.Models
+@using QueueKiosk.Services
+@using QueueKiosk.Data
+@inject QueueManagerService QueueService
+@inject NavigationManager NavManager
+@inject AppDbContext Db
+
+<PageTitle>Kios Antrian</PageTitle>
+
+<div class="neo-container">
+    <div class="header-bar">
+        <h1>Welcome to QueueKiosk</h1>
+        <div>
+            <button class="neo-button" @onclick="ToggleTheme">Toggle Theme</button>
+            <button class="neo-button secondary" @onclick="@(()=>NavManager.NavigateTo("/login"))">Staff Login</button>
+            <button class="neo-button secondary" @onclick="@(()=>NavManager.NavigateTo("/display"))">TV Display</button>
+        </div>
+    </div>
+
+    <div class="neo-box" style="text-align:center;">
+        <h2>Please Select a Service</h2>
+        <p>Silakan pilih layanan yang Anda butuhkan</p>
+        
+        <div style="display:flex; flex-wrap:wrap; justify-content:center; gap: 20px; margin-top:30px;">
+            @foreach(var service in services)
+            {
+                <div class="neo-box" style="width:300px; cursor:pointer;" @onclick="()=>TakeTicket(service.Id, false)">
+                    <h3 style="margin:0;">@service.Name</h3>
+                    <p style="color:gray">@service.Description</p>
+                    <button class="neo-button" style="width:100%">Take Ticket</button>
+                </div>
+            }
+        </div>
+        
+        <h3 style="margin-top:50px;">Special Needs / Priority</h3>
+        <div style="display:flex; flex-wrap:wrap; justify-content:center; gap: 20px; margin-top:20px;">
+             @foreach(var service in services)
+             {
+                <div class="neo-box" style="width:300px; cursor:pointer; background-color: var(--secondary);" @onclick="()=>TakeTicket(service.Id, true)">
+                    <h3 style="margin:0; color:black">@service.Name</h3>
+                    <button class="neo-button accent" style="width:100%; margin-top:10px;">Priority Ticket</button>
+                </div>
+             }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AppService> services = new();
+    private bool isDark = false;
+    
+    [Inject] IJSRuntime JSRuntime { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        services = Db.Services.Where(s => s.IsActive).ToList();
+    }
+
+    private async Task TakeTicket(int serviceId, bool isPriority)
+    {
+        var ticket = await QueueService.GenerateTicketAsync(serviceId, isPriority);
+        if (ticket != null)
+        {
+            NavManager.NavigateTo($"/ticket/{ticket.Id}");
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        isDark = !isDark;
+        await JSRuntime.InvokeVoidAsync("QueueKiosk.setTheme", isDark ? "dark" : "light");
+    }
+}

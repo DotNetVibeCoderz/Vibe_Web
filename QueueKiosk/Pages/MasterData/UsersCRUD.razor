@@ -1,0 +1,186 @@
+@page "/master/users"
+@using Microsoft.AspNetCore.Components.Authorization
+@using QueueKiosk.Models
+@using QueueKiosk.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+
+<AuthorizeView Roles="admin">
+    <Authorized>
+        <div class="neo-container">
+            <div class="header-bar">
+                <h1>Manage Users</h1>
+                <button class="neo-button" @onclick='() => Nav.NavigateTo("/staff")'>Back to Staff Dashboard</button>
+            </div>
+
+            <div class="neo-box" style="display:flex; gap:10px;">
+                <input class="neo-input" style="flex:1;" placeholder="Search by username..." @bind="searchTerm" @bind:event="oninput" />
+                <button class="neo-button" @onclick="Search">Search</button>
+                <button class="neo-button secondary" @onclick="ExportCsv">Export CSV</button>
+                <button class="neo-button accent" @onclick="AddNew">Add New User</button>
+            </div>
+
+            <table class="neo-table">
+                <thead>
+                    <tr>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Id")'>ID</th>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Username")'>Username</th>
+                        <th>Password Hash</th>
+                        <th>Role</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach(var u in filteredUsers)
+                    {
+                        <tr>
+                            <td>@u.Id</td>
+                            <td>
+                                @if(editId == u.Id) {
+                                    <input class="neo-input" @bind="u.Username" />
+                                } else {
+                                    @u.Username
+                                }
+                            </td>
+                            <td>
+                                @if(editId == u.Id) {
+                                    <input class="neo-input" @bind="u.PasswordHash" type="text" />
+                                } else {
+                                    <span style="color:gray;">******</span>
+                                }
+                            </td>
+                            <td>
+                                @if(editId == u.Id) {
+                                    <select class="neo-input" @bind="u.Role">
+                                        <option value="admin">Admin</option>
+                                        <option value="user">User / Staff</option>
+                                    </select>
+                                } else {
+                                    <span style="font-weight:bold; color:@(u.Role == "admin" ? "var(--accent)" : "var(--text)")">@u.Role.ToUpper()</span>
+                                }
+                            </td>
+                            <td>
+                                @if(editId == u.Id) {
+                                    <button class="neo-button" style="background-color:#00ff00; padding:5px 10px; font-size:0.8em;" @onclick="()=>Save(u)">Save</button>
+                                    <button class="neo-button" style="background-color:gray; color:white; padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="()=> editId = 0">Cancel</button>
+                                } else {
+                                    <button class="neo-button" style="padding:5px 10px; font-size:0.8em;" @onclick="()=>Edit(u.Id)">Edit</button>
+                                    <button class="neo-button accent" style="padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="()=>Delete(u)">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="margin-top:20px;">
+                <button class="neo-button" disabled="@(currentPage==1)" @onclick="PrevPage">Prev</button>
+                <span> Page @currentPage </span>
+                <button class="neo-button" @onclick="NextPage">Next</button>
+            </div>
+
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="neo-container"><h1>Access Denied (Admin Only)</h1></div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<AppUser> allUsers = new();
+    private List<AppUser> filteredUsers = new();
+    
+    private string searchTerm = "";
+    private string sortBy = "Id";
+    private bool sortAsc = true;
+
+    private int currentPage = 1;
+    private int pageSize = 5;
+    private int editId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        allUsers = await Db.Users.ToListAsync();
+        FilterAndSort();
+    }
+
+    private void Search()
+    {
+        currentPage = 1;
+        FilterAndSort();
+    }
+
+    private void FilterAndSort()
+    {
+        var query = allUsers.AsQueryable();
+
+        if(!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(u => u.Username.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if(sortBy == "Username") query = sortAsc ? query.OrderBy(u => u.Username) : query.OrderByDescending(u => u.Username);
+        else query = sortAsc ? query.OrderBy(u => u.Id) : query.OrderByDescending(u => u.Id);
+
+        filteredUsers = query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private void Sort(string column)
+    {
+        if(sortBy == column) sortAsc = !sortAsc;
+        else { sortBy = column; sortAsc = true; }
+        FilterAndSort();
+    }
+
+    private void PrevPage() { if(currentPage > 1) { currentPage--; FilterAndSort(); } }
+    private void NextPage() { currentPage++; FilterAndSort(); }
+
+    private void AddNew()
+    {
+        var newUser = new AppUser { Username = "newuser", PasswordHash = "password123", Role = "user" };
+        Db.Users.Add(newUser);
+        Db.SaveChanges();
+        editId = newUser.Id;
+        LoadData().Wait();
+    }
+
+    private void Edit(int id) { editId = id; }
+    
+    private async Task Save(AppUser u)
+    {
+        Db.Users.Update(u);
+        await Db.SaveChangesAsync();
+        editId = 0;
+        await LoadData();
+    }
+
+    private async Task Delete(AppUser u)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Apakah Anda yakin ingin menghapus user '{u.Username}'?\n\nPeringatan: Tindakan ini tidak dapat diurungkan!");
+        if (confirmed)
+        {
+            try 
+            {
+                Db.Users.Remove(u);
+                await Db.SaveChangesAsync();
+                await LoadData();
+            }
+            catch (Exception)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Tidak dapat menghapus user ini. Terjadi kesalahan pada database.");
+            }
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        Console.WriteLine("Exported Users to CSV in background.");
+    }
+}

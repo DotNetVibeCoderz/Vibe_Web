@@ -1,0 +1,73 @@
+@page "/display"
+@using QueueKiosk.Models
+@using QueueKiosk.Services
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
+@inject QueueManagerService QueueService
+@inject IJSRuntime JSRuntime
+
+<div class="neo-container" style="max-width: 100%; height: 100vh; display:flex; flex-direction:column; padding:0;">
+    <div style="background-color:var(--primary); border-bottom:4px solid var(--border); padding:20px; text-align:center;">
+        <h1 style="margin:0; font-size:3em;">NOW SERVING</h1>
+    </div>
+
+    <div style="display:flex; flex:1;">
+        <div style="flex:2; padding:20px; border-right:4px solid var(--border); display:flex; align-items:center; justify-content:center; flex-direction:column;">
+            @if(lastCalled != null)
+            {
+                <h2 style="font-size:3em; margin:0;">TICKET NUMBER</h2>
+                <h1 style="font-size:10em; margin:0; color:var(--accent);">@lastCalled.TicketNumber</h1>
+                <h2 style="font-size:3em; margin:0; background-color:var(--secondary); padding:10px; border:4px solid var(--border);">PLEASE PROCEED TO @lastCalled.Counter?.Name</h2>
+            }
+            else
+            {
+                <h1 style="font-size:5em;">WAITING...</h1>
+            }
+        </div>
+
+        <div style="flex:1; padding:20px; background-color:var(--bg);">
+            <h2 style="border-bottom:4px solid var(--border); padding-bottom:10px;">RECENTLY CALLED</h2>
+            @foreach(var t in calledTickets.Take(5))
+            {
+                <div class="neo-box" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <span style="font-size:2em; font-weight:bold;">@t.TicketNumber</span>
+                    <span style="font-size:1.5em; background-color:var(--primary); padding:5px; border:2px solid var(--border);">@t.Counter?.Name</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div style="background-color:var(--border); color:var(--bg); padding:10px; text-align:center;">
+        <marquee style="font-size:2em;">Welcome to QueueKiosk. Please take a ticket and wait for your turn. Siapkan identitas diri Anda sebelum dilayani.</marquee>
+    </div>
+</div>
+
+@code {
+    private List<AppQueueTicket> calledTickets = new();
+    private AppQueueTicket? lastCalled;
+
+    protected override async Task OnInitializedAsync()
+    {
+        QueueService.OnQueueUpdated += UpdateDisplay;
+        await LoadData();
+    }
+
+    private async void UpdateDisplay()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        calledTickets = await QueueService.GetCalledQueueAsync();
+        lastCalled = calledTickets.FirstOrDefault();
+    }
+
+    public void Dispose()
+    {
+        QueueService.OnQueueUpdated -= UpdateDisplay;
+    }
+}

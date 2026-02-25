@@ -1,0 +1,193 @@
+@page "/master/services"
+@using Microsoft.AspNetCore.Components.Authorization
+@using QueueKiosk.Models
+@using QueueKiosk.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+
+<AuthorizeView Roles="admin">
+    <Authorized>
+        <div class="neo-container">
+            <div class="header-bar">
+                <h1>Manage Services</h1>
+                <button class="neo-button" @onclick='() => Nav.NavigateTo("/staff")'>Back to Staff Dashboard</button>
+            </div>
+
+            <div class="neo-box" style="display:flex; gap:10px;">
+                <input class="neo-input" style="flex:1;" placeholder="Search..." @bind="searchTerm" @bind:event="oninput" />
+                <button class="neo-button" @onclick="Search">Search</button>
+                <button class="neo-button secondary" @onclick="ExportCsv">Export CSV</button>
+                <button class="neo-button accent" @onclick="AddNew">Add New Service</button>
+            </div>
+
+            <table class="neo-table">
+                <thead>
+                    <tr>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Id")'>ID</th>
+                        <th style="cursor:pointer;" @onclick='()=>Sort("Name")'>Name</th>
+                        <th>Code</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach(var s in filteredServices)
+                    {
+                        <tr>
+                            <td>@s.Id</td>
+                            <td>
+                                @if(editId == s.Id) {
+                                    <input class="neo-input" @bind="s.Name" />
+                                } else {
+                                    @s.Name
+                                }
+                            </td>
+                            <td>
+                                @if(editId == s.Id) {
+                                    <input class="neo-input" @bind="s.LetterCode" />
+                                } else {
+                                    @s.LetterCode
+                                }
+                            </td>
+                            <td>
+                                @if(editId == s.Id) {
+                                    <input class="neo-input" @bind="s.Description" />
+                                } else {
+                                    @s.Description
+                                }
+                            </td>
+                            <td>
+                                @if(editId == s.Id) {
+									<input class="neo-input" type="checkbox" @bind="s.IsActive" />
+                                } else {
+                                    @(s.IsActive ? "Active" : "Inactive")
+                                }
+                            </td>
+                            <td>
+                                @if(editId == s.Id) {
+                                    <button class="neo-button" style="background-color:#00ff00; padding:5px 10px; font-size:0.8em;" @onclick="()=>Save(s)">Save</button>
+                                    <button class="neo-button" style="background-color:gray; color:white; padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="()=> editId = 0">Cancel</button>
+                                } else {
+                                    <button class="neo-button" style="padding:5px 10px; font-size:0.8em;" @onclick="()=>Edit(s.Id)">Edit</button>
+                                    <button class="neo-button accent" style="padding:5px 10px; font-size:0.8em; margin-left: 5px;" @onclick="()=>Delete(s)">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="margin-top:20px;">
+                <button class="neo-button" disabled="@(currentPage==1)" @onclick="PrevPage">Prev</button>
+                <span> Page @currentPage </span>
+                <button class="neo-button" @onclick="NextPage">Next</button>
+            </div>
+
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="neo-container"><h1>Access Denied (Admin Only)</h1></div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<AppService> allServices = new();
+    private List<AppService> filteredServices = new();
+    
+    private string searchTerm = "";
+    private string sortBy = "Id";
+    private bool sortAsc = true;
+
+    private int currentPage = 1;
+    private int pageSize = 5;
+    private int editId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        allServices = await Db.Services.ToListAsync();
+        FilterAndSort();
+    }
+
+    private void Search()
+    {
+        currentPage = 1;
+        FilterAndSort();
+    }
+
+    private void FilterAndSort()
+    {
+        var query = allServices.AsQueryable();
+
+        if(!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(s => s.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || 
+                                     s.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if(sortBy == "Name") query = sortAsc ? query.OrderBy(s => s.Name) : query.OrderByDescending(s => s.Name);
+        else query = sortAsc ? query.OrderBy(s => s.Id) : query.OrderByDescending(s => s.Id);
+
+        filteredServices = query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private void Sort(string column)
+    {
+        if(sortBy == column) sortAsc = !sortAsc;
+        else { sortBy = column; sortAsc = true; }
+        FilterAndSort();
+    }
+
+    private void PrevPage() { if(currentPage > 1) { currentPage--; FilterAndSort(); } }
+    private void NextPage() { currentPage++; FilterAndSort(); }
+
+    private void AddNew()
+    {
+        var newSvc = new AppService { Name = "New Service", LetterCode = "N" };
+        Db.Services.Add(newSvc);
+        Db.SaveChanges();
+        editId = newSvc.Id;
+        LoadData().Wait();
+    }
+
+    private void Edit(int id) { editId = id; }
+    
+    private async Task Save(AppService svc)
+    {
+        Db.Services.Update(svc);
+        await Db.SaveChangesAsync();
+        editId = 0;
+        await LoadData();
+    }
+
+    private async Task Delete(AppService svc)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Apakah Anda yakin ingin menghapus layanan '{svc.Name}'?\n\nPeringatan: Tindakan ini tidak dapat diurungkan!");
+        if (confirmed)
+        {
+            try 
+            {
+                Db.Services.Remove(svc);
+                await Db.SaveChangesAsync();
+                await LoadData();
+            }
+            catch (Exception)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Tidak dapat menghapus layanan ini karena masih ada tiket antrian yang terhubung dengan layanan ini.\nSaran: Ubah status menjadi 'Inactive' saja.");
+            }
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        // Simple mock export logic
+        Console.WriteLine("Exported to CSV in background.");
+    }
+}

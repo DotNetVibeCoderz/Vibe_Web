@@ -1,0 +1,87 @@
+@using QueueKiosk.Services
+@inject AuthService Auth
+@inject NavigationManager NavManager
+
+<div class="neo-sidebar-header">
+    <a class="navbar-brand" style="font-weight:900; font-size:1.5rem; color:var(--text); text-decoration:none;" href="">QUEUEKIOSK</a>
+    <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu" style="border: 3px solid var(--border); background: var(--bg); border-radius: 0; padding: 5px 10px; box-shadow: 3px 3px 0 var(--border);">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+</div>
+
+<div class="@NavMenuCssClass" @onclick="ToggleNavMenu" style="display: @(collapseNavMenu ? "none" : "block");">
+    <nav class="flex-column" style="padding: 20px;">
+        <div class="nav-item">
+            <NavLink class="neo-nav-link" href="" Match="NavLinkMatch.All">
+                <span class="oi oi-home" aria-hidden="true" style="margin-right: 10px;"></span> Kiosk (Home)
+            </NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="neo-nav-link" href="display">
+                <span class="oi oi-monitor" aria-hidden="true" style="margin-right: 10px;"></span> TV Display
+            </NavLink>
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="staff">
+                        <span class="oi oi-person" aria-hidden="true" style="margin-right: 10px;"></span> Staff Dash
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="analytics">
+                        <span class="oi oi-bar-chart" aria-hidden="true" style="margin-right: 10px;"></span> Analytics
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="master/services">
+                        <span class="oi oi-list" aria-hidden="true" style="margin-right: 10px;"></span> Services
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="master/counters">
+                        <span class="oi oi-tags" aria-hidden="true" style="margin-right: 10px;"></span> Counters
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="master/users">
+                        <span class="oi oi-people" aria-hidden="true" style="margin-right: 10px;"></span> Users
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <button class="neo-nav-link" @onclick="DoLogout">
+                        <span class="oi oi-account-logout" aria-hidden="true" style="margin-right: 10px;"></span> Logout
+                    </button>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item">
+                    <NavLink class="neo-nav-link" href="login">
+                        <span class="oi oi-account-login" aria-hidden="true" style="margin-right: 10px;"></span> Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = false; // By default show the menu on desktop
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    protected override void OnInitialized()
+    {
+        collapseNavMenu = false; 
+    }
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    private void DoLogout()
+    {
+        Auth.Logout();
+        NavManager.NavigateTo("/");
+    }
+}

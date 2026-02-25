@@ -1,0 +1,46 @@
+@page "/login"
+@using QueueKiosk.Services
+@inject AuthService Auth
+@inject NavigationManager NavManager
+
+<div class="neo-container" style="max-width: 400px; margin-top: 50px;">
+    <div class="neo-box" style="background-color:var(--primary); text-align:center;">
+        <h1 style="margin:0;">STAFF LOGIN</h1>
+    </div>
+
+    <div class="neo-box">
+        <label>Username</label>
+        <input type="text" class="neo-input" @bind="username" />
+        
+        <label>Password</label>
+        <input type="password" class="neo-input" @bind="password" />
+
+        @if (!string.IsNullOrEmpty(errorMsg))
+        {
+            <div style="background-color:var(--accent); color:white; padding:10px; margin-bottom:10px;">
+                @errorMsg
+            </div>
+        }
+
+        <button class="neo-button" style="width:100%; margin-top:20px;" @onclick="DoLogin">LOGIN</button>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string errorMsg = "";
+
+    private async Task DoLogin()
+    {
+        var result = await Auth.LoginAsync(username, password);
+        if (result)
+        {
+            NavManager.NavigateTo("/staff");
+        }
+        else
+        {
+            errorMsg = "Invalid username or password. (admin/admin123)";
+        }
+    }
+}
