@@ -1,0 +1,138 @@
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JSRuntime
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Asset" @ref="form" ValidationDelay="0">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                     <MudTextField Label="Name" @bind-Value="Asset.Name" For="@(() => Asset.Name)" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                     <MudTextField Label="Serial Number" @bind-Value="Asset.SerialNumber" For="@(() => Asset.SerialNumber)" />
+                </MudItem>
+                
+                <MudItem xs="12" md="12">
+                     <MudTextField Label="Location Name" @bind-Value="Asset.Location" For="@(() => Asset.Location)" />
+                </MudItem>
+
+                <MudItem xs="12" md="5">
+                     <MudNumericField Label="Latitude" @bind-Value="Asset.Latitude" For="@(() => Asset.Latitude)" Variant="Variant.Outlined" Step="0.000001" />
+                </MudItem>
+                 <MudItem xs="12" md="5">
+                     <MudNumericField Label="Longitude" @bind-Value="Asset.Longitude" For="@(() => Asset.Longitude)" Variant="Variant.Outlined" Step="0.000001" />
+                </MudItem>
+                <MudItem xs="12" md="2" Class="d-flex align-center">
+                    <MudTooltip Text="Get Current Location">
+                        <MudIconButton Icon="@Icons.Material.Filled.MyLocation" Color="Color.Primary" OnClick="GetLocation" />
+                    </MudTooltip>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudNumericField Label="Purchase Price" @bind-Value="Asset.PurchasePrice" Format="C2" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                     <MudDatePicker Label="Purchase Date" Date="@_purchaseDate" DateChanged="@OnDateChanged" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudSelect Label="Category" @bind-Value="Asset.CategoryId" Required="true" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var cat in Categories)
+                        {
+                            <MudSelectItem Value="@cat.Id">@cat.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect Label="Status" @bind-Value="Asset.Status" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (AssetStatus status in Enum.GetValues(typeof(AssetStatus)))
+                        {
+                            <MudSelectItem Value="@status">@status</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                     <MudTextField Label="Assigned To" @bind-Value="Asset.AssignedTo" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                     <MudNumericField Label="Expected Life (Months)" @bind-Value="Asset.ExpectedLifeSpanMonths" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public Asset Asset { get; set; } = new();
+
+    private List<Category> Categories = new();
+    private DateTime? _purchaseDate;
+    MudForm form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Categories = await DbContext.Categories.ToListAsync();
+        _purchaseDate = Asset.Id > 0 ? Asset.PurchaseDate : DateTime.Now;
+    }
+
+    private void OnDateChanged(DateTime? date)
+    {
+        _purchaseDate = date;
+        if (date.HasValue) Asset.PurchaseDate = date.Value;
+    }
+
+    private async Task GetLocation()
+    {
+        try
+        {
+            var loc = await JSRuntime.InvokeAsync<GeolocationResult>("browserGeolocation.getCurrentPosition");
+            if (loc != null)
+            {
+                Asset.Latitude = loc.Latitude;
+                Asset.Longitude = loc.Longitude;
+            }
+        }
+        catch
+        {
+            // Handle error silently or show snackbar
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+
+        if (form.IsValid)
+        {
+            if (Asset.Id == 0)
+            {
+                DbContext.Assets.Add(Asset);
+            }
+            else
+            {
+                DbContext.Assets.Update(Asset);
+            }
+
+            await DbContext.SaveChangesAsync();
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+    }
+
+    public class GeolocationResult
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+}

@@ -1,0 +1,42 @@
+<MudNavMenu Class="mud-width-full">
+    <MudText Typo="Typo.h6" Class="px-4 mud-text-white fw-bold mt-3">Menu</MudText>
+    <MudDivider Class="my-2" Light="true"/>
+    
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Dashboard</MudNavLink>
+
+    <AuthorizeView Context="authState">
+        <Authorized>
+            <MudNavLink Href="assets" Icon="@Icons.Material.Filled.Inventory" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Asset Registry</MudNavLink>
+            <MudNavLink Href="newmap" Icon="@Icons.Material.Filled.Map" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Asset Maps</MudNavLink>
+            <MudNavLink Href="maintenance" Icon="@Icons.Material.Filled.Build" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Maintenance</MudNavLink>
+            <MudNavLink Href="reports" Icon="@Icons.Material.Filled.BarChart" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Reports</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            <MudText Typo="Typo.h6" Class="px-4 mud-text-white fw-bold mt-3">Admin</MudText>
+            <MudDivider Class="my-2" Light="true"/>
+            <MudNavLink Href="categories" Icon="@Icons.Material.Filled.Category" IconColor="Color.Inherit" Class="mud-text-white fw-bold">Categories</MudNavLink>
+            <MudNavLink Href="users" Icon="@Icons.Material.Filled.People" IconColor="Color.Inherit" Class="mud-text-white fw-bold">User Management</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>
+
+<style>
+    .mud-nav-link {
+        color: rgba(255,255,255,0.8) !important;
+    }
+    .mud-nav-link:hover {
+        color: #ffffff !important;
+        background-color: rgba(255,255,255,0.1) !important;
+    }
+    .mud-nav-link.active {
+        color: #ffffff !important;
+        background-color: rgba(255,255,255,0.2) !important;
+        font-weight: 900 !important;
+    }
+    .fw-bold {
+        font-weight: 600;
+    }
+</style>

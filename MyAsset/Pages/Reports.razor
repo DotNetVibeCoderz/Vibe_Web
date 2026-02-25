@@ -1,0 +1,67 @@
+@page "/reports"
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+
+<MudText Typo="Typo.h4" Class="mb-4">Reports</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+    <MudTabPanel Text="Depreciation Report">
+        <MudTable Items="@_assets" Hover="true" Striped="true">
+            <HeaderContent>
+                <MudTh>Asset Name</MudTh>
+                <MudTh>Purchase Date</MudTh>
+                <MudTh>Purchase Price</MudTh>
+                <MudTh>Current Value</MudTh>
+                <MudTh>Depreciation</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">@context.Name</MudTd>
+                <MudTd DataLabel="Date">@context.PurchaseDate.ToShortDateString()</MudTd>
+                <MudTd DataLabel="Price">@context.PurchasePrice.ToString("C2")</MudTd>
+                <MudTd DataLabel="Current" Style="color: green; font-weight: bold;">@context.CurrentValue().ToString("C2")</MudTd>
+                <MudTd DataLabel="Depreciation">@((context.PurchasePrice - context.CurrentValue()).ToString("C2"))</MudTd>
+            </RowTemplate>
+            <FooterContent>
+                <MudTd>Total</MudTd>
+                <MudTd></MudTd>
+                <MudTd>@_assets.Sum(a => a.PurchasePrice).ToString("C2")</MudTd>
+                <MudTd>@_assets.Sum(a => a.CurrentValue()).ToString("C2")</MudTd>
+                <MudTd></MudTd>
+            </FooterContent>
+        </MudTable>
+    </MudTabPanel>
+    
+    <MudTabPanel Text="Maintenance Costs">
+         <MudTable Items="@_assets.Where(a => a.MaintenanceCount > 0)" Hover="true">
+            <HeaderContent>
+                <MudTh>Asset Name</MudTh>
+                <MudTh>Maintenance Count</MudTh>
+                <MudTh>Total Cost</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Name</MudTd>
+                <MudTd>@context.MaintenanceCount</MudTd>
+                <MudTd>@GetMaintenanceCost(context.Id).ToString("C2")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private List<Asset> _assets = new();
+    private List<MaintenanceLog> Logs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assets = await DbContext.Assets.ToListAsync();
+        Logs = await DbContext.MaintenanceLogs.ToListAsync();
+    }
+
+    private decimal GetMaintenanceCost(int assetId)
+    {
+        return Logs.Where(l => l.AssetId == assetId).Sum(l => l.Cost);
+    }
+}

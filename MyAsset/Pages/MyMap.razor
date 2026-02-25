@@ -1,0 +1,108 @@
+@page "/mymap"
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<MudText Typo="Typo.h4" Class="mb-4">Asset Maps</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="4" Class="pa-2">
+            <div id="map" style="height: 500px; width: 100%;"></div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="4" Class="pa-4" Style="height: 500px; overflow-y: auto;">
+            @if (_selectedAsset != null)
+            {
+                <MudText Typo="Typo.h5">@_selectedAsset.Name</MudText>
+                <MudDivider Class="my-2" />
+				<MudText>Location: @_selectedAsset.Location</MudText>
+                <MudText>Serial: @_selectedAsset.SerialNumber</MudText>
+                <MudText>Lat: @_selectedAsset.Latitude</MudText>
+                <MudText>Lng: @_selectedAsset.Longitude</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ClearSelection">Close</MudButton>
+            }
+            else
+            {
+                <MudText>Select an asset.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12">
+        <MudDataGrid T="Asset" Items="@_assets" Filterable="true" SortMode="@SortMode.Multiple" Striped="true" QuickFilter="@_quickFilter">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">All Assets</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="_searchString" Placeholder="Search" />
+            </ToolBarContent>
+            <Columns>
+                <PropertyColumn Property="x => x.Name" Title="Name" />
+                <PropertyColumn Property="x => x.Location" Title="Location" />
+                <TemplateColumn Title="Action">
+                    <CellTemplate>
+                        <MudButton OnClick="@(() => LocateAsset(context.Item))">Locate</MudButton>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <PagerContent>
+                <MudDataGridPager T="Asset" />
+            </PagerContent>
+        </MudDataGrid>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<Asset> _assets = new();
+    private Asset? _selectedAsset;
+    private string _searchString = "";
+    private DotNetObjectReference<MyMap>? _objRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assets = await DbContext.Assets.Include(a => a.Category).ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("assetMap.initializeMap", "map", _assets, _objRef);
+        }
+    }
+
+    [JSInvokable]
+    public void SelectAsset(int id)
+    {
+        _selectedAsset = _assets.FirstOrDefault(a => a.Id == id);
+        StateHasChanged();
+    }
+
+    private async Task LocateAsset(Asset asset)
+    {
+        _selectedAsset = asset;
+        await JSRuntime.InvokeVoidAsync("assetMap.flyTo", asset.Latitude, asset.Longitude);
+    }
+
+    private void ClearSelection()
+    {
+        _selectedAsset = null;
+    }
+
+    private Func<Asset, bool> _quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(_searchString)) return true;
+        if (x.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    };
+
+    public void Dispose()
+    {
+        _objRef?.Dispose();
+    }
+}

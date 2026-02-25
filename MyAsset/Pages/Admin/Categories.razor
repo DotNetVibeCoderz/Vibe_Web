@@ -1,0 +1,93 @@
+@page "/categories"
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize(Roles = "Admin")]
+@inject ApplicationDbContext DbContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Category Management</MudText>
+
+<MudTable Items="@_categories" Dense="true" Hover="true" Bordered="true" Striped="true" Filter="new Func<Category,bool>(FilterFunc1)">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Categories</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-3" OnClick="@AddCategory">Add Category</MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>ID</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="ID">@context.Id</MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Description">@context.Description</MudTd>
+        <MudTd DataLabel="Actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditCategory(context))" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteCategory(context))" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private List<Category> _categories = new();
+    private string searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _categories = await DbContext.Categories.ToListAsync();
+    }
+
+    private bool FilterFunc1(Category element) => FilterFunc(element, searchString);
+
+    private bool FilterFunc(Category element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Description.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task AddCategory()
+    {
+        var parameters = new DialogParameters { ["Category"] = new Category() };
+        var dialog = DialogService.Show<CategoryDialog>("Add Category", parameters);
+        var result = await dialog.Result;
+        if (!result.Canceled) await LoadData();
+    }
+
+    private async Task EditCategory(Category cat)
+    {
+        var parameters = new DialogParameters { ["Category"] = cat };
+        var dialog = DialogService.Show<CategoryDialog>("Edit Category", parameters);
+        var result = await dialog.Result;
+        if (!result.Canceled) await LoadData();
+    }
+
+    private async Task DeleteCategory(Category cat)
+    {
+        bool? result = await DialogService.ShowMessageBox("Delete", $"Delete {cat.Name}?", yesText: "Delete", cancelText: "Cancel");
+        if (result == true)
+        {
+            DbContext.Categories.Remove(cat);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Category Deleted", Severity.Success);
+        }
+    }
+}

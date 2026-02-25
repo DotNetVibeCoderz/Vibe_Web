@@ -1,0 +1,14 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+
+<AuthorizeView>
+    <Authorized>
+        <MudButton Href="/Account/Manage" Variant="Variant.Text" Color="Color.Inherit" Label="@context.User.Identity?.Name" StartIcon="@Icons.Material.Filled.Person" >@context.User.Identity?.Name</MudButton>
+        <MudButton Href="/Account/Logout" Target="_top" Variant="Variant.Text" Color="Color.Inherit" Label="Sign Out" StartIcon="@Icons.Material.Filled.Close">Sign Out</MudButton>
+
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Href="/Account/Login" Variant="Variant.Text" Color="Color.Inherit">Login</MudButton>
+        <MudButton Href="/Account/Register" Variant="Variant.Text" Color="Color.Inherit">Register</MudButton>
+    </NotAuthorized>
+</AuthorizeView>

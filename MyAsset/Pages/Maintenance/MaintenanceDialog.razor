@@ -1,0 +1,68 @@
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@Log" @ref="form" ValidationDelay="0">
+             <MudSelect Label="Select Asset" @bind-Value="Log.AssetId" Required="true" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var asset in _assets)
+                {
+                    <MudSelectItem Value="@asset.Id">@asset.Name (@asset.SerialNumber)</MudSelectItem>
+                }
+            </MudSelect>
+            
+            <MudDatePicker Label="Date" @bind-Date="_date" />
+            <MudTextField Label="Description" @bind-Value="Log.Description" Required="true" Lines="3" />
+            <MudTextField Label="Technician" @bind-Value="Log.TechnicianName" Required="true" />
+            <MudNumericField Label="Cost" @bind-Value="Log.Cost" Format="C2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public MaintenanceLog Log { get; set; } = new();
+
+    private List<Asset> _assets = new();
+    private DateTime? _date = DateTime.Now;
+    MudForm form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assets = await DbContext.Assets.OrderBy(a => a.Name).ToListAsync();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+
+        if (form.IsValid)
+        {
+            if (_date.HasValue) Log.Date = _date.Value;
+
+            DbContext.MaintenanceLogs.Add(Log);
+            
+            // Update Asset Stats
+            var asset = await DbContext.Assets.FindAsync(Log.AssetId);
+            if (asset != null)
+            {
+                asset.MaintenanceCount++;
+                asset.LastMaintenanceDate = Log.Date;
+                asset.Status = AssetStatus.InUse; // Assume fixed
+                DbContext.Assets.Update(asset);
+            }
+
+            await DbContext.SaveChangesAsync();
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+    }
+}

@@ -1,0 +1,44 @@
+/* Glassmorphism Variables */
+:root {
+    --glass-bg: rgba(255, 255, 255, 0.1);
+    --glass-border: rgba(255, 255, 255, 0.2);
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+body {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
+    min-height: 100vh;
+    font-family: 'Roboto', sans-serif;
+}
+
+/* Override MudBlazor Paper for Glass Effect */
+.mud-paper {
+    background: rgba(255, 255, 255, 0.75) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+}
+
+.mud-theme-dark .mud-paper {
+    background: rgba(30, 30, 30, 0.6) !important; 
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Sidebar Glass */
+.mud-drawer {
+    background: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(15px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mud-appbar {
+    background: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(15px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Adjust text colors if needed */
+.mud-typography {
+   /* Inherits mostly */
+}

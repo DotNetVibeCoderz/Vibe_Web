@@ -1,0 +1,69 @@
+@using Microsoft.AspNetCore.Identity
+@using MyAsset.Models
+@using MudBlazor
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm Model="@User" @ref="form" ValidationDelay="0">
+            <MudTextField Label="Username" @bind-Value="User.UserName" Required="true" For="@(() => User.UserName)" />
+            <MudTextField Label="Email" @bind-Value="User.Email" Required="true" For="@(() => User.Email)" InputType="InputType.Email" />
+            <MudTextField Label="Full Name" @bind-Value="User.FullName" For="@(() => User.FullName)" />
+            <MudTextField Label="Department" @bind-Value="User.Department" For="@(() => User.Department)" />
+
+            @if (string.IsNullOrEmpty(User.Id))
+            {
+                <MudTextField Label="Password" @bind-Value="User.Password" Required="true" InputType="InputType.Password" />
+            }
+            else
+            {
+                <MudTextField Label="New Password (Leave blank to keep current)" @bind-Value="User.Password" InputType="InputType.Password" />
+            }
+
+            <MudSelect T="string" Label="Roles" MultiSelection="true" @bind-SelectedValues="SelectedRoles" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var role in AllRoles)
+                {
+                    <MudSelectItem T="string" Value="@role">@role</MudSelectItem>
+                }
+            </MudSelect>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public UserDto User { get; set; } = new();
+
+    private MudForm form;
+    private List<string> AllRoles = new();
+    private IEnumerable<string> SelectedRoles { get; set; } = new HashSet<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        AllRoles = RoleManager.Roles.Select(r => r.Name).ToList();
+        
+        // Initialize selected roles
+        SelectedRoles = User.Roles;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+
+        if (form.IsValid)
+        {
+            // Map selected roles back to DTO
+            User.Roles = SelectedRoles.ToList();
+            
+            MudDialog.Close(DialogResult.Ok(User));
+        }
+    }
+}

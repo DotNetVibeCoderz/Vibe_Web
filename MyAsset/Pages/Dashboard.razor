@@ -1,0 +1,158 @@
+@page "/"
+@using MudBlazor.Charts
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+
+<AuthorizeView>
+    <Authorized>
+        <MudText Typo="Typo.h4" Class="mb-4 text-white" Style="text-shadow: 1px 1px 4px rgba(0,0,0,0.8); font-weight: bold;">Dashboard</MudText>
+
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="d-flex flex-row py-4 px-6 justify-space-between align-center mud-width-full glass-panel" Elevation="4">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="text-white fw-bold mb-1" Style="opacity: 0.9">Total Assets</MudText>
+                        <MudText Typo="Typo.h4" Class="text-white fw-bolder">@TotalAssets</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory" Style="color: white; font-size: 3rem; opacity: 0.8;" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="d-flex flex-row py-4 px-6 justify-space-between align-center mud-width-full glass-panel" Elevation="4">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="text-white fw-bold mb-1" Style="opacity: 0.9">Value</MudText>
+                        <MudText Typo="Typo.h5" Class="text-white fw-bolder">@TotalValue.ToString("C0")</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Style="color: #4ade80; font-size: 3rem;" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="d-flex flex-row py-4 px-6 justify-space-between align-center mud-width-full glass-panel" Elevation="4">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="text-white fw-bold mb-1" Style="opacity: 0.9">Maintenance</MudText>
+                        <MudText Typo="Typo.h4" Class="text-white fw-bolder">@MaintenanceCount</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.Build" Style="color: #facc15; font-size: 3rem;" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="d-flex flex-row py-4 px-6 justify-space-between align-center mud-width-full glass-panel" Elevation="4">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="text-white fw-bold mb-1" Style="opacity: 0.9">At Risk</MudText>
+                        <MudText Typo="Typo.h4" Class="text-white fw-bolder">@AlertCount</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Style="color: #f87171; font-size: 3rem;" />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="8">
+                <MudPaper Class="pa-4 glass-panel" Elevation="4">
+                    <MudText Typo="Typo.h6" Class="text-white fw-bold">Asset Distribution</MudText>
+                    @if(ChartData.Length > 0)
+                    {
+                        <MudChart T="double" ChartType="ChartType.Donut" InputData="@ChartData" InputLabels="@ChartLabels" Width="300px" Height="300px" Class="mud-chart-white-text" />
+                    }
+                    else
+                    {
+                        <MudText Class="text-white">No data available.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4 glass-panel" Elevation="4" Style="height: 100%;">
+                    <MudText Typo="Typo.h6" Class="mb-3 text-white fw-bold">Recent Activities</MudText>
+                    <MudList T="string" Dense="true" Class="bg-transparent">
+                        @foreach (var log in RecentLogs)
+                        {
+                            <MudListItem Icon="@Icons.Material.Filled.History" IconColor="Color.Inherit" Class="text-white">
+                                <div>
+                                    <MudText Typo="Typo.body2" Class="fw-bold">@log.Description</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.7)">@log.Date.ToShortDateString() - @log.Asset?.Name</MudText>
+                                </div>
+                            </MudListItem>
+                        }
+                        @if(RecentLogs.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-white">No recent activities.</MudText>
+                        }
+                    </MudList>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </Authorized>
+    <NotAuthorized>
+        <div class="d-flex flex-column align-center justify-center" style="height: 50vh;">
+            <MudText Typo="Typo.h3" Class="text-white fw-bold mb-4" Style="text-shadow: 1px 1px 4px rgba(0,0,0,0.8);">Welcome to MyAsset</MudText>
+            <MudText Typo="Typo.h6" Class="text-white mb-6">Please login to manage your assets.</MudText>
+            <MudButton Href="/Account/Login" Variant="Variant.Filled" Color="Color.Surface" Size="Size.Large" Class="fw-bold px-8" Style="color: #1e3c72;">Login Now</MudButton>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .glass-panel {
+        background: rgba(255, 255, 255, 0.15) !important;
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .fw-bold { font-weight: 600; }
+    .fw-bolder { font-weight: 800; }
+    
+    /* Force chart labels to be visible on dark background if possible via CSS, 
+       otherwise MudChart handles it via Theme usually, but we force white here */
+    .mud-chart-legend-item {
+        color: white !important;
+    }
+</style>
+
+@code {
+    private int TotalAssets;
+    private decimal TotalValue;
+    private int MaintenanceCount;
+    private int AlertCount;
+    private double[] ChartData = { };
+    private string[] ChartLabels = { };
+    private List<MaintenanceLog> RecentLogs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity != null && authState.User.Identity.IsAuthenticated)
+        {
+            await LoadDashboardData();
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        TotalAssets = await DbContext.Assets.CountAsync();
+        
+        var prices = await DbContext.Assets.Select(a => a.PurchasePrice).ToListAsync();
+        TotalValue = prices.Sum();
+
+        MaintenanceCount = await DbContext.Assets.CountAsync(a => a.Status == AssetStatus.UnderMaintenance);
+        
+        var assets = await DbContext.Assets.ToListAsync();
+        AlertCount = assets.Count(a => a.HealthScore() < 50);
+
+        var groups = assets.GroupBy(a => a.CategoryId)
+                           .Select(g => new { Name = DbContext.Categories.Find(g.Key)?.Name ?? "Unknown", Count = g.Count() })
+                           .ToList();
+        
+        if (groups.Any())
+        {
+            ChartData = groups.Select(g => (double)g.Count).ToArray();
+            ChartLabels = groups.Select(g => g.Name).ToArray();
+        }
+
+        RecentLogs = await DbContext.MaintenanceLogs
+            .Include(m => m.Asset)
+            .OrderByDescending(m => m.Date)
+            .Take(5)
+            .ToListAsync();
+    }
+}

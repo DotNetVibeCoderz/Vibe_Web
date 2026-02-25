@@ -1,0 +1,251 @@
+@page "/users"
+@using Microsoft.AspNetCore.Identity
+@using MyAsset.Models
+@using System.Text
+@using MudBlazor
+@attribute [Authorize(Roles = "Admin")]
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<MudText Typo="Typo.h4" Class="mb-4">User Management</MudText>
+
+<MudDataGrid T="UserViewModel" Items="@_users" Filterable="true" SortMode="@SortMode.Multiple" Striped="true" QuickFilter="@_quickFilter">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Users</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start" Immediate="true"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Class="ml-3" OnClick="AddUser">Add User</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.CloudDownload" Class="ml-2" OnClick="ExportData">Export CSV</MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.UserName" Title="Username" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <PropertyColumn Property="x => x.FullName" Title="Full Name" />
+        <PropertyColumn Property="x => x.Department" Title="Department" />
+        <TemplateColumn Title="Roles">
+            <CellTemplate>
+                @foreach (var role in context.Item.Roles)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mr-1">@role</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Actions">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditUser(context.Item))" />
+                @if (context.Item.UserName != "admin")
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUser(context.Item))" />
+                }
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="UserViewModel" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private List<UserViewModel> _users = new();
+    private string _searchString = "";
+
+    // ViewModel for display
+    public class UserViewModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public IList<string> Roles { get; set; } = new List<string>();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var users = UserManager.Users.ToList();
+        _users = new List<UserViewModel>();
+
+        foreach (var user in users)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            _users.Add(new UserViewModel
+            {
+                Id = user.Id,
+                UserName = user.UserName ?? "",
+                Email = user.Email ?? "",
+                FullName = user.FullName ?? "",
+                Department = user.Department ?? "",
+                Roles = roles
+            });
+        }
+    }
+
+    private async Task AddUser()
+    {
+        var parameters = new DialogParameters { ["User"] = new UserDto() };
+        var dialog = DialogService.Show<UserDialog>("Add User", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var dto = (UserDto)result.Data!;
+            var newUser = new ApplicationUser
+            {
+                UserName = dto.UserName,
+                Email = dto.Email,
+                FullName = dto.FullName,
+                Department = dto.Department,
+                EmailConfirmed = true
+            };
+
+            var createResult = await UserManager.CreateAsync(newUser, dto.Password);
+            if (createResult.Succeeded)
+            {
+                if (dto.Roles.Any())
+                {
+                    await UserManager.AddToRolesAsync(newUser, dto.Roles);
+                }
+                Snackbar.Add("User created successfully", Severity.Success);
+                await LoadData();
+            }
+            else
+            {
+                foreach (var error in createResult.Errors)
+                {
+                    Snackbar.Add(error.Description, Severity.Error);
+                }
+            }
+        }
+    }
+
+    private async Task EditUser(UserViewModel userVm)
+    {
+        // Map ViewModel to DTO
+        var dto = new UserDto
+        {
+            Id = userVm.Id,
+            UserName = userVm.UserName,
+            Email = userVm.Email,
+            FullName = userVm.FullName,
+            Department = userVm.Department,
+            Roles = userVm.Roles.ToList()
+        };
+
+        var parameters = new DialogParameters { ["User"] = dto };
+        var dialog = DialogService.Show<UserDialog>("Edit User", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var updatedDto = (UserDto)result.Data!;
+            var user = await UserManager.FindByIdAsync(updatedDto.Id);
+
+            if (user != null)
+            {
+                user.Email = updatedDto.Email;
+                user.UserName = updatedDto.UserName;
+                user.FullName = updatedDto.FullName;
+                user.Department = updatedDto.Department;
+
+                var updateResult = await UserManager.UpdateAsync(user);
+                if (updateResult.Succeeded)
+                {
+                    // Update Password if provided
+                    if (!string.IsNullOrWhiteSpace(updatedDto.Password))
+                    {
+                        var token = await UserManager.GeneratePasswordResetTokenAsync(user);
+                        await UserManager.ResetPasswordAsync(user, token, updatedDto.Password);
+                    }
+
+                    // Update Roles
+                    var currentRoles = await UserManager.GetRolesAsync(user);
+                    var rolesToAdd = updatedDto.Roles.Except(currentRoles);
+                    var rolesToRemove = currentRoles.Except(updatedDto.Roles);
+
+                    await UserManager.AddToRolesAsync(user, rolesToAdd);
+                    await UserManager.RemoveFromRolesAsync(user, rolesToRemove);
+
+                    Snackbar.Add("User updated successfully", Severity.Success);
+                    await LoadData();
+                }
+                else
+                {
+                    foreach (var error in updateResult.Errors)
+                    {
+                        Snackbar.Add(error.Description, Severity.Error);
+                    }
+                }
+            }
+        }
+    }
+
+    private async Task DeleteUser(UserViewModel userVm)
+    {
+        bool? result = await DialogService.ShowMessageBox(
+            "Warning", 
+            $"Are you sure you want to delete user {userVm.UserName}?", 
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            var user = await UserManager.FindByIdAsync(userVm.Id);
+            if (user != null)
+            {
+                var deleteResult = await UserManager.DeleteAsync(user);
+                if (deleteResult.Succeeded)
+                {
+                    Snackbar.Add("User deleted successfully", Severity.Success);
+                    await LoadData();
+                }
+                else
+                {
+                    Snackbar.Add("Failed to delete user", Severity.Error);
+                }
+            }
+        }
+    }
+
+    private async Task ExportData()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Id,UserName,Email,FullName,Department,Roles");
+        foreach (var u in _users)
+        {
+            var roles = string.Join(";", u.Roles);
+            sb.AppendLine($"{u.Id},{u.UserName},{u.Email},{u.FullName},{u.Department},{roles}");
+        }
+
+        var fileName = "users_export.csv";
+        var fileContent = Encoding.UTF8.GetBytes(sb.ToString());
+        var base64 = Convert.ToBase64String(fileContent);
+        
+        // Use JS Interop to download
+        await JSRuntime.InvokeVoidAsync("downloadFile", fileName, base64);
+    }
+
+    private Func<UserViewModel, bool> _quickFilter => x =>
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+
+        if (x.UserName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (x.Email.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (x.FullName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (x.Department.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    };
+}

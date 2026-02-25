@@ -1,0 +1,58 @@
+@page "/maintenance"
+@using MyAsset.Models
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Maintenance & Lifecycle</MudText>
+
+<MudDataGrid T="MaintenanceLog" Items="@_logs" Filterable="true" SortMode="@SortMode.Multiple" Striped="true" Hover="true">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Maintenance History</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Build" OnClick="@AddMaintenance">Log Maintenance</MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.Date" Title="Date" Format="d" />
+        <PropertyColumn Property="x => x.Asset!.Name" Title="Asset" />
+        <PropertyColumn Property="x => x.Description" Title="Description" />
+        <PropertyColumn Property="x => x.TechnicianName" Title="Technician" />
+        <PropertyColumn Property="x => x.Cost" Title="Cost" Format="C2" />
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="MaintenanceLog" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private List<MaintenanceLog> _logs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _logs = await DbContext.MaintenanceLogs
+            .Include(m => m.Asset)
+            .OrderByDescending(m => m.Date)
+            .ToListAsync();
+    }
+
+    private async Task AddMaintenance()
+    {
+        var parameters = new DialogParameters { ["Log"] = new MaintenanceLog() };
+        var dialog = DialogService.Show<MaintenanceDialog>("Log Maintenance", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadData();
+            Snackbar.Add("Maintenance Logged", Severity.Success);
+        }
+    }
+}

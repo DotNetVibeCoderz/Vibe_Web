@@ -1,0 +1,127 @@
+@page "/assets"
+@using System.Text
+@attribute [Authorize]
+
+<MudText Typo="Typo.h4" Class="mb-4">Asset Registry</MudText>
+
+<MudDataGrid T="Asset" Items="@_assets" Filterable="true" SortMode="@SortMode.Multiple" Striped="true" Hover="true">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Assets</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@CreateAsset">New Asset</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.CloudDownload" OnClick="@ExportCsv" Class="ml-2">Export CSV</MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.Id" Title="ID" />
+        <TemplateColumn Title="Image">
+            <CellTemplate>
+                <MudImage Src="@context.Item.ImageUrl" Height="40" Width="40" ObjectFit="ObjectFit.Cover" Class="rounded-lg"/>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.Name" Title="Name" />
+        <PropertyColumn Property="x => x.Category!.Name" Title="Category" />
+        <PropertyColumn Property="x => x.Location" Title="Location" />
+        <PropertyColumn Property="x => x.Status" Title="Status">
+            <CellTemplate>
+                <MudChip T="string" Color="@GetStatusColor(context.Item.Status)" Size="Size.Small">@context.Item.Status</MudChip>
+            </CellTemplate>
+        </PropertyColumn>
+        <TemplateColumn Title="Health">
+            <CellTemplate>
+                <MudProgressLinear Color="@GetHealthColor(context.Item.HealthScore())" Value="@context.Item.HealthScore()" Class="my-3" />
+                <MudText Typo="Typo.caption">@context.Item.HealthScore().ToString("F0")%</MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn CellClass="d-flex justify-end">
+            <CellTemplate>
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Edit" OnClick="@(() => EditAsset(context.Item))" />
+                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteAsset(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="Asset" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private List<Asset> _assets = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _assets = await DbContext.Assets.Include(a => a.Category).ToListAsync();
+    }
+
+    private Color GetStatusColor(AssetStatus status) => status switch
+    {
+        AssetStatus.InUse => Color.Success,
+        AssetStatus.InStorage => Color.Info,
+        AssetStatus.UnderMaintenance => Color.Warning,
+        AssetStatus.Disposed => Color.Error,
+        _ => Color.Default
+    };
+
+    private Color GetHealthColor(double score) => score switch
+    {
+        > 80 => Color.Success,
+        > 50 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private async Task CreateAsset()
+    {
+        var parameters = new DialogParameters { ["Asset"] = new Asset() };
+        var dialog = DialogService.Show<AssetDialog>("Create Asset", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task EditAsset(Asset asset)
+    {
+        var parameters = new DialogParameters { ["Asset"] = asset };
+        var dialog = DialogService.Show<AssetDialog>("Edit Asset", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteAsset(Asset asset)
+    {
+        bool? result = await DialogService.ShowMessageBox(
+            "Warning", 
+            $"Delete {asset.Name}?", 
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            DbContext.Assets.Remove(asset);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            Snackbar.Add("Asset Deleted", Severity.Success);
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Id,Name,SerialNumber,Location,PurchasePrice,Status");
+        foreach (var item in _assets)
+        {
+            sb.AppendLine($"{item.Id},{item.Name},{item.SerialNumber},{item.Location},{item.PurchasePrice},{item.Status}");
+        }
+        
+        await DialogService.ShowMessageBox("Export", "CSV Export Logic Executed", yesText: "OK");
+    }
+}
