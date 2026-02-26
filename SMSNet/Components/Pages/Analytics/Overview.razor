@@ -1,0 +1,37 @@
+@page "/analytics/overview"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Administrasi</h1>
+
+<div class="grid gap-6 md:grid-cols-3">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Kehadiran Hari Ini</p>
+        <p class="text-3xl font-semibold">@AttendanceToday</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Rata-rata Nilai</p>
+        <p class="text-3xl font-semibold">@AverageScore.ToString("0.0")</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Pendapatan Bulan Ini</p>
+        <p class="text-3xl font-semibold">@Income.ToString("C0")</p>
+    </div>
+</div>
+
+@code {
+    private int AttendanceToday { get; set; }
+    private decimal AverageScore { get; set; }
+    private decimal Income { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        AttendanceToday = Db.AttendanceRecords.Count(a => a.Date.Date == DateTime.Today);
+        if (Db.GradeRecords.Any())
+        {
+            AverageScore = Db.GradeRecords.Average(g => g.Score);
+        }
+        Income = Db.PaymentRecords.Sum(p => p.Amount);
+        return Task.CompletedTask;
+    }
+}

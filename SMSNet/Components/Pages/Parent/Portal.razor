@@ -1,0 +1,45 @@
+@page "/parent/portal"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Portal Orang Tua</h1>
+
+<div class="grid gap-6 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Ringkasan Kehadiran</h2>
+        <p class="text-slate-500 text-sm">Pantau absensi anak secara real-time.</p>
+        <div class="mt-4 space-y-3">
+            @foreach (var record in AttendanceRecords)
+            {
+                <div class="flex items-center justify-between">
+                    <span>@record.PersonName</span>
+                    <span class="sms-badge">@record.Status</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Nilai Terbaru</h2>
+        <div class="space-y-3">
+            @foreach (var grade in Grades)
+            {
+                <div class="flex items-center justify-between">
+                    <span>@grade.Subject</span>
+                    <span class="sms-badge">@grade.Score</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AttendanceRecord> AttendanceRecords { get; set; } = new();
+    private List<GradeRecord> Grades { get; set; } = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        AttendanceRecords = Db.AttendanceRecords.Take(5).ToList();
+        Grades = Db.GradeRecords.Take(5).ToList();
+        return Task.CompletedTask;
+    }
+}

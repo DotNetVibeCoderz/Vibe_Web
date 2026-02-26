@@ -1,0 +1,104 @@
+@page "/reports/finance"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JS
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Keuangan</h1>
+
+<div class="grid gap-6 md:grid-cols-3">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Total Pendapatan</p>
+        <p class="text-3xl font-semibold">@Income.ToString("C0")</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Total Pengeluaran</p>
+        <p class="text-3xl font-semibold">@Expense.ToString("C0")</p>
+    </div>
+    <div class="sms-card flex flex-col items-center gap-3">
+        <p class="text-sm text-slate-500">Pembayaran SPP</p>
+        <div class="sms-gauge" style="@GetGaugeStyle(PaymentRate)">@PaymentRate.ToString("0")%</div>
+    </div>
+</div>
+
+<div class="grid gap-6 mt-8 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Pendapatan vs Pengeluaran</h2>
+        <div class="h-64">
+            <canvas id="financeChart"></canvas>
+        </div>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Status Pembayaran</h2>
+        <div class="h-64">
+            <canvas id="paymentStatusChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sms-card mt-8">
+    <h2 class="text-lg font-semibold mb-4">Transaksi Terbaru</h2>
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Siswa</th>
+                <th class="py-2">Kategori</th>
+                <th class="py-2">Nominal</th>
+                <th class="py-2">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var pay in Payments)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@pay.StudentName</td>
+                    <td class="py-2">@pay.Category</td>
+                    <td class="py-2">@pay.Amount.ToString("C0")</td>
+                    <td class="py-2">@pay.Status</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private decimal Income { get; set; }
+    private decimal Expense { get; set; }
+    private double PaymentRate { get; set; }
+    private List<PaymentRecord> Payments { get; set; } = new();
+    private bool _rendered;
+
+    protected override Task OnInitializedAsync()
+    {
+        Income = Db.PaymentRecords.Sum(p => p.Amount);
+        Expense = Db.FinancialReports.Sum(r => r.Expense);
+        var paid = Db.PaymentRecords.Count(p => p.Status == "Paid");
+        var total = Db.PaymentRecords.Count();
+        PaymentRate = total == 0 ? 0 : (double)paid / total * 100;
+        Payments = Db.PaymentRecords.OrderByDescending(p => p.Date).Take(6).ToList();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered) return;
+        _rendered = true;
+
+        var financeLabels = Db.FinancialReports.OrderBy(r => r.Period).Select(r => r.Period.ToString("MMM yyyy")).ToList();
+        var incomeData = Db.FinancialReports.OrderBy(r => r.Period).Select(r => r.Income).ToList();
+        await JS.InvokeVoidAsync("smsnetChart.render", "financeChart", "line", financeLabels, incomeData, "Pendapatan");
+
+        await JS.InvokeVoidAsync("smsnetChart.render", "paymentStatusChart", "pie",
+            new[] { "Paid", "Pending" },
+            new[]
+            {
+                Db.PaymentRecords.Count(p => p.Status == "Paid"),
+                Db.PaymentRecords.Count(p => p.Status == "Pending")
+            },
+            "Pembayaran");
+    }
+
+    private string GetGaugeStyle(double percent)
+    {
+        return $"background: conic-gradient(#14b8a6 {percent}%, #e2e8f0 0%);";
+    }
+}

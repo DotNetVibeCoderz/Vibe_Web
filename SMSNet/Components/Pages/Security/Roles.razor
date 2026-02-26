@@ -1,0 +1,26 @@
+@page "/security/roles"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+
+<h1 class="text-2xl font-semibold mb-6">Role-Based Access Control</h1>
+
+<div class="sms-card">
+    <p class="text-sm text-slate-500">Hak akses berbeda untuk admin, guru, siswa, dan orang tua.</p>
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Admin</p>
+            <p class="text-xs text-slate-500">Akses penuh terhadap seluruh modul.</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Guru</p>
+            <p class="text-xs text-slate-500">Kelola jadwal, tugas, dan nilai.</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Siswa</p>
+            <p class="text-xs text-slate-500">Akses materi belajar dan rapor.</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Orang Tua</p>
+            <p class="text-xs text-slate-500">Memantau perkembangan anak.</p>
+        </div>
+    </div>
+</div>

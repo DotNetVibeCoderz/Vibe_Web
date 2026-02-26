@@ -1,0 +1,83 @@
+@page "/"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Administrasi</h1>
+
+<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Total Siswa</p>
+        <p class="text-3xl font-semibold">@StudentCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Total Guru</p>
+        <p class="text-3xl font-semibold">@TeacherCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Kelas Aktif</p>
+        <p class="text-3xl font-semibold">@ClassCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Transaksi SPP</p>
+        <p class="text-3xl font-semibold">@PaymentCount</p>
+    </div>
+</div>
+
+<div class="grid gap-6 mt-8 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Agenda Akademik</h2>
+        <ul class="space-y-3">
+            @foreach (var item in UpcomingEvents)
+            {
+                <li class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium">@item.Title</p>
+                        <p class="text-xs text-slate-500">@item.Location</p>
+                    </div>
+                    <span class="sms-badge">@item.Date.ToString("dd MMM")</span>
+                </li>
+            }
+        </ul>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Notifikasi Terbaru</h2>
+        <ul class="space-y-3">
+            @foreach (var note in LatestNotifications)
+            {
+                <li>
+                    <p class="font-medium">@note.Title</p>
+                    <p class="text-xs text-slate-500">@note.Message</p>
+                </li>
+            }
+        </ul>
+    </div>
+</div>
+
+@code {
+    private int StudentCount { get; set; }
+    private int TeacherCount { get; set; }
+    private int ClassCount { get; set; }
+    private int PaymentCount { get; set; }
+    private List<EventItem> UpcomingEvents { get; set; } = new();
+    private List<NotificationItem> LatestNotifications { get; set; } = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        StudentCount = Db.Students.Count();
+        TeacherCount = Db.Teachers.Count();
+        ClassCount = Db.ClassRooms.Count();
+        PaymentCount = Db.PaymentRecords.Count();
+
+        UpcomingEvents = Db.Events
+            .OrderBy(e => e.Date)
+            .Take(4)
+            .ToList();
+
+        LatestNotifications = Db.Notifications
+            .OrderByDescending(n => n.Date)
+            .Take(4)
+            .ToList();
+
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,22 @@
+@page "/analytics/reports"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+
+<h1 class="text-2xl font-semibold mb-6">Custom Reports</h1>
+
+<div class="sms-card">
+    <p class="text-sm text-slate-500">Buat laporan sesuai kebutuhan akademik, keuangan, dan SDM.</p>
+    <div class="mt-4 grid gap-4 md:grid-cols-3">
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Laporan Akademik</p>
+            <p class="text-xs text-slate-500">Rangkuman nilai dan absensi.</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Laporan Keuangan</p>
+            <p class="text-xs text-slate-500">Pendapatan, pengeluaran, dan cashflow.</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="font-medium">Laporan SDM</p>
+            <p class="text-xs text-slate-500">Kinerja guru dan staff.</p>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,129 @@
+@page "/admin/finance"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Manajemen Keuangan</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Pencatatan SPP, denda, dan pemasukan lainnya.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Transaksi</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Siswa</th>
+                <th class="py-2">Kategori</th>
+                <th class="py-2">Nominal</th>
+                <th class="py-2">Status</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var pay in Payments)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@pay.StudentName</td>
+                    <td class="py-2">@pay.Category</td>
+                    <td class="py-2">@pay.Amount.ToString("C0")</td>
+                    <td class="py-2"><span class="sms-badge">@pay.Status</span></td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditPayment(pay)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeletePayment(pay.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SavePayment">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3 md:grid-cols-2">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama siswa" @bind-Value="FormModel.StudentName" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kategori" @bind-Value="FormModel.Category" />
+                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nominal" @bind-Value="FormModel.Amount" />
+                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
+                    <option>Paid</option>
+                    <option>Pending</option>
+                </InputSelect>
+                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<PaymentRecord> Payments { get; set; } = new();
+    private PaymentRecord FormModel { get; set; } = new() { Date = DateTime.Today };
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadPayments();
+        return Task.CompletedTask;
+    }
+
+    private void LoadPayments()
+    {
+        Payments = Db.PaymentRecords.AsNoTracking().OrderByDescending(p => p.Date).ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new PaymentRecord { Date = DateTime.Today };
+        ShowForm = true;
+    }
+
+    private void EditPayment(PaymentRecord pay)
+    {
+        FormModel = new PaymentRecord
+        {
+            Id = pay.Id,
+            StudentName = pay.StudentName,
+            Category = pay.Category,
+            Amount = pay.Amount,
+            Status = pay.Status,
+            Date = pay.Date
+        };
+        ShowForm = true;
+    }
+
+    private async Task SavePayment()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.PaymentRecords.Add(FormModel);
+        }
+        else
+        {
+            Db.PaymentRecords.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadPayments();
+    }
+
+    private async Task DeletePayment(int id)
+    {
+        var pay = await Db.PaymentRecords.FindAsync(id);
+        if (pay != null)
+        {
+            Db.PaymentRecords.Remove(pay);
+            await Db.SaveChangesAsync();
+            LoadPayments();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new PaymentRecord { Date = DateTime.Today };
+        ShowForm = false;
+    }
+}

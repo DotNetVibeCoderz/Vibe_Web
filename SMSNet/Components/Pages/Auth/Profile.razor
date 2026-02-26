@@ -1,0 +1,76 @@
+@page "/auth/profile"
+@attribute [Authorize]
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h1 class="text-2xl font-semibold mb-6">Edit Profile</h1>
+
+<div class="sms-card max-w-xl">
+    @if (IsLoading)
+    {
+        <p>Loading...</p>
+    }
+    else
+    {
+        <EditForm Model="ProfileModel" OnValidSubmit="HandleSave">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="grid gap-4">
+                <div>
+                    <label class="text-sm font-medium">Full Name</label>
+                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="ProfileModel.FullName" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium">Phone</label>
+                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="ProfileModel.Phone" />
+                </div>
+            </div>
+
+            <button type="submit" class="mt-6 px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+        </EditForm>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <p class="mt-4 text-emerald-500">@Message</p>
+    }
+</div>
+
+@code {
+    private ProfileInput ProfileModel { get; set; } = new();
+    private bool IsLoading { get; set; } = true;
+    private string? Message { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            ProfileModel.FullName = user.FullName;
+            ProfileModel.Phone = user.PhoneNumber;
+        }
+        IsLoading = false;
+    }
+
+    private async Task HandleSave()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            user.FullName = ProfileModel.FullName;
+            user.PhoneNumber = ProfileModel.Phone;
+            await UserManager.UpdateAsync(user);
+            Message = "Profil berhasil diperbarui.";
+        }
+    }
+
+    public class ProfileInput
+    {
+        [Required]
+        public string FullName { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+    }
+}

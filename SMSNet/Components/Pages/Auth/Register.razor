@@ -1,0 +1,75 @@
+@page "/auth/register"
+@attribute [AllowAnonymous]
+@inject UserManager<AppUser> UserManager
+@inject NavigationManager Navigation
+
+<h1 class="text-2xl font-semibold mb-6">Register User</h1>
+
+<div class="sms-card max-w-xl">
+    <EditForm Model="RegisterModel" OnValidSubmit="HandleRegister">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="grid gap-4">
+            <div>
+                <label class="text-sm font-medium">Full Name</label>
+                <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.FullName" />
+            </div>
+            <div>
+                <label class="text-sm font-medium">Username</label>
+                <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.UserName" />
+            </div>
+            <div>
+                <label class="text-sm font-medium">Role</label>
+                <InputSelect class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.Role">
+                    @foreach (var role in AppRoles.All)
+                    {
+                        <option value="@role">@role</option>
+                    }
+                </InputSelect>
+            </div>
+            <div>
+                <label class="text-sm font-medium">Password</label>
+                <InputText type="password" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.Password" />
+            </div>
+        </div>
+
+        <button type="submit" class="mt-6 px-4 py-2 rounded-lg bg-indigo-600 text-white">Register</button>
+    </EditForm>
+</div>
+
+@code {
+    private RegisterInput RegisterModel { get; set; } = new();
+
+    private async Task HandleRegister()
+    {
+        var user = new AppUser
+        {
+            UserName = RegisterModel.UserName,
+            FullName = RegisterModel.FullName,
+            RoleDisplay = RegisterModel.Role
+        };
+
+        var result = await UserManager.CreateAsync(user, RegisterModel.Password);
+        if (result.Succeeded)
+        {
+            await UserManager.AddToRoleAsync(user, RegisterModel.Role);
+            Navigation.NavigateTo("/auth/login");
+        }
+    }
+
+    public class RegisterInput
+    {
+        [Required]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required]
+        public string Password { get; set; } = string.Empty;
+
+        [Required]
+        public string Role { get; set; } = AppRoles.Siswa;
+    }
+}

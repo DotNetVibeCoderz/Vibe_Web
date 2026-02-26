@@ -1,0 +1,141 @@
+@page "/master/subjects"
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JSRuntime
+
+<h1 class="text-2xl font-semibold mb-6">Master Data - Mata Pelajaran</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex gap-4 flex-wrap">
+        <InputText class="w-full md:w-64 rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" placeholder="Cari mata pelajaran" />
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
+        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Mapel</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Nama</th>
+                <th class="py-2">SKS</th>
+                <th class="py-2">Deskripsi</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var subject in FilteredSubjects)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@subject.Name</td>
+                    <td class="py-2">@subject.Credits</td>
+                    <td class="py-2">@subject.Description</td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditSubject(subject)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteSubject(subject.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (ShowForm)
+{
+    <div class="sms-card mt-6 max-w-xl">
+        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
+        <EditForm Model="FormModel" OnValidSubmit="SaveSubject">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama mata pelajaran" @bind-Value="FormModel.Name" />
+                <InputNumber class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="SKS" @bind-Value="FormModel.Credits" />
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Deskripsi" @bind-Value="FormModel.Description" />
+            </div>
+            <div class="mt-4 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private List<Subject> SubjectItems { get; set; } = new();
+    private string SearchText { get; set; } = string.Empty;
+    private Subject FormModel { get; set; } = new();
+    private string FormTitle => FormModel.Id == 0 ? "Tambah Mata Pelajaran" : "Edit Mata Pelajaran";
+    private bool ShowForm { get; set; }
+
+    private List<Subject> FilteredSubjects => SubjectItems
+        .Where(s => string.IsNullOrWhiteSpace(SearchText) || s.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadSubjects();
+        return Task.CompletedTask;
+    }
+
+    private void LoadSubjects()
+    {
+        SubjectItems = Db.Subjects.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new Subject();
+        ShowForm = true;
+    }
+
+    private void EditSubject(Subject subject)
+    {
+        FormModel = new Subject
+        {
+            Id = subject.Id,
+            Name = subject.Name,
+            Credits = subject.Credits,
+            Description = subject.Description
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveSubject()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.Subjects.Add(FormModel);
+        }
+        else
+        {
+            Db.Subjects.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadSubjects();
+    }
+
+    private async Task DeleteSubject(int id)
+    {
+        var subject = await Db.Subjects.FindAsync(id);
+        if (subject != null)
+        {
+            Db.Subjects.Remove(subject);
+            await Db.SaveChangesAsync();
+            LoadSubjects();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new Subject();
+        ShowForm = false;
+    }
+
+    private async Task ExportCsv()
+    {
+        var rows = new List<string> { "Id,Name,Credits,Description" };
+        foreach (var subject in FilteredSubjects)
+        {
+            rows.Add($"{subject.Id},\"{subject.Name}\",{subject.Credits},\"{subject.Description}\"");
+        }
+        await JSRuntime.InvokeVoidAsync("smsnetDownload", "subjects.csv", string.Join("\n", rows));
+    }
+}

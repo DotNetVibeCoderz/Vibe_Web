@@ -1,0 +1,47 @@
+@page "/teacher/dashboard"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Guru</h1>
+
+<div class="grid gap-6 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Jadwal Mengajar</h2>
+        <ul class="space-y-3">
+            @foreach (var item in ScheduleItems)
+            {
+                <li class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium">@item.Subject</p>
+                        <p class="text-xs text-slate-500">@item.ClassName • @item.Day</p>
+                    </div>
+                    <span class="sms-badge">@item.TimeSlot</span>
+                </li>
+            }
+        </ul>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Daftar Siswa</h2>
+        <ul class="space-y-2">
+            @foreach (var student in Students)
+            {
+                <li class="flex items-center justify-between">
+                    <span>@student.FullName</span>
+                    <span class="text-xs text-slate-500">@student.ClassName</span>
+                </li>
+            }
+        </ul>
+    </div>
+</div>
+
+@code {
+    private List<ScheduleItem> ScheduleItems { get; set; } = new();
+    private List<Student> Students { get; set; } = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        ScheduleItems = Db.ScheduleItems.Take(6).ToList();
+        Students = Db.Students.Take(8).ToList();
+        return Task.CompletedTask;
+    }
+}

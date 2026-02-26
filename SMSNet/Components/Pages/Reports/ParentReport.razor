@@ -1,0 +1,108 @@
+@page "/reports/parent"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JS
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Orang Tua & Siswa</h1>
+
+<div class="grid gap-6 md:grid-cols-3">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Notifikasi</p>
+        <p class="text-3xl font-semibold">@NotificationCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Dokumen Digital</p>
+        <p class="text-3xl font-semibold">@DocumentCount</p>
+    </div>
+    <div class="sms-card flex flex-col items-center gap-3">
+        <p class="text-sm text-slate-500">Pembayaran Lunas</p>
+        <div class="sms-gauge" style="@GetGaugeStyle(PaymentRate)">@PaymentRate.ToString("0")%</div>
+    </div>
+</div>
+
+<div class="grid gap-6 mt-8 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Status Pembayaran</h2>
+        <div class="h-64">
+            <canvas id="paymentChart"></canvas>
+        </div>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Notifikasi per Audience</h2>
+        <div class="h-64">
+            <canvas id="notificationChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sms-card mt-8">
+    <h2 class="text-lg font-semibold mb-4">Riwayat Pembayaran Terbaru</h2>
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Siswa</th>
+                <th class="py-2">Kategori</th>
+                <th class="py-2">Nominal</th>
+                <th class="py-2">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var pay in Payments)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@pay.StudentName</td>
+                    <td class="py-2">@pay.Category</td>
+                    <td class="py-2">@pay.Amount.ToString("C0")</td>
+                    <td class="py-2">@pay.Status</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int NotificationCount { get; set; }
+    private int DocumentCount { get; set; }
+    private double PaymentRate { get; set; }
+    private List<PaymentRecord> Payments { get; set; } = new();
+    private bool _rendered;
+
+    protected override Task OnInitializedAsync()
+    {
+        NotificationCount = Db.Notifications.Count();
+        DocumentCount = Db.Documents.Count();
+        var paid = Db.PaymentRecords.Count(p => p.Status == "Paid");
+        var total = Db.PaymentRecords.Count();
+        PaymentRate = total == 0 ? 0 : (double)paid / total * 100;
+        Payments = Db.PaymentRecords.OrderByDescending(p => p.Date).Take(6).ToList();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered) return;
+        _rendered = true;
+
+        await JS.InvokeVoidAsync("smsnetChart.render", "paymentChart", "pie",
+            new[] { "Paid", "Pending" },
+            new[]
+            {
+                Db.PaymentRecords.Count(p => p.Status == "Paid"),
+                Db.PaymentRecords.Count(p => p.Status == "Pending")
+            },
+            "Pembayaran");
+
+        var audiences = Db.Notifications.GroupBy(n => n.Audience)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToList();
+        await JS.InvokeVoidAsync("smsnetChart.render", "notificationChart", "bar",
+            audiences.Select(a => a.Key).ToArray(),
+            audiences.Select(a => a.Count).ToArray(),
+            "Notifikasi");
+    }
+
+    private string GetGaugeStyle(double percent)
+    {
+        return $"background: conic-gradient(#f59e0b {percent}%, #e2e8f0 0%);";
+    }
+}

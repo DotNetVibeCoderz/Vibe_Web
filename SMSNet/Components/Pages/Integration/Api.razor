@@ -1,0 +1,22 @@
+@page "/integration/api"
+@attribute [Authorize]
+
+<h1 class="text-2xl font-semibold mb-6">Integrasi REST API</h1>
+
+<div class="sms-card space-y-4">
+    <p class="text-sm text-slate-500">SMSNet menyediakan REST API dengan Swagger untuk integrasi ke sistem lain.</p>
+
+    <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+        <p class="font-medium">Swagger UI</p>
+        <p class="text-xs text-slate-500">Akses dokumentasi di <code>/swagger</code></p>
+    </div>
+
+    <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+        <p class="font-medium">Endpoint Contoh</p>
+        <ul class="text-sm text-slate-500 list-disc list-inside">
+            <li>GET /api/students</li>
+            <li>GET /api/teachers</li>
+            <li>POST /api/students</li>
+        </ul>
+    </div>
+</div>

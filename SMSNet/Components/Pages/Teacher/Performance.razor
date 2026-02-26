@@ -1,0 +1,120 @@
+@page "/teacher/performance"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Evaluasi Kinerja Guru</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Laporan performa dan KPI guru.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah KPI</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Guru</th>
+                <th class="py-2">KPI</th>
+                <th class="py-2">Skor</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var review in Reviews)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@review.TeacherName</td>
+                    <td class="py-2">@review.KPI</td>
+                    <td class="py-2"><span class="sms-badge">@review.Score</span></td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditReview(review)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteReview(review.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveReview">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama guru" @bind-Value="FormModel.TeacherName" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="KPI" @bind-Value="FormModel.KPI" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Skor" @bind-Value="FormModel.Score" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<PerformanceReview> Reviews { get; set; } = new();
+    private PerformanceReview FormModel { get; set; } = new();
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadReviews();
+        return Task.CompletedTask;
+    }
+
+    private void LoadReviews()
+    {
+        Reviews = Db.PerformanceReviews.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new PerformanceReview();
+        ShowForm = true;
+    }
+
+    private void EditReview(PerformanceReview review)
+    {
+        FormModel = new PerformanceReview
+        {
+            Id = review.Id,
+            TeacherName = review.TeacherName,
+            KPI = review.KPI,
+            Score = review.Score
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveReview()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.PerformanceReviews.Add(FormModel);
+        }
+        else
+        {
+            Db.PerformanceReviews.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadReviews();
+    }
+
+    private async Task DeleteReview(int id)
+    {
+        var review = await Db.PerformanceReviews.FindAsync(id);
+        if (review != null)
+        {
+            Db.PerformanceReviews.Remove(review);
+            await Db.SaveChangesAsync();
+            LoadReviews();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new PerformanceReview();
+        ShowForm = false;
+    }
+}

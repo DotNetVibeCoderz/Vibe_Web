@@ -1,0 +1,116 @@
+@page "/parent/notifications"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Notifikasi Real-Time</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Pengingat ujian, pembayaran, atau kegiatan sekolah.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Notifikasi</button>
+    </div>
+
+    <ul class="space-y-3">
+        @foreach (var item in NotificationItems)
+        {
+            <li class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="font-medium">@item.Title</p>
+                        <p class="text-xs text-slate-500">@item.Date.ToString("dd MMM yyyy") • @item.Audience</p>
+                        <p class="text-sm mt-2">@item.Message</p>
+                    </div>
+                    <div class="flex gap-2 text-sm">
+                        <button class="text-indigo-600" @onclick="() => EditNotification(item)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteNotification(item.Id)">Hapus</button>
+                    </div>
+                </div>
+            </li>
+        }
+    </ul>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveNotification">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul" @bind-Value="FormModel.Title" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Audience" @bind-Value="FormModel.Audience" />
+                <InputTextArea class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pesan" @bind-Value="FormModel.Message" />
+                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<NotificationItem> NotificationItems { get; set; } = new();
+    private NotificationItem FormModel { get; set; } = new() { Date = DateTime.Today };
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadNotifications();
+        return Task.CompletedTask;
+    }
+
+    private void LoadNotifications()
+    {
+        NotificationItems = Db.Notifications.AsNoTracking().OrderByDescending(n => n.Date).ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new NotificationItem { Date = DateTime.Today };
+        ShowForm = true;
+    }
+
+    private void EditNotification(NotificationItem item)
+    {
+        FormModel = new NotificationItem
+        {
+            Id = item.Id,
+            Title = item.Title,
+            Message = item.Message,
+            Audience = item.Audience,
+            Date = item.Date
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveNotification()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.Notifications.Add(FormModel);
+        }
+        else
+        {
+            Db.Notifications.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadNotifications();
+    }
+
+    private async Task DeleteNotification(int id)
+    {
+        var item = await Db.Notifications.FindAsync(id);
+        if (item != null)
+        {
+            Db.Notifications.Remove(item);
+            await Db.SaveChangesAsync();
+            LoadNotifications();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new NotificationItem { Date = DateTime.Today };
+        ShowForm = false;
+    }
+}

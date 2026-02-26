@@ -1,0 +1,110 @@
+@page "/reports/teacher"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JS
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Guru & Staff</h1>
+
+<div class="grid gap-6 md:grid-cols-3">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Jumlah Guru</p>
+        <p class="text-3xl font-semibold">@TeacherCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Tugas Aktif</p>
+        <p class="text-3xl font-semibold">@OpenTasks</p>
+    </div>
+    <div class="sms-card flex flex-col items-center gap-3">
+        <p class="text-sm text-slate-500">KPI Rata-rata</p>
+        <div class="sms-gauge" style="@GetGaugeStyle(KpiScore)">@KpiScore.ToString("0")%</div>
+    </div>
+</div>
+
+<div class="grid gap-6 mt-8 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Status Tugas & Ujian</h2>
+        <div class="h-64">
+            <canvas id="taskChart"></canvas>
+        </div>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">KPI Guru</h2>
+        <div class="h-64">
+            <canvas id="kpiChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sms-card mt-8">
+    <h2 class="text-lg font-semibold mb-4">Topik Diskusi Terbaru</h2>
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Topik</th>
+                <th class="py-2">Author</th>
+                <th class="py-2">Tanggal</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var post in ForumPosts)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@post.Topic</td>
+                    <td class="py-2">@post.Author</td>
+                    <td class="py-2">@post.PostedAt.ToString("dd MMM yyyy")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int TeacherCount { get; set; }
+    private int OpenTasks { get; set; }
+    private double KpiScore { get; set; }
+    private List<ForumPost> ForumPosts { get; set; } = new();
+    private bool _rendered;
+
+    protected override Task OnInitializedAsync()
+    {
+        TeacherCount = Db.Teachers.Count();
+        OpenTasks = Db.TaskExams.Count(t => t.Status == "Open" || t.Status == "Scheduled");
+        KpiScore = Db.PerformanceReviews.Any() ? 92 : 85;
+        ForumPosts = Db.ForumPosts.OrderByDescending(p => p.PostedAt).Take(5).ToList();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered) return;
+        _rendered = true;
+
+        var taskLabels = new[] { "Open", "Scheduled", "Closed" };
+        var taskData = new[]
+        {
+            Db.TaskExams.Count(t => t.Status == "Open"),
+            Db.TaskExams.Count(t => t.Status == "Scheduled"),
+            Db.TaskExams.Count(t => t.Status == "Closed")
+        };
+        await JS.InvokeVoidAsync("smsnetChart.render", "taskChart", "bar", taskLabels, taskData, "Tugas");
+
+        var kpiRows = Db.PerformanceReviews.AsNoTracking().Take(5).ToList();
+        var kpiLabels = kpiRows.Select(p => p.TeacherName).ToList();
+        var kpiData = kpiRows.Select(p => ParseKpi(p.Score)).ToList();
+        await JS.InvokeVoidAsync("smsnetChart.render", "kpiChart", "line", kpiLabels, kpiData, "KPI");
+    }
+
+    private static double ParseKpi(string score)
+    {
+        if (double.TryParse(score.Replace("%", string.Empty), out var value))
+        {
+            return value;
+        }
+        return 80;
+    }
+
+    private string GetGaugeStyle(double percent)
+    {
+        return $"background: conic-gradient(#22c55e {percent}%, #e2e8f0 0%);";
+    }
+}

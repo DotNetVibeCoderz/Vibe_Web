@@ -1,0 +1,146 @@
+@page "/master/teachers"
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JSRuntime
+
+<h1 class="text-2xl font-semibold mb-6">Master Data - Guru</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex flex-wrap gap-4">
+        <InputText class="w-full md:w-64 rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" placeholder="Cari nama guru" />
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
+        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Guru</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Nama</th>
+                <th class="py-2">Mata Pelajaran</th>
+                <th class="py-2">Email</th>
+                <th class="py-2">Status</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var teacher in FilteredTeachers)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@teacher.FullName</td>
+                    <td class="py-2">@teacher.Subject</td>
+                    <td class="py-2">@teacher.Email</td>
+                    <td class="py-2"><span class="sms-badge">@teacher.Status</span></td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditTeacher(teacher)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteTeacher(teacher.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (ShowForm)
+{
+    <div class="sms-card mt-6 max-w-xl">
+        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
+        <EditForm Model="FormModel" OnValidSubmit="SaveTeacher">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="grid gap-4">
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama guru" @bind-Value="FormModel.FullName" />
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Mata pelajaran" @bind-Value="FormModel.Subject" />
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Email" @bind-Value="FormModel.Email" />
+                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Status" @bind-Value="FormModel.Status" />
+            </div>
+            <div class="mt-4 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private List<Teacher> TeacherItems { get; set; } = new();
+    private string SearchText { get; set; } = string.Empty;
+    private Teacher FormModel { get; set; } = new();
+    private string FormTitle => FormModel.Id == 0 ? "Tambah Guru" : "Edit Guru";
+    private bool ShowForm { get; set; }
+
+    private List<Teacher> FilteredTeachers => TeacherItems
+        .Where(t => string.IsNullOrWhiteSpace(SearchText) || t.FullName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadTeachers();
+        return Task.CompletedTask;
+    }
+
+    private void LoadTeachers()
+    {
+        TeacherItems = Db.Teachers.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new Teacher();
+        ShowForm = true;
+    }
+
+    private void EditTeacher(Teacher teacher)
+    {
+        FormModel = new Teacher
+        {
+            Id = teacher.Id,
+            FullName = teacher.FullName,
+            Subject = teacher.Subject,
+            Email = teacher.Email,
+            Status = teacher.Status
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveTeacher()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.Teachers.Add(FormModel);
+        }
+        else
+        {
+            Db.Teachers.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadTeachers();
+    }
+
+    private async Task DeleteTeacher(int id)
+    {
+        var teacher = await Db.Teachers.FindAsync(id);
+        if (teacher != null)
+        {
+            Db.Teachers.Remove(teacher);
+            await Db.SaveChangesAsync();
+            LoadTeachers();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new Teacher();
+        ShowForm = false;
+    }
+
+    private async Task ExportCsv()
+    {
+        var rows = new List<string> { "Id,FullName,Subject,Email,Status" };
+        foreach (var teacher in FilteredTeachers)
+        {
+            rows.Add($"{teacher.Id},\"{teacher.FullName}\",{teacher.Subject},{teacher.Email},{teacher.Status}");
+        }
+        await JSRuntime.InvokeVoidAsync("smsnetDownload", "teachers.csv", string.Join("\n", rows));
+    }
+}

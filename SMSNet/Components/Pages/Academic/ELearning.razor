@@ -1,0 +1,115 @@
+@page "/academic/elearning"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">E-Learning Integration</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Modul pembelajaran online, kuis, dan ujian berbasis sistem</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Modul</button>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+        @foreach (var content in Contents)
+        {
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="font-medium">@content.Title</p>
+                        <p class="text-xs text-slate-500">@content.ModuleType</p>
+                        <p class="text-sm mt-2">@content.Description</p>
+                    </div>
+                    <div class="flex gap-2 text-sm">
+                        <button class="text-indigo-600" @onclick="() => EditContent(content)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteContent(content.Id)">Hapus</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveContent">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul" @bind-Value="FormModel.Title" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Tipe modul (Video/Quiz/Ujian)" @bind-Value="FormModel.ModuleType" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Deskripsi" @bind-Value="FormModel.Description" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<ELearningContent> Contents { get; set; } = new();
+    private ELearningContent FormModel { get; set; } = new();
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadContents();
+        return Task.CompletedTask;
+    }
+
+    private void LoadContents()
+    {
+        Contents = Db.ELearningContents.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new ELearningContent();
+        ShowForm = true;
+    }
+
+    private void EditContent(ELearningContent content)
+    {
+        FormModel = new ELearningContent
+        {
+            Id = content.Id,
+            Title = content.Title,
+            ModuleType = content.ModuleType,
+            Description = content.Description
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveContent()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.ELearningContents.Add(FormModel);
+        }
+        else
+        {
+            Db.ELearningContents.Update(FormModel);
+        }
+
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadContents();
+    }
+
+    private async Task DeleteContent(int id)
+    {
+        var content = await Db.ELearningContents.FindAsync(id);
+        if (content != null)
+        {
+            Db.ELearningContents.Remove(content);
+            await Db.SaveChangesAsync();
+            LoadContents();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new ELearningContent();
+        ShowForm = false;
+    }
+}

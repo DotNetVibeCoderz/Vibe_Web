@@ -1,0 +1,124 @@
+@page "/admin/financial-report"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Laporan Keuangan</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Analitik pendapatan dan pengeluaran sekolah.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Laporan</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Judul</th>
+                <th class="py-2">Pendapatan</th>
+                <th class="py-2">Pengeluaran</th>
+                <th class="py-2">Periode</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var report in Reports)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@report.Title</td>
+                    <td class="py-2">@report.Income.ToString("C0")</td>
+                    <td class="py-2">@report.Expense.ToString("C0")</td>
+                    <td class="py-2">@report.Period.ToString("MMM yyyy")</td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditReport(report)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteReport(report.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveReport">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3 md:grid-cols-2">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul laporan" @bind-Value="FormModel.Title" />
+                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pendapatan" @bind-Value="FormModel.Income" />
+                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pengeluaran" @bind-Value="FormModel.Expense" />
+                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Period" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<FinancialReport> Reports { get; set; } = new();
+    private FinancialReport FormModel { get; set; } = new() { Period = DateTime.Today.AddMonths(-1) };
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadReports();
+        return Task.CompletedTask;
+    }
+
+    private void LoadReports()
+    {
+        Reports = Db.FinancialReports.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new FinancialReport { Period = DateTime.Today.AddMonths(-1) };
+        ShowForm = true;
+    }
+
+    private void EditReport(FinancialReport report)
+    {
+        FormModel = new FinancialReport
+        {
+            Id = report.Id,
+            Title = report.Title,
+            Income = report.Income,
+            Expense = report.Expense,
+            Period = report.Period
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveReport()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.FinancialReports.Add(FormModel);
+        }
+        else
+        {
+            Db.FinancialReports.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadReports();
+    }
+
+    private async Task DeleteReport(int id)
+    {
+        var report = await Db.FinancialReports.FindAsync(id);
+        if (report != null)
+        {
+            Db.FinancialReports.Remove(report);
+            await Db.SaveChangesAsync();
+            LoadReports();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new FinancialReport { Period = DateTime.Today.AddMonths(-1) };
+        ShowForm = false;
+    }
+}

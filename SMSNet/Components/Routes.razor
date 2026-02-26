@@ -1,0 +1,18 @@
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <LayoutView Layout="typeof(Layout.MainLayout)">
+                        <div class="sms-card">
+                            <h1 class="text-xl font-semibold">Akses Ditolak</h1>
+                            <p class="text-slate-500">Silakan login untuk mengakses halaman ini.</p>
+                            <a class="mt-4 inline-flex px-4 py-2 bg-indigo-600 text-white rounded-lg" href="/auth/login">Ke Login</a>
+                        </div>
+                    </LayoutView>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+    </Router>
+</CascadingAuthenticationState>

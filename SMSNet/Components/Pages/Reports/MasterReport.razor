@@ -1,0 +1,110 @@
+@page "/reports/master"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+@inject IJSRuntime JS
+
+<h1 class="text-2xl font-semibold mb-6">Dashboard Master Data</h1>
+
+<div class="grid gap-6 md:grid-cols-4">
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Siswa</p>
+        <p class="text-3xl font-semibold">@StudentCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Guru</p>
+        <p class="text-3xl font-semibold">@TeacherCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Kelas</p>
+        <p class="text-3xl font-semibold">@ClassCount</p>
+    </div>
+    <div class="sms-card">
+        <p class="text-sm text-slate-500">Mapel</p>
+        <p class="text-3xl font-semibold">@SubjectCount</p>
+    </div>
+</div>
+
+<div class="grid gap-6 mt-8 lg:grid-cols-2">
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Distribusi Siswa per Kelas</h2>
+        <div class="h-64">
+            <canvas id="studentClassChart"></canvas>
+        </div>
+    </div>
+    <div class="sms-card">
+        <h2 class="text-lg font-semibold mb-4">Status Siswa</h2>
+        <div class="h-64">
+            <canvas id="studentStatusChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="sms-card mt-8">
+    <h2 class="text-lg font-semibold mb-4">Ringkasan Master Data</h2>
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Kategori</th>
+                <th class="py-2">Jumlah</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="border-b border-slate-100 dark:border-slate-800">
+                <td class="py-2">Orang Tua</td>
+                <td class="py-2">@ParentCount</td>
+            </tr>
+            <tr class="border-b border-slate-100 dark:border-slate-800">
+                <td class="py-2">Kurikulum</td>
+                <td class="py-2">@CurriculumCount</td>
+            </tr>
+            <tr>
+                <td class="py-2">Inventory</td>
+                <td class="py-2">@InventoryCount</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int StudentCount { get; set; }
+    private int TeacherCount { get; set; }
+    private int ClassCount { get; set; }
+    private int SubjectCount { get; set; }
+    private int ParentCount { get; set; }
+    private int CurriculumCount { get; set; }
+    private int InventoryCount { get; set; }
+    private bool _rendered;
+
+    protected override Task OnInitializedAsync()
+    {
+        StudentCount = Db.Students.Count();
+        TeacherCount = Db.Teachers.Count();
+        ClassCount = Db.ClassRooms.Count();
+        SubjectCount = Db.Subjects.Count();
+        ParentCount = Db.Parents.Count();
+        CurriculumCount = Db.CurriculumItems.Count();
+        InventoryCount = Db.InventoryItems.Count();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered) return;
+        _rendered = true;
+
+        var classGroups = Db.Students.GroupBy(s => s.ClassName).Select(g => new { g.Key, Count = g.Count() }).ToList();
+        await JS.InvokeVoidAsync("smsnetChart.render", "studentClassChart", "bar",
+            classGroups.Select(c => c.Key).ToArray(),
+            classGroups.Select(c => c.Count).ToArray(),
+            "Siswa");
+
+        await JS.InvokeVoidAsync("smsnetChart.render", "studentStatusChart", "pie",
+            new[] { "Active", "Inactive" },
+            new[]
+            {
+                Db.Students.Count(s => s.Status == "Active"),
+                Db.Students.Count(s => s.Status == "Inactive")
+            },
+            "Status");
+    }
+}

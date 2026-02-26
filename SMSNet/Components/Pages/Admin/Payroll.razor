@@ -1,0 +1,124 @@
+@page "/admin/payroll"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Payroll System</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Gaji guru dan staff otomatis.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Payroll</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Nama</th>
+                <th class="py-2">Peran</th>
+                <th class="py-2">Gaji</th>
+                <th class="py-2">Periode</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in PayrollItems)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@item.EmployeeName</td>
+                    <td class="py-2">@item.Role</td>
+                    <td class="py-2">@item.Salary.ToString("C0")</td>
+                    <td class="py-2">@item.Period.ToString("MMM yyyy")</td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditPayroll(item)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeletePayroll(item.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SavePayroll">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3 md:grid-cols-2">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama pegawai" @bind-Value="FormModel.EmployeeName" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Peran" @bind-Value="FormModel.Role" />
+                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Gaji" @bind-Value="FormModel.Salary" />
+                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Period" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<PayrollRecord> PayrollItems { get; set; } = new();
+    private PayrollRecord FormModel { get; set; } = new() { Period = DateTime.Today.AddMonths(-1) };
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadPayroll();
+        return Task.CompletedTask;
+    }
+
+    private void LoadPayroll()
+    {
+        PayrollItems = Db.PayrollRecords.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new PayrollRecord { Period = DateTime.Today.AddMonths(-1) };
+        ShowForm = true;
+    }
+
+    private void EditPayroll(PayrollRecord item)
+    {
+        FormModel = new PayrollRecord
+        {
+            Id = item.Id,
+            EmployeeName = item.EmployeeName,
+            Role = item.Role,
+            Salary = item.Salary,
+            Period = item.Period
+        };
+        ShowForm = true;
+    }
+
+    private async Task SavePayroll()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.PayrollRecords.Add(FormModel);
+        }
+        else
+        {
+            Db.PayrollRecords.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadPayroll();
+    }
+
+    private async Task DeletePayroll(int id)
+    {
+        var item = await Db.PayrollRecords.FindAsync(id);
+        if (item != null)
+        {
+            Db.PayrollRecords.Remove(item);
+            await Db.SaveChangesAsync();
+            LoadPayroll();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new PayrollRecord { Period = DateTime.Today.AddMonths(-1) };
+        ShowForm = false;
+    }
+}

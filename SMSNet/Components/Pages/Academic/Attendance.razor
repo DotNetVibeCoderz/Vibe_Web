@@ -1,0 +1,139 @@
+@page "/academic/attendance"
+@attribute [Authorize]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Absensi Siswa & Guru</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Monitoring otomatis menggunakan barcode/RFID/biometrik</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Absensi</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Nama</th>
+                <th class="py-2">Peran</th>
+                <th class="py-2">Tanggal</th>
+                <th class="py-2">Status</th>
+                <th class="py-2">Metode</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var record in AttendanceRecords)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@record.PersonName</td>
+                    <td class="py-2">@record.Role</td>
+                    <td class="py-2">@record.Date.ToString("dd MMM yyyy")</td>
+                    <td class="py-2"><span class="sms-badge">@record.Status</span></td>
+                    <td class="py-2">@record.Method</td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditRecord(record)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteRecord(record.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveRecord">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3 md:grid-cols-2">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama" @bind-Value="FormModel.PersonName" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Peran" @bind-Value="FormModel.Role" />
+                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
+                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
+                    <option>Present</option>
+                    <option>Absent</option>
+                    <option>Late</option>
+                </InputSelect>
+                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Method">
+                    <option>Barcode</option>
+                    <option>RFID</option>
+                    <option>Biometrik</option>
+                </InputSelect>
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<AttendanceRecord> AttendanceRecords { get; set; } = new();
+    private AttendanceRecord FormModel { get; set; } = new() { Date = DateTime.Today };
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadRecords();
+        return Task.CompletedTask;
+    }
+
+    private void LoadRecords()
+    {
+        AttendanceRecords = Db.AttendanceRecords.AsNoTracking()
+            .OrderByDescending(a => a.Date)
+            .ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new AttendanceRecord { Date = DateTime.Today };
+        ShowForm = true;
+    }
+
+    private void EditRecord(AttendanceRecord record)
+    {
+        FormModel = new AttendanceRecord
+        {
+            Id = record.Id,
+            PersonName = record.PersonName,
+            Role = record.Role,
+            Date = record.Date,
+            Status = record.Status,
+            Method = record.Method
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveRecord()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.AttendanceRecords.Add(FormModel);
+        }
+        else
+        {
+            Db.AttendanceRecords.Update(FormModel);
+        }
+
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadRecords();
+    }
+
+    private async Task DeleteRecord(int id)
+    {
+        var record = await Db.AttendanceRecords.FindAsync(id);
+        if (record != null)
+        {
+            Db.AttendanceRecords.Remove(record);
+            await Db.SaveChangesAsync();
+            LoadRecords();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new AttendanceRecord { Date = DateTime.Today };
+        ShowForm = false;
+    }
+}

@@ -1,0 +1,145 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="min-h-screen flex bg-slate-50 dark:bg-slate-900">
+    <aside class="w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 p-6 hidden lg:block">
+        <div class="flex items-center gap-3 mb-8">
+            <div class="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">SN</div>
+            <div>
+                <p class="text-lg font-semibold">SMSNet</p>
+                <p class="text-xs text-slate-500">School Management System</p>
+            </div>
+        </div>
+
+        <nav class="space-y-4 text-sm">
+            <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/">Dashboard</NavLink>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Akademik</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/academic/curriculum">Kurikulum & Jadwal</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/academic/attendance">Absensi</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/academic/grades">Penilaian & Rapor</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/academic/elearning">E-Learning</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Guru & Staff</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/teacher/dashboard">Dashboard Guru</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/teacher/tasks">Tugas & Ujian</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/teacher/communication">Komunikasi Internal</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/teacher/performance">Evaluasi Kinerja</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Orang Tua & Siswa</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/parent/portal">Portal Orang Tua</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/parent/notifications">Notifikasi</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/parent/epayment">E-Payment</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/parent/documents">Dokumen Digital</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Administrasi & Keuangan</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/admin/finance">Manajemen Keuangan</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/admin/inventory">Inventory</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/admin/payroll">Payroll</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/admin/financial-report">Laporan Keuangan</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Analitik & Laporan</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/analytics/overview">Dashboard Admin</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/analytics/data">Data Analytics</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/analytics/reports">Custom Reports</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/reports/academic">Report Akademik</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/reports/teacher">Report Guru & Staff</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/reports/parent">Report Orang Tua</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/reports/finance">Report Keuangan</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/reports/master">Report Master Data</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Keamanan & Integrasi</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/security/roles">Role Access</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/security/audit">Audit Trail</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/integration/api">REST API</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Master Data</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/master/students">Siswa</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/master/teachers">Guru</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/master/subjects">Mata Pelajaran</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/master/classes">Kelas</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Event</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/events">Event & Ekstrakurikuler</NavLink>
+            </div>
+
+            <div>
+                <p class="text-xs uppercase text-slate-400 mb-2">Akun</p>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/auth/login">Login</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/auth/register">Register</NavLink>
+                <NavLink class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-700" href="/auth/profile">Edit Profile</NavLink>
+            </div>
+        </nav>
+    </aside>
+
+    <div class="flex-1 flex flex-col">
+        <header class="flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+            <div>
+                <p class="text-sm text-slate-500">Selamat datang,</p>
+                <p class="text-lg font-semibold">School Management System</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-sm flex items-center gap-2" @onclick="ToggleTheme">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M7.05 16.95l-1.414 1.414m12.728 0-1.414-1.414M7.05 7.05L5.636 5.636" />
+                        <circle cx="12" cy="12" r="4" stroke-width="1.5" />
+                    </svg>
+                    Theme
+                </button>
+                <AuthorizeView>
+                    <Authorized>
+                        <form method="post" action="/account/logout">
+                            <button type="submit" class="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12H3m0 0l4-4m-4 4l4 4m7-8h5v12h-5" />
+                                </svg>
+                                Logout
+                            </button>
+                        </form>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm flex items-center gap-2" href="/auth/login">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12H3m0 0l4-4m-4 4l4 4m7-8h5v12h-5" />
+                            </svg>
+                            Login
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </header>
+
+        <main class="flex-1 p-6">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private async Task ToggleTheme()
+    {
+        await JSRuntime.InvokeVoidAsync("smsnetTheme.toggle");
+    }
+}

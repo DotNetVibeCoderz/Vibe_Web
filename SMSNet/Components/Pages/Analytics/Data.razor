@@ -1,0 +1,37 @@
+@page "/analytics/data"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Data Analytics</h1>
+
+<div class="sms-card">
+    <h2 class="text-lg font-semibold mb-4">Tren Kehadiran & Performa</h2>
+    <div class="grid gap-4 md:grid-cols-3">
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="text-sm text-slate-500">Kehadiran Mingguan</p>
+            <p class="text-2xl font-semibold">@AttendanceWeekly%</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="text-sm text-slate-500">Siswa Berprestasi</p>
+            <p class="text-2xl font-semibold">@TopStudents</p>
+        </div>
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="text-sm text-slate-500">Efisiensi Operasional</p>
+            <p class="text-2xl font-semibold">@Efficiency%</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int AttendanceWeekly { get; set; }
+    private int TopStudents { get; set; }
+    private int Efficiency { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        AttendanceWeekly = 92;
+        TopStudents = Db.GradeRecords.Count(g => g.Score >= 90);
+        Efficiency = 85;
+        return Task.CompletedTask;
+    }
+}

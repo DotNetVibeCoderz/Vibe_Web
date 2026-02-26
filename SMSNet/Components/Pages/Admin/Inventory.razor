@@ -1,0 +1,124 @@
+@page "/admin/inventory"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ApplicationDbContext Db
+
+<h1 class="text-2xl font-semibold mb-6">Inventory Management</h1>
+
+<div class="sms-card space-y-4">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">Kelola aset sekolah.</p>
+        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Item</button>
+    </div>
+
+    <table class="min-w-full text-sm">
+        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+                <th class="py-2">Nama</th>
+                <th class="py-2">Kategori</th>
+                <th class="py-2">Jumlah</th>
+                <th class="py-2">Kondisi</th>
+                <th class="py-2">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Items)
+            {
+                <tr class="border-b border-slate-100 dark:border-slate-800">
+                    <td class="py-2">@item.Name</td>
+                    <td class="py-2">@item.Category</td>
+                    <td class="py-2">@item.Quantity</td>
+                    <td class="py-2"><span class="sms-badge">@item.Condition</span></td>
+                    <td class="py-2 flex gap-2">
+                        <button class="text-indigo-600" @onclick="() => EditItem(item)">Edit</button>
+                        <button class="text-rose-600" @onclick="() => DeleteItem(item.Id)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (ShowForm)
+    {
+        <EditForm Model="FormModel" OnValidSubmit="SaveItem">
+            <DataAnnotationsValidator />
+            <div class="grid gap-3 md:grid-cols-2">
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama item" @bind-Value="FormModel.Name" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kategori" @bind-Value="FormModel.Category" />
+                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Jumlah" @bind-Value="FormModel.Quantity" />
+                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kondisi" @bind-Value="FormModel.Condition" />
+            </div>
+            <div class="mt-3 flex gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private List<InventoryItem> Items { get; set; } = new();
+    private InventoryItem FormModel { get; set; } = new();
+    private bool ShowForm { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        LoadItems();
+        return Task.CompletedTask;
+    }
+
+    private void LoadItems()
+    {
+        Items = Db.InventoryItems.AsNoTracking().ToList();
+    }
+
+    private void ShowAdd()
+    {
+        FormModel = new InventoryItem();
+        ShowForm = true;
+    }
+
+    private void EditItem(InventoryItem item)
+    {
+        FormModel = new InventoryItem
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Category = item.Category,
+            Quantity = item.Quantity,
+            Condition = item.Condition
+        };
+        ShowForm = true;
+    }
+
+    private async Task SaveItem()
+    {
+        if (FormModel.Id == 0)
+        {
+            Db.InventoryItems.Add(FormModel);
+        }
+        else
+        {
+            Db.InventoryItems.Update(FormModel);
+        }
+        await Db.SaveChangesAsync();
+        Cancel();
+        LoadItems();
+    }
+
+    private async Task DeleteItem(int id)
+    {
+        var item = await Db.InventoryItems.FindAsync(id);
+        if (item != null)
+        {
+            Db.InventoryItems.Remove(item);
+            await Db.SaveChangesAsync();
+            LoadItems();
+        }
+    }
+
+    private void Cancel()
+    {
+        FormModel = new InventoryItem();
+        ShowForm = false;
+    }
+}
