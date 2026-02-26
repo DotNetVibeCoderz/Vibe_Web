@@ -1,0 +1,42 @@
+@page "/auth/login"
+@using Microsoft.AspNetCore.WebUtilities
+@inject NavigationManager Navigation
+
+<h1>Login</h1>
+
+<div class="card glass" style="max-width:420px;">
+    <form method="post" action="/auth/login/submit">
+        <div class="form-grid">
+            <input class="input" name="Username" placeholder="Username" required />
+            <input class="input" type="password" name="Password" placeholder="Password" required />
+        </div>
+        <div style="margin-top:16px; display:flex; gap:12px;">
+            <button class="btn primary" type="submit">Login</button>
+            <a class="btn" href="/auth/register">Register</a>
+            <a class="btn" href="/auth/reset">Reset Password</a>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p style="color: var(--danger);">@message</p>
+        }
+    </form>
+</div>
+
+@code {
+    private string message = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("error", out var error) && error == "1")
+        {
+            message = "Login gagal. Cek username/password.";
+        }
+        else if (query.TryGetValue("registered", out var registered) && registered == "1")
+        {
+            message = "Registrasi berhasil. Silakan login.";
+        }
+    }
+}

@@ -1,0 +1,117 @@
+@page "/audit"
+@attribute [Authorize(Roles = "admin,petugas")]
+@inject ApplicationDbContext DbContext
+
+<h1>Audit Trail</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Free text search" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(AuditLog.Actor))">Actor @SortIndicator(nameof(AuditLog.Actor))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(AuditLog.Action))">Action @SortIndicator(nameof(AuditLog.Action))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(AuditLog.Module))">Module @SortIndicator(nameof(AuditLog.Module))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(AuditLog.CreatedAt))">Timestamp @SortIndicator(nameof(AuditLog.CreatedAt))</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter actor" @bind="tableState.ColumnFilters[nameof(AuditLog.Actor)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter action" @bind="tableState.ColumnFilters[nameof(AuditLog.Action)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter module" @bind="tableState.ColumnFilters[nameof(AuditLog.Module)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter waktu" @bind="tableState.ColumnFilters[nameof(AuditLog.CreatedAt)]" @bind:event="oninput" /></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var log in PagedLogs)
+            {
+                <tr>
+                    <td>@log.Actor</td>
+                    <td>@log.Action</td>
+                    <td>@log.Module</td>
+                    <td>@log.CreatedAt.ToLocalTime().ToString("g")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+@code {
+    private readonly TableState<AuditLog> tableState = new() { SortColumn = nameof(AuditLog.CreatedAt), PageSize = 10 };
+    private readonly Dictionary<string, Func<AuditLog, string?>> columnSelectors = new();
+
+    private List<AuditLog> logs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[nameof(AuditLog.Actor)] = l => l.Actor;
+        columnSelectors[nameof(AuditLog.Action)] = l => l.Action;
+        columnSelectors[nameof(AuditLog.Module)] = l => l.Module;
+        columnSelectors[nameof(AuditLog.CreatedAt)] = l => l.CreatedAt.ToString("g");
+
+        tableState.ColumnFilters[nameof(AuditLog.Actor)] = string.Empty;
+        tableState.ColumnFilters[nameof(AuditLog.Action)] = string.Empty;
+        tableState.ColumnFilters[nameof(AuditLog.Module)] = string.Empty;
+        tableState.ColumnFilters[nameof(AuditLog.CreatedAt)] = string.Empty;
+
+        logs = await DbContext.AuditLogs.OrderByDescending(l => l.CreatedAt).ToListAsync();
+    }
+
+    private IEnumerable<AuditLog> FilteredLogs => tableState.Apply(logs, columnSelectors);
+    private IEnumerable<AuditLog> PagedLogs
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredLogs);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredLogs);
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1) tableState.PageIndex--;
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages) tableState.PageIndex++;
+    }
+}

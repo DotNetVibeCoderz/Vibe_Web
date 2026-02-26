@@ -1,0 +1,281 @@
+@page "/circulation"
+@attribute [Authorize(Roles = "admin,petugas")]
+@inject ApplicationDbContext DbContext
+
+<h1>Circulation Management</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Free text search" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenModal(null)">Tambah Peminjaman</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(ColumnBook)">Buku @SortIndicator(ColumnBook)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnMember)">Anggota @SortIndicator(ColumnMember)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnLoanedAt)">Pinjam @SortIndicator(ColumnLoanedAt)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnDueAt)">Jatuh Tempo @SortIndicator(ColumnDueAt)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnStatus)">Status @SortIndicator(ColumnStatus)</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter buku" @bind="tableState.ColumnFilters[ColumnBook]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter anggota" @bind="tableState.ColumnFilters[ColumnMember]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tanggal" @bind="tableState.ColumnFilters[ColumnLoanedAt]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter jatuh tempo" @bind="tableState.ColumnFilters[ColumnDueAt]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter status" @bind="tableState.ColumnFilters[ColumnStatus]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var loan in PagedLoans)
+            {
+                <tr>
+                    <td>@loan.Book?.Title</td>
+                    <td>@loan.Member?.Name</td>
+                    <td>@loan.LoanedAt.ToLocalTime().ToString("d")</td>
+                    <td>@loan.DueAt.ToLocalTime().ToString("d")</td>
+                    <td>@(loan.ReturnedAt == null ? "Borrowed" : "Returned")</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenModal(loan)">Edit</button>
+                        @if (loan.ReturnedAt == null)
+                        {
+                            <button class="btn" @onclick="() => ReturnLoan(loan)">Check-in</button>
+                        }
+                        <button class="btn danger" @onclick="() => DeleteLoan(loan)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isModalOpen" Title="@modalTitle" OnClose="CloseModal">
+    <EditForm Model="editLoan" OnValidSubmit="SaveLoan" FormName="loanForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputSelect class="input" @bind-Value="editLoan.BookId">
+                <option value="0">Pilih Buku</option>
+                @foreach (var book in books)
+                {
+                    <option value="@book.Id">@book.Title</option>
+                }
+            </InputSelect>
+            <InputSelect class="input" @bind-Value="editLoan.MemberId">
+                <option value="0">Pilih Anggota</option>
+                @foreach (var member in members)
+                {
+                    <option value="@member.Id">@member.Name</option>
+                }
+            </InputSelect>
+            <InputDate class="input" @bind-Value="editLoan.LoanedAt" />
+            <InputDate class="input" @bind-Value="editLoan.DueAt" />
+            <label style="display:flex; gap:8px; align-items:center;">
+                <InputCheckbox @bind-Value="isReturned" />
+                Sudah dikembalikan
+            </label>
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private const string ColumnBook = "Book";
+    private const string ColumnMember = "Member";
+    private const string ColumnLoanedAt = "LoanedAt";
+    private const string ColumnDueAt = "DueAt";
+    private const string ColumnStatus = "Status";
+
+    private readonly TableState<Loan> tableState = new() { SortColumn = ColumnLoanedAt, PageSize = 10 };
+    private readonly Dictionary<string, Func<Loan, string?>> columnSelectors = new();
+
+    private List<Loan> loans = new();
+    private List<Book> books = new();
+    private List<Member> members = new();
+    private Loan editLoan = new();
+    private bool isModalOpen;
+    private bool isReturned;
+    private string modalTitle = "Tambah Peminjaman";
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[ColumnBook] = l => l.Book?.Title;
+        columnSelectors[ColumnMember] = l => l.Member?.Name;
+        columnSelectors[ColumnLoanedAt] = l => l.LoanedAt.ToString("d");
+        columnSelectors[ColumnDueAt] = l => l.DueAt.ToString("d");
+        columnSelectors[ColumnStatus] = l => l.ReturnedAt == null ? "Borrowed" : "Returned";
+
+        tableState.ColumnFilters[ColumnBook] = string.Empty;
+        tableState.ColumnFilters[ColumnMember] = string.Empty;
+        tableState.ColumnFilters[ColumnLoanedAt] = string.Empty;
+        tableState.ColumnFilters[ColumnDueAt] = string.Empty;
+        tableState.ColumnFilters[ColumnStatus] = string.Empty;
+
+        books = await DbContext.Books.OrderBy(b => b.Title).ToListAsync();
+        members = await DbContext.Members.OrderBy(m => m.Name).ToListAsync();
+        await LoadLoans();
+    }
+
+    private IEnumerable<Loan> FilteredLoans => tableState.Apply(loans, columnSelectors);
+    private IEnumerable<Loan> PagedLoans
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredLoans);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredLoans);
+
+    private async Task LoadLoans()
+    {
+        loans = await DbContext.Loans
+            .Include(l => l.Book)
+            .Include(l => l.Member)
+            .OrderByDescending(l => l.LoanedAt)
+            .ToListAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenModal(Loan? loan)
+    {
+        if (loan == null)
+        {
+            modalTitle = "Tambah Peminjaman";
+            editLoan = new Loan
+            {
+                LoanedAt = DateTime.UtcNow,
+                DueAt = DateTime.UtcNow.AddDays(14)
+            };
+            isReturned = false;
+        }
+        else
+        {
+            modalTitle = "Edit Peminjaman";
+            editLoan = new Loan
+            {
+                Id = loan.Id,
+                BookId = loan.BookId,
+                MemberId = loan.MemberId,
+                LoanedAt = loan.LoanedAt,
+                DueAt = loan.DueAt,
+                ReturnedAt = loan.ReturnedAt,
+                FineAmount = loan.FineAmount
+            };
+            isReturned = loan.ReturnedAt != null;
+        }
+
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private async Task SaveLoan()
+    {
+        editLoan.ReturnedAt = isReturned ? (editLoan.ReturnedAt ?? DateTime.UtcNow) : null;
+
+        if (editLoan.Id == 0)
+        {
+            DbContext.Loans.Add(editLoan);
+        }
+        else
+        {
+            DbContext.Loans.Update(editLoan);
+        }
+
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Saved loan {editLoan.Id}",
+            Module = "Circulation"
+        });
+
+        await DbContext.SaveChangesAsync();
+        await LoadLoans();
+        CloseModal();
+    }
+
+    private async Task ReturnLoan(Loan loan)
+    {
+        loan.ReturnedAt = DateTime.UtcNow;
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Returned loan {loan.Id}",
+            Module = "Circulation"
+        });
+        await DbContext.SaveChangesAsync();
+        await LoadLoans();
+    }
+
+    private async Task DeleteLoan(Loan loan)
+    {
+        DbContext.Loans.Remove(loan);
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Deleted loan {loan.Id}",
+            Module = "Circulation"
+        });
+        await DbContext.SaveChangesAsync();
+        await LoadLoans();
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1)
+        {
+            tableState.PageIndex--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages)
+        {
+            tableState.PageIndex++;
+        }
+    }
+}

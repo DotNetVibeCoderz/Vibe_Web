@@ -1,0 +1,174 @@
+@page "/roles"
+@attribute [Authorize(Roles = "admin")]
+@inject RoleManager<IdentityRole> RoleManager
+
+<h1>Role-Based Access Control</h1>
+
+<div class="card glass">
+    <p>Hak akses berbeda untuk admin, petugas, dan anggota.</p>
+
+    <div class="table-toolbar">
+        <input class="input" placeholder="Cari role" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+        </select>
+        <button class="btn primary" @onclick="OpenModal">Tambah Role</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(IdentityRole.Name))">Role @SortIndicator(nameof(IdentityRole.Name))</th>
+                <th>Deskripsi</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter role" @bind="tableState.ColumnFilters[nameof(IdentityRole.Name)]" @bind:event="oninput" /></th>
+                <th></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var role in PagedRoles)
+            {
+                <tr>
+                    <td>@role.Name</td>
+                    <td>@GetRoleDescription(role.Name)</td>
+                    <td>
+                        <button class="btn danger" @onclick="() => DeleteRole(role)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isModalOpen" Title="Tambah Role" OnClose="CloseModal">
+    <EditForm Model="roleForm" OnValidSubmit="SaveRole" FormName="roleForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="roleForm.Name" placeholder="Nama Role" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private readonly TableState<IdentityRole> tableState = new() { SortColumn = nameof(IdentityRole.Name), PageSize = 10 };
+    private readonly Dictionary<string, Func<IdentityRole, string?>> columnSelectors = new();
+
+    private List<IdentityRole> roles = new();
+    private bool isModalOpen;
+    private RoleForm roleForm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[nameof(IdentityRole.Name)] = r => r.Name;
+        tableState.ColumnFilters[nameof(IdentityRole.Name)] = string.Empty;
+        await LoadRoles();
+    }
+
+    private IEnumerable<IdentityRole> FilteredRoles => tableState.Apply(roles, columnSelectors);
+    private IEnumerable<IdentityRole> PagedRoles
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredRoles);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredRoles);
+
+    private async Task LoadRoles()
+    {
+        roles = await RoleManager.Roles.ToListAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenModal()
+    {
+        roleForm = new RoleForm();
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private async Task SaveRole()
+    {
+        if (!string.IsNullOrWhiteSpace(roleForm.Name))
+        {
+            await RoleManager.CreateAsync(new IdentityRole(roleForm.Name));
+            await LoadRoles();
+        }
+        CloseModal();
+    }
+
+    private async Task DeleteRole(IdentityRole role)
+    {
+        await RoleManager.DeleteAsync(role);
+        await LoadRoles();
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1) tableState.PageIndex--;
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages) tableState.PageIndex++;
+    }
+
+    private string GetRoleDescription(string? role)
+    {
+        return role switch
+        {
+            "admin" => "Akses penuh ke semua modul dan konfigurasi.",
+            "petugas" => "Mengelola koleksi, sirkulasi, dan laporan.",
+            "anggota" => "Akses portal self-service dan katalog.",
+            _ => "-"
+        };
+    }
+
+    private class RoleForm
+    {
+        [Required]
+        public string Name { get; set; } = string.Empty;
+    }
+}

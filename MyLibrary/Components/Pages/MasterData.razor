@@ -1,0 +1,184 @@
+@page "/master-data"
+@attribute [Authorize(Roles = "admin,petugas")]
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JsRuntime
+
+<h1>Master Data</h1>
+
+<div class="card glass">
+    <div class="form-grid">
+        <input class="input" placeholder="Free text search" @bind="searchText" @bind:event="oninput" />
+        <input class="input" placeholder="Filter kategori" @bind="categoryFilter" @bind:event="oninput" />
+        <select class="input" @bind="pageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+        <button class="btn primary" @onclick="ExportCsv">Export CSV</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Title))">Judul @SortIndicator(nameof(Book.Title))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Author))">Penulis @SortIndicator(nameof(Book.Author))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.ISBN))">ISBN @SortIndicator(nameof(Book.ISBN))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Category))">Kategori @SortIndicator(nameof(Book.Category))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Type))">Tipe @SortIndicator(nameof(Book.Type))</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter judul" @bind="titleFilter" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter penulis" @bind="authorFilter" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter ISBN" @bind="isbnFilter" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter kategori" @bind="categoryColumnFilter" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tipe" @bind="typeFilter" @bind:event="oninput" /></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var book in PagedBooks)
+            {
+                <tr>
+                    <td>@book.Title</td>
+                    <td>@book.Author</td>
+                    <td>@book.ISBN</td>
+                    <td>@book.Category</td>
+                    <td>@book.Type</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(pageIndex == 1)">Prev</button>
+        <span>Page @pageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(pageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+@code {
+    private List<Book> books = new();
+    private string searchText = string.Empty;
+    private string categoryFilter = string.Empty;
+    private string titleFilter = string.Empty;
+    private string authorFilter = string.Empty;
+    private string isbnFilter = string.Empty;
+    private string categoryColumnFilter = string.Empty;
+    private string typeFilter = string.Empty;
+    private string sortColumn = nameof(Book.Title);
+    private bool sortAscending = true;
+    private int pageIndex = 1;
+    private int pageSize = 5;
+
+    protected override async Task OnInitializedAsync()
+    {
+        books = await DbContext.Books.ToListAsync();
+    }
+
+    private IEnumerable<Book> FilteredBooks
+    {
+        get
+        {
+            var query = books.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                query = query.Where(b => b.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                    || b.Author.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                    || b.ISBN.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(categoryFilter))
+            {
+                query = query.Where(b => b.Category.Contains(categoryFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(titleFilter))
+            {
+                query = query.Where(b => b.Title.Contains(titleFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(authorFilter))
+            {
+                query = query.Where(b => b.Author.Contains(authorFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(isbnFilter))
+            {
+                query = query.Where(b => b.ISBN.Contains(isbnFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(categoryColumnFilter))
+            {
+                query = query.Where(b => b.Category.Contains(categoryColumnFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(typeFilter))
+            {
+                query = query.Where(b => b.Type.Contains(typeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            query = sortColumn switch
+            {
+                nameof(Book.Author) => sortAscending ? query.OrderBy(b => b.Author) : query.OrderByDescending(b => b.Author),
+                nameof(Book.ISBN) => sortAscending ? query.OrderBy(b => b.ISBN) : query.OrderByDescending(b => b.ISBN),
+                nameof(Book.Category) => sortAscending ? query.OrderBy(b => b.Category) : query.OrderByDescending(b => b.Category),
+                nameof(Book.Type) => sortAscending ? query.OrderBy(b => b.Type) : query.OrderByDescending(b => b.Type),
+                _ => sortAscending ? query.OrderBy(b => b.Title) : query.OrderByDescending(b => b.Title)
+            };
+
+            return query;
+        }
+    }
+
+    private IEnumerable<Book> PagedBooks => FilteredBooks
+        .Skip((pageIndex - 1) * pageSize)
+        .Take(pageSize);
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredBooks.Count() / (double)pageSize));
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        pageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (sortColumn != column)
+        {
+            return string.Empty;
+        }
+        return sortAscending ? "▲" : "▼";
+    }
+
+    private void PrevPage()
+    {
+        if (pageIndex > 1) pageIndex--;
+    }
+
+    private void NextPage()
+    {
+        if (pageIndex < TotalPages) pageIndex++;
+    }
+
+    private async Task ExportCsv()
+    {
+        var lines = new List<string> { "Title,Author,ISBN,Category,Type" };
+        foreach (var book in FilteredBooks)
+        {
+            lines.Add($"{Escape(book.Title)},{Escape(book.Author)},{Escape(book.ISBN)},{Escape(book.Category)},{Escape(book.Type)}");
+        }
+        var csv = string.Join("\n", lines);
+        await JsRuntime.InvokeVoidAsync("downloadManager.downloadText", "books.csv", csv);
+    }
+
+    private static string Escape(string value) => value.Replace("\"", "\"\"");
+}

@@ -1,0 +1,168 @@
+@page "/manager-dashboard"
+@attribute [Authorize(Roles = "admin")]
+@inject ApplicationDbContext DbContext
+
+<h1>Manager Dashboard</h1>
+
+<div class="grid grid-3">
+    <div class="card glass">
+        <h3>Total Koleksi</h3>
+        <p>@totalBooks buku</p>
+    </div>
+    <div class="card glass">
+        <h3>Total Anggota</h3>
+        <p>@totalMembers anggota</p>
+    </div>
+    <div class="card glass">
+        <h3>Aktif Dipinjam</h3>
+        <p>@activeLoans transaksi</p>
+    </div>
+</div>
+
+<div class="grid grid-3">
+    <div class="card glass">
+        <h3>Pinjaman 6 Bulan Terakhir</h3>
+        <div class="bar-chart">
+            @foreach (var item in loansByMonth)
+            {
+                <div class="bar-item">
+                    <div class="bar" style="height:@GetBarHeight(item.Value)%"></div>
+                    <span>@item.Label</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="card glass">
+        <h3>Top Kategori</h3>
+        <div class="bar-chart">
+            @foreach (var item in topCategories)
+            {
+                <div class="bar-item">
+                    <div class="bar" style="height:@GetBarHeight(item.Value)%"></div>
+                    <span>@item.Label</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="card glass">
+        <h3>Kinerja Pengadaan</h3>
+        <div class="bar-chart">
+            @foreach (var item in acquisitionByMonth)
+            {
+                <div class="bar-item">
+                    <div class="bar" style="height:@GetBarHeight(item.Value)%"></div>
+                    <span>@item.Label</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card glass">
+    <h3>Ringkasan Operasional</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Indikator</th>
+                <th>Nilai</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Transaksi Pinjaman Bulan Ini</td>
+                <td>@loanThisMonth</td>
+            </tr>
+            <tr>
+                <td>Koleksi Digital</td>
+                <td>@digitalBooks</td>
+            </tr>
+            <tr>
+                <td>Inventory Hilang</td>
+                <td>@lostInventory</td>
+            </tr>
+            <tr>
+                <td>Total Biaya Pengadaan</td>
+                <td>@totalAcquisitionCost.ToString("C0")</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int totalBooks;
+    private int totalMembers;
+    private int activeLoans;
+    private int loanThisMonth;
+    private int digitalBooks;
+    private int lostInventory;
+    private decimal totalAcquisitionCost;
+
+    private List<ChartItem> loansByMonth = new();
+    private List<ChartItem> topCategories = new();
+    private List<ChartItem> acquisitionByMonth = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalBooks = await DbContext.Books.CountAsync();
+        totalMembers = await DbContext.Members.CountAsync();
+        activeLoans = await DbContext.Loans.CountAsync(l => l.ReturnedAt == null);
+        digitalBooks = await DbContext.Books.CountAsync(b => b.IsDigital);
+        lostInventory = await DbContext.InventoryItems.SumAsync(i => i.Lost);
+        totalAcquisitionCost = await DbContext.Acquisitions.SumAsync(a => a.Cost);
+
+        var now = DateTime.UtcNow;
+        loanThisMonth = await DbContext.Loans.CountAsync(l => l.LoanedAt.Year == now.Year && l.LoanedAt.Month == now.Month);
+
+        loansByMonth = await DbContext.Loans
+            .GroupBy(l => new { l.LoanedAt.Year, l.LoanedAt.Month })
+            .OrderByDescending(g => g.Key.Year).ThenByDescending(g => g.Key.Month)
+            .Take(6)
+            .Select(g => new ChartItem
+            {
+                Label = $"{g.Key.Month:00}/{g.Key.Year % 100:00}",
+                Value = g.Count()
+            })
+            .ToListAsync();
+        loansByMonth.Reverse();
+
+        topCategories = await DbContext.Books
+            .GroupBy(b => b.Category)
+            .OrderByDescending(g => g.Count())
+            .Take(5)
+            .Select(g => new ChartItem
+            {
+                Label = g.Key,
+                Value = g.Count()
+            })
+            .ToListAsync();
+
+        acquisitionByMonth = await DbContext.Acquisitions
+            .GroupBy(a => new { a.OrderedAt.Year, a.OrderedAt.Month })
+            .OrderByDescending(g => g.Key.Year).ThenByDescending(g => g.Key.Month)
+            .Take(6)
+            .Select(g => new ChartItem
+            {
+                Label = $"{g.Key.Month:00}/{g.Key.Year % 100:00}",
+                Value = (int)g.Sum(x => x.Cost / 1000000)
+            })
+            .ToListAsync();
+        acquisitionByMonth.Reverse();
+    }
+
+    private int GetBarHeight(int value)
+    {
+        var max = new[] { loansByMonth, topCategories, acquisitionByMonth }
+            .SelectMany(list => list)
+            .Select(item => item.Value)
+            .DefaultIfEmpty(1)
+            .Max();
+
+        return max == 0 ? 0 : (int)Math.Round(value / (double)max * 100);
+    }
+
+    private class ChartItem
+    {
+        public string Label { get; set; } = string.Empty;
+        public int Value { get; set; }
+    }
+}

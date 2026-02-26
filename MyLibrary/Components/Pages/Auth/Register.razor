@@ -1,0 +1,67 @@
+@page "/auth/register"
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<h1>Register</h1>
+
+<div class="card glass" style="max-width:520px;">
+    <EditForm Model="model" OnValidSubmit="HandleRegister" FormName="registerForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="model.FullName" placeholder="Nama Lengkap" />
+            <InputText class="input" @bind-Value="model.Username" placeholder="Username" />
+            <InputText class="input" @bind-Value="model.Email" placeholder="Email" />
+            <InputText class="input" type="password" @bind-Value="model.Password" placeholder="Password" />
+        </div>
+        <div style="margin-top:16px; display:flex; gap:12px;">
+            <button class="btn primary" type="submit">Register</button>
+            <a class="btn" href="/auth/login">Back to Login</a>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p style="color: var(--danger);">@message</p>
+        }
+    </EditForm>
+</div>
+
+@code {
+    private RegisterModel model = new();
+    private string message = string.Empty;
+
+    private async Task HandleRegister()
+    {
+        var user = new ApplicationUser
+        {
+            UserName = model.Username,
+            Email = model.Email,
+            FullName = model.FullName,
+            EmailConfirmed = true
+        };
+
+        var result = await UserManager.CreateAsync(user, model.Password);
+        if (result.Succeeded)
+        {
+            await UserManager.AddToRoleAsync(user, "anggota");
+            Navigation.NavigateTo("/auth/login?registered=1", forceLoad: true);
+        }
+        else
+        {
+            message = string.Join(", ", result.Errors.Select(e => e.Description));
+        }
+    }
+
+    private class RegisterModel
+    {
+        [Required]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required]
+        public string Username { get; set; } = string.Empty;
+
+        [Required, EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        public string Password { get; set; } = string.Empty;
+    }
+}

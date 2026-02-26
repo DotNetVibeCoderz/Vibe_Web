@@ -1,0 +1,57 @@
+@page "/profile"
+@attribute [Authorize]
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthProvider
+
+<h1>Profile</h1>
+
+<div class="card glass" style="max-width:520px;">
+    @if (currentUser == null)
+    {
+        <p>Loading...</p>
+    }
+    else
+    {
+        <EditForm Model="currentUser" OnValidSubmit="SaveProfile">
+            <DataAnnotationsValidator />
+            <div class="form-grid">
+                <InputText class="input" @bind-Value="currentUser.FullName" placeholder="Nama" />
+                <InputText class="input" @bind-Value="currentUser.Email" placeholder="Email" />
+                <InputText class="input" @bind-Value="currentUser.PhoneNumber" placeholder="Telepon" />
+            </div>
+            <div style="margin-top:16px; display:flex; gap:12px;">
+                <button class="btn primary" type="submit">Simpan</button>
+            </div>
+        </EditForm>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p>@message</p>
+        }
+    }
+</div>
+
+@code {
+    private ApplicationUser? currentUser;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            currentUser = await UserManager.FindByNameAsync(user.Identity.Name!);
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        if (currentUser == null)
+        {
+            return;
+        }
+
+        var result = await UserManager.UpdateAsync(currentUser);
+        message = result.Succeeded ? "Profil tersimpan." : string.Join(", ", result.Errors.Select(e => e.Description));
+    }
+}

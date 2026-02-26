@@ -1,0 +1,497 @@
+@page "/community"
+@inject ApplicationDbContext DbContext
+
+<h1>Community Engagement</h1>
+
+<div class="card glass">
+    <h3>Forum Diskusi</h3>
+    <div class="table-toolbar">
+        <input class="input" placeholder="Cari topik" @bind="topicState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="topicState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenTopicModal(null)">Tambah Topik</button>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortTopic(nameof(DiscussionTopic.Title))">Judul @SortIndicator(topicState, nameof(DiscussionTopic.Title))</th>
+                <th class="sortable" @onclick="() => SortTopic(nameof(DiscussionTopic.Category))">Kategori @SortIndicator(topicState, nameof(DiscussionTopic.Category))</th>
+                <th class="sortable" @onclick="() => SortTopic(nameof(DiscussionTopic.Creator))">Creator @SortIndicator(topicState, nameof(DiscussionTopic.Creator))</th>
+                <th class="sortable" @onclick="() => SortTopic(nameof(DiscussionTopic.CreatedAt))">Tanggal @SortIndicator(topicState, nameof(DiscussionTopic.CreatedAt))</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter judul" @bind="topicState.ColumnFilters[nameof(DiscussionTopic.Title)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter kategori" @bind="topicState.ColumnFilters[nameof(DiscussionTopic.Category)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter creator" @bind="topicState.ColumnFilters[nameof(DiscussionTopic.Creator)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tanggal" @bind="topicState.ColumnFilters[nameof(DiscussionTopic.CreatedAt)]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var topic in PagedTopics)
+            {
+                <tr>
+                    <td>@topic.Title</td>
+                    <td>@topic.Category</td>
+                    <td>@topic.Creator</td>
+                    <td>@topic.CreatedAt.ToLocalTime().ToString("d")</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenTopicModal(topic)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteTopic(topic)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevTopic" disabled="@(topicState.PageIndex == 1)">Prev</button>
+        <span>Page @topicState.PageIndex / @TopicPages</span>
+        <button class="btn" @onclick="NextTopic" disabled="@(topicState.PageIndex == TopicPages)">Next</button>
+    </div>
+</div>
+
+<div class="card glass">
+    <h3>Event Library</h3>
+    <div class="table-toolbar">
+        <input class="input" placeholder="Cari event" @bind="eventState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="eventState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenEventModal(null)">Tambah Event</button>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortEvent(nameof(CommunityEvent.Title))">Judul @SortIndicator(eventState, nameof(CommunityEvent.Title))</th>
+                <th class="sortable" @onclick="() => SortEvent(nameof(CommunityEvent.Date))">Tanggal @SortIndicator(eventState, nameof(CommunityEvent.Date))</th>
+                <th class="sortable" @onclick="() => SortEvent(nameof(CommunityEvent.Location))">Lokasi @SortIndicator(eventState, nameof(CommunityEvent.Location))</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter judul" @bind="eventState.ColumnFilters[nameof(CommunityEvent.Title)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tanggal" @bind="eventState.ColumnFilters[nameof(CommunityEvent.Date)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter lokasi" @bind="eventState.ColumnFilters[nameof(CommunityEvent.Location)]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ev in PagedEvents)
+            {
+                <tr>
+                    <td>@ev.Title</td>
+                    <td>@ev.Date.ToLocalTime().ToString("d")</td>
+                    <td>@ev.Location</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenEventModal(ev)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteEvent(ev)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevEvent" disabled="@(eventState.PageIndex == 1)">Prev</button>
+        <span>Page @eventState.PageIndex / @EventPages</span>
+        <button class="btn" @onclick="NextEvent" disabled="@(eventState.PageIndex == EventPages)">Next</button>
+    </div>
+</div>
+
+<div class="card glass">
+    <h3>Rekomendasi Buku</h3>
+    <div class="table-toolbar">
+        <input class="input" placeholder="Cari rekomendasi" @bind="recState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="recState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenRecModal(null)">Tambah Rekomendasi</button>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortRec(nameof(Recommendation.BookTitle))">Buku @SortIndicator(recState, nameof(Recommendation.BookTitle))</th>
+                <th class="sortable" @onclick="() => SortRec(nameof(Recommendation.Reason))">Alasan @SortIndicator(recState, nameof(Recommendation.Reason))</th>
+                <th class="sortable" @onclick="() => SortRec(nameof(Recommendation.CreatedBy))">Dibuat Oleh @SortIndicator(recState, nameof(Recommendation.CreatedBy))</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter buku" @bind="recState.ColumnFilters[nameof(Recommendation.BookTitle)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter alasan" @bind="recState.ColumnFilters[nameof(Recommendation.Reason)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter pembuat" @bind="recState.ColumnFilters[nameof(Recommendation.CreatedBy)]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rec in PagedRecommendations)
+            {
+                <tr>
+                    <td>@rec.BookTitle</td>
+                    <td>@rec.Reason</td>
+                    <td>@rec.CreatedBy</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenRecModal(rec)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteRec(rec)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevRec" disabled="@(recState.PageIndex == 1)">Prev</button>
+        <span>Page @recState.PageIndex / @RecPages</span>
+        <button class="btn" @onclick="NextRec" disabled="@(recState.PageIndex == RecPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isTopicModalOpen" Title="@topicModalTitle" OnClose="CloseTopicModal">
+    <EditForm Model="editTopic" OnValidSubmit="SaveTopic" FormName="topicForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="editTopic.Title" placeholder="Judul" />
+            <InputText class="input" @bind-Value="editTopic.Category" placeholder="Kategori" />
+            <InputText class="input" @bind-Value="editTopic.Creator" placeholder="Creator" />
+            <InputDate class="input" @bind-Value="editTopic.CreatedAt" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseTopicModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+<Modal IsOpen="isEventModalOpen" Title="@eventModalTitle" OnClose="CloseEventModal">
+    <EditForm Model="editEvent" OnValidSubmit="SaveEvent" FormName="eventForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="editEvent.Title" placeholder="Judul" />
+            <InputText class="input" @bind-Value="editEvent.Location" placeholder="Lokasi" />
+            <InputDate class="input" @bind-Value="editEvent.Date" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseEventModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+<Modal IsOpen="isRecModalOpen" Title="@recModalTitle" OnClose="CloseRecModal">
+    <EditForm Model="editRecommendation" OnValidSubmit="SaveRec" FormName="recForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="editRecommendation.BookTitle" placeholder="Judul Buku" />
+            <InputText class="input" @bind-Value="editRecommendation.Reason" placeholder="Alasan" />
+            <InputText class="input" @bind-Value="editRecommendation.CreatedBy" placeholder="Dibuat Oleh" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseRecModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private readonly TableState<DiscussionTopic> topicState = new() { SortColumn = nameof(DiscussionTopic.CreatedAt), PageSize = 10 };
+    private readonly TableState<CommunityEvent> eventState = new() { SortColumn = nameof(CommunityEvent.Date), PageSize = 10 };
+    private readonly TableState<Recommendation> recState = new() { SortColumn = nameof(Recommendation.BookTitle), PageSize = 10 };
+
+    private readonly Dictionary<string, Func<DiscussionTopic, string?>> topicSelectors = new();
+    private readonly Dictionary<string, Func<CommunityEvent, string?>> eventSelectors = new();
+    private readonly Dictionary<string, Func<Recommendation, string?>> recSelectors = new();
+
+    private List<DiscussionTopic> topics = new();
+    private List<CommunityEvent> events = new();
+    private List<Recommendation> recommendations = new();
+
+    private DiscussionTopic editTopic = new();
+    private CommunityEvent editEvent = new();
+    private Recommendation editRecommendation = new();
+
+    private bool isTopicModalOpen;
+    private bool isEventModalOpen;
+    private bool isRecModalOpen;
+    private string topicModalTitle = "Tambah Topik";
+    private string eventModalTitle = "Tambah Event";
+    private string recModalTitle = "Tambah Rekomendasi";
+
+    protected override async Task OnInitializedAsync()
+    {
+        topicSelectors[nameof(DiscussionTopic.Title)] = t => t.Title;
+        topicSelectors[nameof(DiscussionTopic.Category)] = t => t.Category;
+        topicSelectors[nameof(DiscussionTopic.Creator)] = t => t.Creator;
+        topicSelectors[nameof(DiscussionTopic.CreatedAt)] = t => t.CreatedAt.ToString("d");
+
+        eventSelectors[nameof(CommunityEvent.Title)] = e => e.Title;
+        eventSelectors[nameof(CommunityEvent.Date)] = e => e.Date.ToString("d");
+        eventSelectors[nameof(CommunityEvent.Location)] = e => e.Location;
+
+        recSelectors[nameof(Recommendation.BookTitle)] = r => r.BookTitle;
+        recSelectors[nameof(Recommendation.Reason)] = r => r.Reason;
+        recSelectors[nameof(Recommendation.CreatedBy)] = r => r.CreatedBy;
+
+        topicState.ColumnFilters[nameof(DiscussionTopic.Title)] = string.Empty;
+        topicState.ColumnFilters[nameof(DiscussionTopic.Category)] = string.Empty;
+        topicState.ColumnFilters[nameof(DiscussionTopic.Creator)] = string.Empty;
+        topicState.ColumnFilters[nameof(DiscussionTopic.CreatedAt)] = string.Empty;
+
+        eventState.ColumnFilters[nameof(CommunityEvent.Title)] = string.Empty;
+        eventState.ColumnFilters[nameof(CommunityEvent.Date)] = string.Empty;
+        eventState.ColumnFilters[nameof(CommunityEvent.Location)] = string.Empty;
+
+        recState.ColumnFilters[nameof(Recommendation.BookTitle)] = string.Empty;
+        recState.ColumnFilters[nameof(Recommendation.Reason)] = string.Empty;
+        recState.ColumnFilters[nameof(Recommendation.CreatedBy)] = string.Empty;
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        topics = await DbContext.DiscussionTopics.OrderByDescending(t => t.CreatedAt).ToListAsync();
+        events = await DbContext.CommunityEvents.OrderBy(e => e.Date).ToListAsync();
+        recommendations = await DbContext.Recommendations.ToListAsync();
+    }
+
+    private IEnumerable<DiscussionTopic> FilteredTopics => topicState.Apply(topics, topicSelectors);
+    private IEnumerable<DiscussionTopic> PagedTopics
+    {
+        get
+        {
+            topicState.EnsureValidPage(TopicPages);
+            return topicState.ApplyPaging(FilteredTopics);
+        }
+    }
+
+    private int TopicPages => topicState.TotalPages(FilteredTopics);
+
+    private IEnumerable<CommunityEvent> FilteredEvents => eventState.Apply(events, eventSelectors);
+    private IEnumerable<CommunityEvent> PagedEvents
+    {
+        get
+        {
+            eventState.EnsureValidPage(EventPages);
+            return eventState.ApplyPaging(FilteredEvents);
+        }
+    }
+
+    private int EventPages => eventState.TotalPages(FilteredEvents);
+
+    private IEnumerable<Recommendation> FilteredRecommendations => recState.Apply(recommendations, recSelectors);
+    private IEnumerable<Recommendation> PagedRecommendations
+    {
+        get
+        {
+            recState.EnsureValidPage(RecPages);
+            return recState.ApplyPaging(FilteredRecommendations);
+        }
+    }
+
+    private int RecPages => recState.TotalPages(FilteredRecommendations);
+
+    private void SortTopic(string column)
+    {
+        ToggleSort(topicState, column);
+    }
+
+    private void SortEvent(string column)
+    {
+        ToggleSort(eventState, column);
+    }
+
+    private void SortRec(string column)
+    {
+        ToggleSort(recState, column);
+    }
+
+    private void ToggleSort<T>(TableState<T> state, string column)
+    {
+        if (state.SortColumn == column)
+        {
+            state.SortAscending = !state.SortAscending;
+        }
+        else
+        {
+            state.SortColumn = column;
+            state.SortAscending = true;
+        }
+        state.PageIndex = 1;
+    }
+
+    private string SortIndicator<T>(TableState<T> state, string column)
+    {
+        if (state.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return state.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenTopicModal(DiscussionTopic? topic)
+    {
+        if (topic == null)
+        {
+            topicModalTitle = "Tambah Topik";
+            editTopic = new DiscussionTopic { CreatedAt = DateTime.UtcNow };
+        }
+        else
+        {
+            topicModalTitle = "Edit Topik";
+            editTopic = new DiscussionTopic
+            {
+                Id = topic.Id,
+                Title = topic.Title,
+                Category = topic.Category,
+                Creator = topic.Creator,
+                CreatedAt = topic.CreatedAt
+            };
+        }
+        isTopicModalOpen = true;
+    }
+
+    private void CloseTopicModal() => isTopicModalOpen = false;
+
+    private async Task SaveTopic()
+    {
+        if (editTopic.Id == 0)
+        {
+            DbContext.DiscussionTopics.Add(editTopic);
+        }
+        else
+        {
+            DbContext.DiscussionTopics.Update(editTopic);
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseTopicModal();
+    }
+
+    private async Task DeleteTopic(DiscussionTopic topic)
+    {
+        DbContext.DiscussionTopics.Remove(topic);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private void PrevTopic()
+    {
+        if (topicState.PageIndex > 1) topicState.PageIndex--;
+    }
+
+    private void NextTopic()
+    {
+        if (topicState.PageIndex < TopicPages) topicState.PageIndex++;
+    }
+
+    private void OpenEventModal(CommunityEvent? ev)
+    {
+        if (ev == null)
+        {
+            eventModalTitle = "Tambah Event";
+            editEvent = new CommunityEvent { Date = DateTime.UtcNow.AddDays(1) };
+        }
+        else
+        {
+            eventModalTitle = "Edit Event";
+            editEvent = new CommunityEvent
+            {
+                Id = ev.Id,
+                Title = ev.Title,
+                Date = ev.Date,
+                Location = ev.Location
+            };
+        }
+        isEventModalOpen = true;
+    }
+
+    private void CloseEventModal() => isEventModalOpen = false;
+
+    private async Task SaveEvent()
+    {
+        if (editEvent.Id == 0)
+        {
+            DbContext.CommunityEvents.Add(editEvent);
+        }
+        else
+        {
+            DbContext.CommunityEvents.Update(editEvent);
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseEventModal();
+    }
+
+    private async Task DeleteEvent(CommunityEvent ev)
+    {
+        DbContext.CommunityEvents.Remove(ev);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private void PrevEvent()
+    {
+        if (eventState.PageIndex > 1) eventState.PageIndex--;
+    }
+
+    private void NextEvent()
+    {
+        if (eventState.PageIndex < EventPages) eventState.PageIndex++;
+    }
+
+    private void OpenRecModal(Recommendation? rec)
+    {
+        if (rec == null)
+        {
+            recModalTitle = "Tambah Rekomendasi";
+            editRecommendation = new Recommendation();
+        }
+        else
+        {
+            recModalTitle = "Edit Rekomendasi";
+            editRecommendation = new Recommendation
+            {
+                Id = rec.Id,
+                BookTitle = rec.BookTitle,
+                Reason = rec.Reason,
+                CreatedBy = rec.CreatedBy
+            };
+        }
+        isRecModalOpen = true;
+    }
+
+    private void CloseRecModal() => isRecModalOpen = false;
+
+    private async Task SaveRec()
+    {
+        if (editRecommendation.Id == 0)
+        {
+            DbContext.Recommendations.Add(editRecommendation);
+        }
+        else
+        {
+            DbContext.Recommendations.Update(editRecommendation);
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseRecModal();
+    }
+
+    private async Task DeleteRec(Recommendation rec)
+    {
+        DbContext.Recommendations.Remove(rec);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private void PrevRec()
+    {
+        if (recState.PageIndex > 1) recState.PageIndex--;
+    }
+
+    private void NextRec()
+    {
+        if (recState.PageIndex < RecPages) recState.PageIndex++;
+    }
+}

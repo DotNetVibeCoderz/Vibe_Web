@@ -1,0 +1,231 @@
+@page "/inventory"
+@attribute [Authorize(Roles = "admin,petugas")]
+@inject ApplicationDbContext DbContext
+
+<h1>Inventory Management</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Free text search" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenModal(null)">Tambah Inventory</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(ColumnBook)">Koleksi @SortIndicator(ColumnBook)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnStock)">Stok @SortIndicator(ColumnStock)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnLost)">Hilang @SortIndicator(ColumnLost)</th>
+                <th class="sortable" @onclick="() => SortBy(ColumnAudit)">Audit Terakhir @SortIndicator(ColumnAudit)</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter koleksi" @bind="tableState.ColumnFilters[ColumnBook]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter stok" @bind="tableState.ColumnFilters[ColumnStock]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter hilang" @bind="tableState.ColumnFilters[ColumnLost]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter audit" @bind="tableState.ColumnFilters[ColumnAudit]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in PagedItems)
+            {
+                <tr>
+                    <td>@item.Book?.Title</td>
+                    <td>@item.Stock</td>
+                    <td>@item.Lost</td>
+                    <td>@item.LastAuditAt.ToLocalTime().ToString("d")</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenModal(item)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteItem(item)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isModalOpen" Title="@modalTitle" OnClose="CloseModal">
+    <EditForm Model="editItem" OnValidSubmit="SaveItem" FormName="inventoryForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputSelect class="input" @bind-Value="editItem.BookId">
+                <option value="0">Pilih Buku</option>
+                @foreach (var book in books)
+                {
+                    <option value="@book.Id">@book.Title</option>
+                }
+            </InputSelect>
+            <InputNumber class="input" @bind-Value="editItem.Stock" />
+            <InputNumber class="input" @bind-Value="editItem.Lost" />
+            <InputDate class="input" @bind-Value="editItem.LastAuditAt" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private const string ColumnBook = "Book";
+    private const string ColumnStock = "Stock";
+    private const string ColumnLost = "Lost";
+    private const string ColumnAudit = "LastAuditAt";
+
+    private readonly TableState<InventoryItem> tableState = new() { SortColumn = ColumnBook, PageSize = 10 };
+    private readonly Dictionary<string, Func<InventoryItem, string?>> columnSelectors = new();
+
+    private List<InventoryItem> inventory = new();
+    private List<Book> books = new();
+    private InventoryItem editItem = new();
+    private bool isModalOpen;
+    private string modalTitle = "Tambah Inventory";
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[ColumnBook] = i => i.Book?.Title;
+        columnSelectors[ColumnStock] = i => i.Stock.ToString();
+        columnSelectors[ColumnLost] = i => i.Lost.ToString();
+        columnSelectors[ColumnAudit] = i => i.LastAuditAt.ToString("d");
+
+        tableState.ColumnFilters[ColumnBook] = string.Empty;
+        tableState.ColumnFilters[ColumnStock] = string.Empty;
+        tableState.ColumnFilters[ColumnLost] = string.Empty;
+        tableState.ColumnFilters[ColumnAudit] = string.Empty;
+
+        books = await DbContext.Books.OrderBy(b => b.Title).ToListAsync();
+        await LoadInventory();
+    }
+
+    private IEnumerable<InventoryItem> FilteredItems => tableState.Apply(inventory, columnSelectors);
+    private IEnumerable<InventoryItem> PagedItems
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredItems);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredItems);
+
+    private async Task LoadInventory()
+    {
+        inventory = await DbContext.InventoryItems.Include(i => i.Book).ToListAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenModal(InventoryItem? item)
+    {
+        if (item == null)
+        {
+            modalTitle = "Tambah Inventory";
+            editItem = new InventoryItem { LastAuditAt = DateTime.UtcNow };
+        }
+        else
+        {
+            modalTitle = "Edit Inventory";
+            editItem = new InventoryItem
+            {
+                Id = item.Id,
+                BookId = item.BookId,
+                Stock = item.Stock,
+                Lost = item.Lost,
+                LastAuditAt = item.LastAuditAt
+            };
+        }
+
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private async Task SaveItem()
+    {
+        if (editItem.Id == 0)
+        {
+            DbContext.InventoryItems.Add(editItem);
+        }
+        else
+        {
+            DbContext.InventoryItems.Update(editItem);
+        }
+
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Saved inventory for book {editItem.BookId}",
+            Module = "Inventory"
+        });
+
+        await DbContext.SaveChangesAsync();
+        await LoadInventory();
+        CloseModal();
+    }
+
+    private async Task DeleteItem(InventoryItem item)
+    {
+        DbContext.InventoryItems.Remove(item);
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Deleted inventory {item.Id}",
+            Module = "Inventory"
+        });
+        await DbContext.SaveChangesAsync();
+        await LoadInventory();
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1)
+        {
+            tableState.PageIndex--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages)
+        {
+            tableState.PageIndex++;
+        }
+    }
+}

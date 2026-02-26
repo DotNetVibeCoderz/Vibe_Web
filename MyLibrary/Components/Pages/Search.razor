@@ -1,0 +1,120 @@
+@page "/search"
+@inject ApplicationDbContext DbContext
+
+<h1>Smart Search</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Cari judul, penulis, ISBN, kategori" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Title))">Judul @SortIndicator(nameof(Book.Title))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Author))">Penulis @SortIndicator(nameof(Book.Author))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.ISBN))">ISBN @SortIndicator(nameof(Book.ISBN))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.Category))">Kategori @SortIndicator(nameof(Book.Category))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Book.IsDigital))">Digital @SortIndicator(nameof(Book.IsDigital))</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter judul" @bind="tableState.ColumnFilters[nameof(Book.Title)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter penulis" @bind="tableState.ColumnFilters[nameof(Book.Author)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter ISBN" @bind="tableState.ColumnFilters[nameof(Book.ISBN)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter kategori" @bind="tableState.ColumnFilters[nameof(Book.Category)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter digital" @bind="tableState.ColumnFilters[nameof(Book.IsDigital)]" @bind:event="oninput" /></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var book in PagedResults)
+            {
+                <tr>
+                    <td>@book.Title</td>
+                    <td>@book.Author</td>
+                    <td>@book.ISBN</td>
+                    <td>@book.Category</td>
+                    <td>@(book.IsDigital ? "Yes" : "No")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+@code {
+    private readonly TableState<Book> tableState = new() { SortColumn = nameof(Book.Title), PageSize = 10 };
+    private readonly Dictionary<string, Func<Book, string?>> columnSelectors = new();
+
+    private List<Book> books = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[nameof(Book.Title)] = b => b.Title;
+        columnSelectors[nameof(Book.Author)] = b => b.Author;
+        columnSelectors[nameof(Book.ISBN)] = b => b.ISBN;
+        columnSelectors[nameof(Book.Category)] = b => b.Category;
+        columnSelectors[nameof(Book.IsDigital)] = b => b.IsDigital ? "Yes" : "No";
+
+        tableState.ColumnFilters[nameof(Book.Title)] = string.Empty;
+        tableState.ColumnFilters[nameof(Book.Author)] = string.Empty;
+        tableState.ColumnFilters[nameof(Book.ISBN)] = string.Empty;
+        tableState.ColumnFilters[nameof(Book.Category)] = string.Empty;
+        tableState.ColumnFilters[nameof(Book.IsDigital)] = string.Empty;
+
+        books = await DbContext.Books.ToListAsync();
+    }
+
+    private IEnumerable<Book> FilteredResults => tableState.Apply(books, columnSelectors);
+    private IEnumerable<Book> PagedResults
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredResults);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredResults);
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1) tableState.PageIndex--;
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages) tableState.PageIndex++;
+    }
+}

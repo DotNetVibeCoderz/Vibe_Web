@@ -1,0 +1,207 @@
+@page "/manager-reports"
+@attribute [Authorize(Roles = "admin")]
+@inject ApplicationDbContext DbContext
+
+<h1>Manager Reports</h1>
+
+<div class="grid grid-3">
+    <div class="card glass">
+        <h3>Overdue Loans</h3>
+        <p>@overdueCount transaksi</p>
+    </div>
+    <div class="card glass">
+        <h3>Low Stock</h3>
+        <p>@lowStockCount koleksi</p>
+    </div>
+    <div class="card glass">
+        <h3>Aktivitas Anggota</h3>
+        <p>@activeMemberCount anggota aktif</p>
+    </div>
+</div>
+
+<div class="card glass">
+    <h3>Overdue Loans Detail</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Buku</th>
+                <th>Anggota</th>
+                <th>Jatuh Tempo</th>
+                <th>Hari Terlambat</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in overdueLoans)
+            {
+                <tr>
+                    <td>@item.BookTitle</td>
+                    <td>@item.MemberName</td>
+                    <td>@item.DueAt.ToLocalTime().ToString("d")</td>
+                    <td>@item.OverdueDays</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="card glass">
+    <h3>Low Stock Inventory</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Koleksi</th>
+                <th>Stock</th>
+                <th>Lost</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in lowStock)
+            {
+                <tr>
+                    <td>@item.BookTitle</td>
+                    <td>@item.Stock</td>
+                    <td>@item.Lost</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="card glass">
+    <h3>Top Member Activity</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Anggota</th>
+                <th>Total Pinjaman</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in topMembers)
+            {
+                <tr>
+                    <td>@item.MemberName</td>
+                    <td>@item.LoanCount</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="card glass">
+    <h3>Grafik Biaya Pengadaan (6 Bulan)</h3>
+    <div class="bar-chart">
+        @foreach (var item in acquisitionByMonth)
+        {
+            <div class="bar-item">
+                <div class="bar" style="height:@GetBarHeight(item.Value)%"></div>
+                <span>@item.Label</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int overdueCount;
+    private int lowStockCount;
+    private int activeMemberCount;
+
+    private List<OverdueItem> overdueLoans = new();
+    private List<StockItem> lowStock = new();
+    private List<MemberActivity> topMembers = new();
+    private List<ChartItem> acquisitionByMonth = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+
+        overdueLoans = await DbContext.Loans
+            .Include(l => l.Book)
+            .Include(l => l.Member)
+            .Where(l => l.ReturnedAt == null && l.DueAt < today)
+            .OrderBy(l => l.DueAt)
+            .Select(l => new OverdueItem
+            {
+                BookTitle = l.Book!.Title,
+                MemberName = l.Member!.Name,
+                DueAt = l.DueAt,
+                OverdueDays = (today - l.DueAt.Date).Days
+            })
+            .ToListAsync();
+
+        overdueCount = overdueLoans.Count;
+
+        lowStock = await DbContext.InventoryItems
+            .Include(i => i.Book)
+            .Where(i => i.Stock - i.Lost <= 3)
+            .OrderBy(i => i.Stock)
+            .Select(i => new StockItem
+            {
+                BookTitle = i.Book!.Title,
+                Stock = i.Stock,
+                Lost = i.Lost
+            })
+            .ToListAsync();
+
+        lowStockCount = lowStock.Count;
+
+        topMembers = await DbContext.Loans
+            .Include(l => l.Member)
+            .GroupBy(l => l.Member!.Name)
+            .OrderByDescending(g => g.Count())
+            .Take(5)
+            .Select(g => new MemberActivity
+            {
+                MemberName = g.Key,
+                LoanCount = g.Count()
+            })
+            .ToListAsync();
+
+        activeMemberCount = topMembers.Count;
+
+        acquisitionByMonth = await DbContext.Acquisitions
+            .GroupBy(a => new { a.OrderedAt.Year, a.OrderedAt.Month })
+            .OrderByDescending(g => g.Key.Year).ThenByDescending(g => g.Key.Month)
+            .Take(6)
+            .Select(g => new ChartItem
+            {
+                Label = $"{g.Key.Month:00}/{g.Key.Year % 100:00}",
+                Value = (int)g.Sum(x => x.Cost / 1000000)
+            })
+            .ToListAsync();
+        acquisitionByMonth.Reverse();
+    }
+
+    private int GetBarHeight(int value)
+    {
+        var max = acquisitionByMonth.Select(i => i.Value).DefaultIfEmpty(1).Max();
+        return max == 0 ? 0 : (int)Math.Round(value / (double)max * 100);
+    }
+
+    private class OverdueItem
+    {
+        public string BookTitle { get; set; } = string.Empty;
+        public string MemberName { get; set; } = string.Empty;
+        public DateTime DueAt { get; set; }
+        public int OverdueDays { get; set; }
+    }
+
+    private class StockItem
+    {
+        public string BookTitle { get; set; } = string.Empty;
+        public int Stock { get; set; }
+        public int Lost { get; set; }
+    }
+
+    private class MemberActivity
+    {
+        public string MemberName { get; set; } = string.Empty;
+        public int LoanCount { get; set; }
+    }
+
+    private class ChartItem
+    {
+        public string Label { get; set; } = string.Empty;
+        public int Value { get; set; }
+    }
+}

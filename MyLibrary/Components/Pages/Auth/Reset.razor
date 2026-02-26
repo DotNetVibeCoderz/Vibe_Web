@@ -1,0 +1,58 @@
+@page "/auth/reset"
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<h1>Reset Password</h1>
+
+<div class="card glass" style="max-width:520px;">
+    <EditForm Model="model" OnValidSubmit="HandleReset" FormName="resetForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="model.Username" placeholder="Username" />
+            <InputText class="input" type="password" @bind-Value="model.NewPassword" placeholder="Password Baru" />
+        </div>
+        <div style="margin-top:16px; display:flex; gap:12px;">
+            <button class="btn primary" type="submit">Reset</button>
+            <a class="btn" href="/auth/login">Back to Login</a>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p style="color: var(--danger);">@message</p>
+        }
+    </EditForm>
+</div>
+
+@code {
+    private ResetModel model = new();
+    private string message = string.Empty;
+
+    private async Task HandleReset()
+    {
+        var user = await UserManager.FindByNameAsync(model.Username);
+        if (user == null)
+        {
+            message = "User tidak ditemukan.";
+            return;
+        }
+
+        var token = await UserManager.GeneratePasswordResetTokenAsync(user);
+        var result = await UserManager.ResetPasswordAsync(user, token, model.NewPassword);
+        if (result.Succeeded)
+        {
+            Navigation.NavigateTo("/auth/login");
+        }
+        else
+        {
+            message = string.Join(", ", result.Errors.Select(e => e.Description));
+        }
+    }
+
+    private class ResetModel
+    {
+        [Required]
+        public string Username { get; set; } = string.Empty;
+
+        [Required]
+        public string NewPassword { get; set; } = string.Empty;
+    }
+}

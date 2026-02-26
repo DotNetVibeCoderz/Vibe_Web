@@ -1,0 +1,226 @@
+@page "/notifications"
+@inject ApplicationDbContext DbContext
+
+<h1>Notifications & Alerts</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Free text search" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenModal(null)">Tambah Notifikasi</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(Notification.Recipient))">Recipient @SortIndicator(nameof(Notification.Recipient))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Notification.Message))">Message @SortIndicator(nameof(Notification.Message))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Notification.Type))">Type @SortIndicator(nameof(Notification.Type))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Notification.CreatedAt))">Created @SortIndicator(nameof(Notification.CreatedAt))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Notification.IsRead))">Status @SortIndicator(nameof(Notification.IsRead))</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter recipient" @bind="tableState.ColumnFilters[nameof(Notification.Recipient)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter pesan" @bind="tableState.ColumnFilters[nameof(Notification.Message)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tipe" @bind="tableState.ColumnFilters[nameof(Notification.Type)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter tanggal" @bind="tableState.ColumnFilters[nameof(Notification.CreatedAt)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter status" @bind="tableState.ColumnFilters[nameof(Notification.IsRead)]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in PagedNotifications)
+            {
+                <tr>
+                    <td>@item.Recipient</td>
+                    <td>@item.Message</td>
+                    <td>@item.Type</td>
+                    <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                    <td>@(item.IsRead ? "Read" : "Unread")</td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenModal(item)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteItem(item)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isModalOpen" Title="@modalTitle" OnClose="CloseModal">
+    <EditForm Model="editItem" OnValidSubmit="SaveItem" FormName="notificationForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="editItem.Recipient" placeholder="Recipient" />
+            <InputText class="input" @bind-Value="editItem.Message" placeholder="Message" />
+            <InputText class="input" @bind-Value="editItem.Type" placeholder="Type" />
+            <label style="display:flex; gap:8px; align-items:center;">
+                <InputCheckbox @bind-Value="editItem.IsRead" />
+                Sudah dibaca
+            </label>
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private readonly TableState<Notification> tableState = new() { SortColumn = nameof(Notification.CreatedAt), PageSize = 10 };
+    private readonly Dictionary<string, Func<Notification, string?>> columnSelectors = new();
+
+    private List<Notification> notifications = new();
+    private Notification editItem = new();
+    private bool isModalOpen;
+    private string modalTitle = "Tambah Notifikasi";
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[nameof(Notification.Recipient)] = n => n.Recipient;
+        columnSelectors[nameof(Notification.Message)] = n => n.Message;
+        columnSelectors[nameof(Notification.Type)] = n => n.Type;
+        columnSelectors[nameof(Notification.CreatedAt)] = n => n.CreatedAt.ToString("g");
+        columnSelectors[nameof(Notification.IsRead)] = n => n.IsRead ? "Read" : "Unread";
+
+        tableState.ColumnFilters[nameof(Notification.Recipient)] = string.Empty;
+        tableState.ColumnFilters[nameof(Notification.Message)] = string.Empty;
+        tableState.ColumnFilters[nameof(Notification.Type)] = string.Empty;
+        tableState.ColumnFilters[nameof(Notification.CreatedAt)] = string.Empty;
+        tableState.ColumnFilters[nameof(Notification.IsRead)] = string.Empty;
+
+        await LoadNotifications();
+    }
+
+    private IEnumerable<Notification> FilteredNotifications => tableState.Apply(notifications, columnSelectors);
+    private IEnumerable<Notification> PagedNotifications
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredNotifications);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredNotifications);
+
+    private async Task LoadNotifications()
+    {
+        notifications = await DbContext.Notifications.OrderByDescending(n => n.CreatedAt).ToListAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenModal(Notification? item)
+    {
+        if (item == null)
+        {
+            modalTitle = "Tambah Notifikasi";
+            editItem = new Notification { CreatedAt = DateTime.UtcNow };
+        }
+        else
+        {
+            modalTitle = "Edit Notifikasi";
+            editItem = new Notification
+            {
+                Id = item.Id,
+                Recipient = item.Recipient,
+                Message = item.Message,
+                Type = item.Type,
+                CreatedAt = item.CreatedAt,
+                IsRead = item.IsRead
+            };
+        }
+
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private async Task SaveItem()
+    {
+        if (editItem.Id == 0)
+        {
+            DbContext.Notifications.Add(editItem);
+        }
+        else
+        {
+            DbContext.Notifications.Update(editItem);
+        }
+
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Saved notification {editItem.Recipient}",
+            Module = "Notifications"
+        });
+
+        await DbContext.SaveChangesAsync();
+        await LoadNotifications();
+        CloseModal();
+    }
+
+    private async Task DeleteItem(Notification item)
+    {
+        DbContext.Notifications.Remove(item);
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Deleted notification {item.Id}",
+            Module = "Notifications"
+        });
+        await DbContext.SaveChangesAsync();
+        await LoadNotifications();
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1)
+        {
+            tableState.PageIndex--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages)
+        {
+            tableState.PageIndex++;
+        }
+    }
+}

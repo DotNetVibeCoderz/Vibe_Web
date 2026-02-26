@@ -1,0 +1,62 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <aside class="sidebar glass">
+        <div class="brand">
+            <div class="logo">📚</div>
+            <div>
+                <h2>MyLibrary LMS</h2>
+                <span>Gravicode Studios</span>
+            </div>
+        </div>
+        <NavMenu />
+    </aside>
+
+    <div class="main">
+        <header class="topbar glass">
+            <div class="title-area">
+                <h1>Library Management System</h1>
+                <p>Smart, secure, and modern library operations.</p>
+            </div>
+            <div class="actions">
+                <button class="btn" @onclick="ToggleTheme">Toggle Theme</button>
+                <AuthorizeView>
+                    <Authorized>
+                        <a class="btn primary" href="/profile">@context.User.Identity?.Name</a>
+                        <button class="btn danger" @onclick="Logout">Logout</button>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="btn primary" href="/auth/login">Login</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </header>
+
+        <main class="content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private SignInManager<ApplicationUser> SignInManager { get; set; } = default!;
+
+    private async Task ToggleTheme()
+    {
+        await JsRuntime.InvokeVoidAsync("themeManager.toggle");
+    }
+
+    private async Task Logout()
+    {
+        await SignInManager.SignOutAsync();
+        Navigation.NavigateTo("/", true);
+    }
+}

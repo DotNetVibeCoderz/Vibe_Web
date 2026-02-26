@@ -1,0 +1,219 @@
+@page "/members"
+@attribute [Authorize(Roles = "admin,petugas")]
+@inject ApplicationDbContext DbContext
+
+<h1>Member Management</h1>
+
+<div class="card glass">
+    <div class="table-toolbar">
+        <input class="input" placeholder="Free text search" @bind="tableState.SearchText" @bind:event="oninput" />
+        <select class="input" @bind="tableState.PageSize">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+        </select>
+        <button class="btn primary" @onclick="() => OpenModal(null)">Tambah Anggota</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="sortable" @onclick="() => SortBy(nameof(Member.Name))">Nama @SortIndicator(nameof(Member.Name))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Member.Email))">Email @SortIndicator(nameof(Member.Email))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Member.Phone))">Telepon @SortIndicator(nameof(Member.Phone))</th>
+                <th class="sortable" @onclick="() => SortBy(nameof(Member.Status))">Status @SortIndicator(nameof(Member.Status))</th>
+                <th>Aksi</th>
+            </tr>
+            <tr class="filter-row">
+                <th><input class="input" placeholder="Filter nama" @bind="tableState.ColumnFilters[nameof(Member.Name)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter email" @bind="tableState.ColumnFilters[nameof(Member.Email)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter telepon" @bind="tableState.ColumnFilters[nameof(Member.Phone)]" @bind:event="oninput" /></th>
+                <th><input class="input" placeholder="Filter status" @bind="tableState.ColumnFilters[nameof(Member.Status)]" @bind:event="oninput" /></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var member in PagedMembers)
+            {
+                <tr>
+                    <td>@member.Name</td>
+                    <td>@member.Email</td>
+                    <td>@member.Phone</td>
+                    <td><span class="badge">@member.Status</span></td>
+                    <td>
+                        <button class="btn" @onclick="() => OpenModal(member)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteMember(member)">Hapus</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="table-pagination">
+        <button class="btn" @onclick="PrevPage" disabled="@(tableState.PageIndex == 1)">Prev</button>
+        <span>Page @tableState.PageIndex / @TotalPages</span>
+        <button class="btn" @onclick="NextPage" disabled="@(tableState.PageIndex == TotalPages)">Next</button>
+    </div>
+</div>
+
+<Modal IsOpen="isModalOpen" Title="@modalTitle" OnClose="CloseModal">
+    <EditForm Model="editMember" OnValidSubmit="SaveMember" FormName="memberForm">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <InputText class="input" @bind-Value="editMember.Name" placeholder="Nama" />
+            <InputText class="input" @bind-Value="editMember.Email" placeholder="Email" />
+            <InputText class="input" @bind-Value="editMember.Phone" placeholder="Telepon" />
+            <InputText class="input" @bind-Value="editMember.Status" placeholder="Status" />
+        </div>
+        <div class="table-toolbar">
+            <button class="btn primary" type="submit">Simpan</button>
+            <button class="btn" type="button" @onclick="CloseModal">Batal</button>
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private readonly TableState<Member> tableState = new() { SortColumn = nameof(Member.Name), PageSize = 10 };
+    private readonly Dictionary<string, Func<Member, string?>> columnSelectors = new();
+
+    private List<Member> members = new();
+    private Member editMember = new();
+    private bool isModalOpen;
+    private string modalTitle = "Tambah Anggota";
+
+    protected override async Task OnInitializedAsync()
+    {
+        columnSelectors[nameof(Member.Name)] = m => m.Name;
+        columnSelectors[nameof(Member.Email)] = m => m.Email;
+        columnSelectors[nameof(Member.Phone)] = m => m.Phone;
+        columnSelectors[nameof(Member.Status)] = m => m.Status;
+
+        tableState.ColumnFilters[nameof(Member.Name)] = string.Empty;
+        tableState.ColumnFilters[nameof(Member.Email)] = string.Empty;
+        tableState.ColumnFilters[nameof(Member.Phone)] = string.Empty;
+        tableState.ColumnFilters[nameof(Member.Status)] = string.Empty;
+
+        await LoadMembers();
+    }
+
+    private IEnumerable<Member> FilteredMembers => tableState.Apply(members, columnSelectors);
+    private IEnumerable<Member> PagedMembers
+    {
+        get
+        {
+            tableState.EnsureValidPage(TotalPages);
+            return tableState.ApplyPaging(FilteredMembers);
+        }
+    }
+
+    private int TotalPages => tableState.TotalPages(FilteredMembers);
+
+    private async Task LoadMembers()
+    {
+        members = await DbContext.Members.OrderBy(m => m.Name).ToListAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (tableState.SortColumn == column)
+        {
+            tableState.SortAscending = !tableState.SortAscending;
+        }
+        else
+        {
+            tableState.SortColumn = column;
+            tableState.SortAscending = true;
+        }
+        tableState.PageIndex = 1;
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (tableState.SortColumn != column)
+        {
+            return string.Empty;
+        }
+        return tableState.SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenModal(Member? member)
+    {
+        if (member == null)
+        {
+            modalTitle = "Tambah Anggota";
+            editMember = new Member();
+        }
+        else
+        {
+            modalTitle = "Edit Anggota";
+            editMember = new Member
+            {
+                Id = member.Id,
+                Name = member.Name,
+                Email = member.Email,
+                Phone = member.Phone,
+                Status = member.Status,
+                JoinedAt = member.JoinedAt
+            };
+        }
+
+        isModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+    }
+
+    private async Task SaveMember()
+    {
+        if (editMember.Id == 0)
+        {
+            DbContext.Members.Add(editMember);
+        }
+        else
+        {
+            DbContext.Members.Update(editMember);
+        }
+
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Saved member {editMember.Name}",
+            Module = "Members"
+        });
+
+        await DbContext.SaveChangesAsync();
+        await LoadMembers();
+        CloseModal();
+    }
+
+    private async Task DeleteMember(Member member)
+    {
+        DbContext.Members.Remove(member);
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = "system",
+            Action = $"Deleted member {member.Name}",
+            Module = "Members"
+        });
+        await DbContext.SaveChangesAsync();
+        await LoadMembers();
+    }
+
+    private void PrevPage()
+    {
+        if (tableState.PageIndex > 1)
+        {
+            tableState.PageIndex--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (tableState.PageIndex < TotalPages)
+        {
+            tableState.PageIndex++;
+        }
+    }
+}
