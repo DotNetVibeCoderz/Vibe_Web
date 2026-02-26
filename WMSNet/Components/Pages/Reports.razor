@@ -1,0 +1,151 @@
+@page "/reports"
+@using WMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Reports & Analytics</PageTitle>
+
+<div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">Reports & Analytics</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Overview of workshop performance, revenue trends, and parts statistics.
+        </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <button @onclick="RefreshCharts" class="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto">
+            Refresh Data
+        </button>
+    </div>
+</div>
+
+<div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2">
+    <!-- Revenue Chart -->
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-5">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Revenue Trend (Last 6 Months)</h3>
+        <div id="revenueChart" style="height: 350px;"></div>
+    </div>
+
+    <!-- Job Status Chart -->
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-5">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Job Status Distribution</h3>
+        <div id="jobStatusChart" style="height: 350px;"></div>
+    </div>
+
+    <!-- Top Parts Chart -->
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-5">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Top 5 Selling Parts</h3>
+        <div id="topPartsChart" style="height: 350px;"></div>
+    </div>
+    
+    <!-- Mechanic Performance -->
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg p-5">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Jobs by Role (Simulated Mechanic Load)</h3>
+        <div id="mechanicChart" style="height: 350px;"></div>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RefreshCharts();
+        }
+    }
+
+    private async Task RefreshCharts()
+    {
+        // 1. Revenue Data
+        // Ideally group by Month. SQLite formatting is tricky in EF, we'll fetch invoice dates and process in memory for small datasets.
+        var invoices = await DbContext.Invoices
+            .Where(i => i.IssueDate >= DateTime.Now.AddMonths(-6))
+            .OrderBy(i => i.IssueDate)
+            .ToListAsync();
+
+        var revenueData = invoices
+            .GroupBy(i => i.IssueDate.ToString("MMM yyyy"))
+            .Select(g => new { Month = g.Key, Total = g.Sum(i => i.TotalAmount) })
+            .ToList();
+
+        // 2. Job Status
+        var jobs = await DbContext.ServiceJobs.ToListAsync();
+        var statusData = jobs
+            .GroupBy(j => j.Status.ToString())
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToList();
+
+        // 3. Top Parts
+        var jobItems = await DbContext.JobItems
+            .Include(ji => ji.Part)
+            .Where(ji => ji.PartId != null)
+            .ToListAsync();
+            
+        var topParts = jobItems
+            .GroupBy(ji => ji.Part?.Name ?? "Unknown")
+            .Select(g => new { Name = g.Key, Qty = g.Sum(ji => ji.Quantity) })
+            .OrderByDescending(x => x.Qty)
+            .Take(5)
+            .ToList();
+
+        // 4. Mechanic Load (Using TechnicianId which links to Users)
+        // Since TechnicianId might be null or we want names, we fetch users
+        var userJobs = jobs
+            .GroupBy(j => j.TechnicianId)
+            .Select(g => new { TechId = g.Key, Count = g.Count() })
+            .ToList();
+            
+        // Map Ids to Names would be better, but for now lets just show count distribution including unassigned
+        var mechData = new List<object>();
+        foreach(var grp in userJobs)
+        {
+            string label = "Unassigned";
+            if(!string.IsNullOrEmpty(grp.TechId))
+            {
+                // Simple lookup, in real app join properly
+                var u = await DbContext.Users.FindAsync(grp.TechId);
+                label = u?.FullName ?? "Unknown";
+            }
+            mechData.Add(new { Name = label, Count = grp.Count });
+        }
+
+
+        // Render Revenue Chart (Line)
+        await JS.InvokeVoidAsync("renderChart", "revenueChart", new
+        {
+            series = new[] { new { name = "Revenue", data = revenueData.Select(x => x.Total).ToArray() } },
+            chart = new { type = "area", height = 350 },
+            xaxis = new { categories = revenueData.Select(x => x.Month).ToArray() },
+            stroke = new { curve = "smooth" },
+            colors = new[] { "#3b82f6" }
+        });
+
+        // Render Job Status Chart (Donut)
+        await JS.InvokeVoidAsync("renderChart", "jobStatusChart", new
+        {
+            series = statusData.Select(x => x.Count).ToArray(),
+            chart = new { type = "donut", height = 350 },
+            labels = statusData.Select(x => x.Status).ToArray(),
+            colors = new[] { "#f59e0b", "#3b82f6", "#ef4444", "#10b981", "#6b7280" } // Custom colors match status badges ideally
+        });
+
+        // Render Top Parts (Bar)
+        await JS.InvokeVoidAsync("renderChart", "topPartsChart", new
+        {
+            series = new[] { new { name = "Quantity Sold", data = topParts.Select(x => x.Qty).ToArray() } },
+            chart = new { type = "bar", height = 350 },
+            xaxis = new { categories = topParts.Select(x => x.Name).ToArray() },
+            colors = new[] { "#10b981" }
+        });
+        
+        // Render Mechanic Load (Bar)
+        await JS.InvokeVoidAsync("renderChart", "mechanicChart", new
+        {
+            series = new[] { new { name = "Jobs Assigned", data = mechData.Select(x => (dynamic)x).Select(x => (int)x.Count).ToArray() } },
+            chart = new { type = "bar", height = 350 },
+            xaxis = new { categories = mechData.Select(x => (dynamic)x).Select(x => (string)x.Name).ToArray() },
+            colors = new[] { "#8b5cf6" }
+        });
+    }
+}

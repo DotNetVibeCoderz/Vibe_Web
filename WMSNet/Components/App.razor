@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+@using Microsoft.AspNetCore.Components.Web
+<html lang="en" class="h-full bg-gray-100 dark:bg-gray-900">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="WMSNet.styles.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <HeadOutlet @rendermode="RenderMode.InteractiveServer" />
+</head>
+
+<body class="h-full">
+    <Routes @rendermode="RenderMode.InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+    <script>
+        window.toggleTheme = () => {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        };
+
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+
+        // Chart Helper
+        window.renderChart = (elementId, options) => {
+            var el = document.getElementById(elementId);
+            if(el) {
+                // Destroy existing if any (simple hack, better to store instance)
+                el.innerHTML = ""; 
+                var chart = new ApexCharts(el, options);
+                chart.render();
+            }
+        }
+    </script>
+</body>
+
+</html>

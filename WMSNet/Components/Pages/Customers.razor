@@ -1,0 +1,284 @@
+@page "/customers"
+@using WMSNet.Data
+@using WMSNet.Models
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Customers</PageTitle>
+
+<div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">Customers</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            A list of all customers and their vehicles.
+        </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <button @onclick="OpenAddModal" class="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto">
+            Add Customer
+        </button>
+    </div>
+</div>
+
+<div class="mt-8 flex flex-col">
+    <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+            <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table class="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6">Name</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Phone</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Email</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Vehicles</th>
+                            <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                <span class="sr-only">Edit</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                        @foreach (var customer in customers)
+                        {
+                            <tr>
+                                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">@customer.Name</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@customer.PhoneNumber</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@customer.Email</td>
+                                <td class="px-3 py-4 text-sm text-gray-500 dark:text-gray-300">
+                                    <ul class="list-disc list-inside">
+                                        @foreach(var v in customer.Vehicles)
+                                        {
+                                            <li>
+                                                @v.Make @v.Model (@v.LicensePlate)
+                                                <button class="text-xs text-indigo-500 hover:underline" @onclick="() => EditVehicle(v, customer.Id)">Edit</button>
+                                            </li>
+                                        }
+                                    </ul>
+                                    <button class="text-xs text-green-600 hover:underline mt-1" @onclick="() => AddVehicle(customer.Id)">+ Add Vehicle</button>
+                                </td>
+                                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                    <button @onclick="() => EditCustomer(customer)" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showCustomerModal)
+{
+    <div class="relative z-10" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+        <div class="fixed inset-0 z-10 overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white">
+                            @(currentCustomer.Id == 0 ? "Add Customer" : "Edit Customer")
+                        </h3>
+                        <div class="mt-2 space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                                <input @bind="currentCustomer.Name" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                                <input @bind="currentCustomer.Email" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
+                                <input @bind="currentCustomer.PhoneNumber" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
+                                <textarea @bind="currentCustomer.Address" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                        <button type="button" @onclick="SaveCustomer" class="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm">
+                            Save
+                        </button>
+                        <button type="button" @onclick="CloseCustomerModal" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white dark:bg-gray-600 dark:border-gray-500 px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showVehicleModal)
+{
+    <div class="relative z-10" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+        <div class="fixed inset-0 z-10 overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white">
+                            @(currentVehicle.Id == 0 ? "Add Vehicle" : "Edit Vehicle")
+                        </h3>
+                        <div class="mt-2 space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Make</label>
+                                    <input @bind="currentVehicle.Make" placeholder="e.g. Toyota" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Model</label>
+                                    <input @bind="currentVehicle.Model" placeholder="e.g. Avanza" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">License Plate</label>
+                                <input @bind="currentVehicle.LicensePlate" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Year</label>
+                                    <input type="number" @bind="currentVehicle.Year" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Color</label>
+                                    <input @bind="currentVehicle.Color" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">VIN</label>
+                                <input @bind="currentVehicle.VIN" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                        <button type="button" @onclick="SaveVehicle" class="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm">
+                            Save
+                        </button>
+                        <button type="button" @onclick="CloseVehicleModal" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white dark:bg-gray-600 dark:border-gray-500 px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Customer> customers = new();
+    private bool showCustomerModal = false;
+    private bool showVehicleModal = false;
+    private Customer currentCustomer = new();
+    private Vehicle currentVehicle = new();
+    private int currentCustomerIdForVehicle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCustomers();
+    }
+
+    private async Task LoadCustomers()
+    {
+        customers = await DbContext.Customers
+            .Include(c => c.Vehicles)
+            .OrderBy(c => c.Name)
+            .ToListAsync();
+    }
+
+    private void OpenAddModal()
+    {
+        currentCustomer = new Customer();
+        showCustomerModal = true;
+    }
+
+    private void EditCustomer(Customer c)
+    {
+        currentCustomer = new Customer 
+        { 
+            Id = c.Id, 
+            Name = c.Name, 
+            Email = c.Email, 
+            PhoneNumber = c.PhoneNumber, 
+            Address = c.Address 
+        };
+        showCustomerModal = true;
+    }
+
+    private void CloseCustomerModal() => showCustomerModal = false;
+
+    private async Task SaveCustomer()
+    {
+        if (currentCustomer.Id == 0)
+        {
+            DbContext.Customers.Add(currentCustomer);
+        }
+        else
+        {
+            var c = await DbContext.Customers.FindAsync(currentCustomer.Id);
+            if (c != null)
+            {
+                c.Name = currentCustomer.Name;
+                c.Email = currentCustomer.Email;
+                c.PhoneNumber = currentCustomer.PhoneNumber;
+                c.Address = currentCustomer.Address;
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadCustomers();
+        CloseCustomerModal();
+    }
+
+    private void AddVehicle(int customerId)
+    {
+        currentCustomerIdForVehicle = customerId;
+        currentVehicle = new Vehicle { CustomerId = customerId };
+        showVehicleModal = true;
+    }
+
+    private void EditVehicle(Vehicle v, int customerId)
+    {
+        currentCustomerIdForVehicle = customerId;
+        currentVehicle = new Vehicle
+        {
+            Id = v.Id,
+            CustomerId = customerId,
+            Make = v.Make,
+            Model = v.Model,
+            LicensePlate = v.LicensePlate,
+            Year = v.Year,
+            Color = v.Color,
+            VIN = v.VIN
+        };
+        showVehicleModal = true;
+    }
+
+    private void CloseVehicleModal() => showVehicleModal = false;
+
+    private async Task SaveVehicle()
+    {
+        if (currentVehicle.Id == 0)
+        {
+            currentVehicle.CustomerId = currentCustomerIdForVehicle;
+            DbContext.Vehicles.Add(currentVehicle);
+        }
+        else
+        {
+            var v = await DbContext.Vehicles.FindAsync(currentVehicle.Id);
+            if (v != null)
+            {
+                v.Make = currentVehicle.Make;
+                v.Model = currentVehicle.Model;
+                v.LicensePlate = currentVehicle.LicensePlate;
+                v.Year = currentVehicle.Year;
+                v.Color = currentVehicle.Color;
+                v.VIN = currentVehicle.VIN;
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadCustomers();
+        CloseVehicleModal();
+    }
+}

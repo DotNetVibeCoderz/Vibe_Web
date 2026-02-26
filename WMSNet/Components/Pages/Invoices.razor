@@ -1,0 +1,230 @@
+@page "/invoices"
+@using WMSNet.Data
+@using WMSNet.Models
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Invoices</PageTitle>
+
+<div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">Invoices</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Manage invoices, billing, and payments.
+        </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <button @onclick="OpenCreateModal" class="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto">
+            Create Invoice
+        </button>
+    </div>
+</div>
+
+<div class="mt-8 flex flex-col">
+    <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+            <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table class="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6">Invoice #</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Customer</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Date</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Amount</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
+                            <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                <span class="sr-only">Edit</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                        @foreach (var inv in invoices)
+                        {
+                            <tr>
+                                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">@inv.InvoiceNumber</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">
+                                    @inv.ServiceJob?.Vehicle?.Customer?.Name
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@inv.IssueDate.ToShortDateString()</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@inv.TotalAmount.ToString("C")</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">
+                                    <span class="inline-flex rounded-full px-2 text-xs font-semibold leading-5 
+                                        @(inv.Status == InvoiceStatus.Paid ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
+                                        @inv.Status
+                                    </span>
+                                </td>
+                                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                    <button @onclick="() => EditInvoice(inv)" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Details</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="relative z-10" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+        <div class="fixed inset-0 z-10 overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white">
+                            @(currentInvoice.Id == 0 ? "Create Invoice" : "Edit Invoice")
+                        </h3>
+                        <div class="mt-2 space-y-4">
+                            @if(currentInvoice.Id == 0)
+                            {
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Job (Completed & Unbilled)</label>
+                                    <select @onchange="OnJobSelected" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border">
+                                        <option value="0">-- Select Job --</option>
+                                        @foreach (var job in unbilledJobs)
+                                        {
+                                            <option value="@job.Id">#@job.Id - @job.Vehicle?.LicensePlate (@job.Vehicle?.Customer?.Name)</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Invoice Number</label>
+                                <input @bind="currentInvoice.InvoiceNumber" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Total Amount</label>
+                                <div class="mt-1 block w-full rounded-md border border-gray-300 bg-gray-100 dark:bg-gray-600 dark:border-gray-500 px-3 py-2 sm:text-sm text-gray-700 dark:text-white">
+                                    @currentInvoice.TotalAmount.ToString("C")
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                                <select @bind="currentInvoice.Status" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border">
+                                    @foreach (var status in Enum.GetValues(typeof(InvoiceStatus)))
+                                    {
+                                        <option value="@status">@status</option>
+                                    }
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Due Date</label>
+                                <input type="date" @bind="currentInvoice.DueDate" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                        <button type="button" @onclick="SaveInvoice" class="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm">
+                            Save
+                        </button>
+                        <button type="button" @onclick="CloseModal" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white dark:bg-gray-600 dark:border-gray-500 px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Invoice> invoices = new();
+    private List<ServiceJob> unbilledJobs = new();
+    private bool showModal = false;
+    private Invoice currentInvoice = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        invoices = await DbContext.Invoices
+            .Include(i => i.ServiceJob)
+            .ThenInclude(j => j.Vehicle)
+            .ThenInclude(v => v.Customer)
+            .OrderByDescending(i => i.IssueDate)
+            .ToListAsync();
+
+        unbilledJobs = await DbContext.ServiceJobs
+            .Include(j => j.Vehicle)
+            .ThenInclude(v => v.Customer)
+            .Where(j => j.Status == JobStatus.Completed && j.Invoice == null)
+            .ToListAsync();
+    }
+
+    private void OpenCreateModal()
+    {
+        currentInvoice = new Invoice 
+        { 
+            InvoiceNumber = $"INV-{DateTime.Now:yyyyMMdd}-{new Random().Next(100, 999)}",
+            IssueDate = DateTime.Today,
+            DueDate = DateTime.Today.AddDays(14)
+        };
+        showModal = true;
+    }
+
+    private void EditInvoice(Invoice inv)
+    {
+        currentInvoice = new Invoice
+        {
+            Id = inv.Id,
+            InvoiceNumber = inv.InvoiceNumber,
+            ServiceJobId = inv.ServiceJobId,
+            TotalAmount = inv.TotalAmount,
+            Status = inv.Status,
+            IssueDate = inv.IssueDate,
+            DueDate = inv.DueDate,
+            PaymentMethod = inv.PaymentMethod
+        };
+        showModal = true;
+    }
+
+    private void CloseModal() => showModal = false;
+
+    private async Task OnJobSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int jobId) && jobId > 0)
+        {
+            currentInvoice.ServiceJobId = jobId;
+            // Calculate total from job items
+            var items = await DbContext.JobItems
+                .Where(j => j.ServiceJobId == jobId)
+                .ToListAsync();
+            
+            // Client side calc for decimal support in sqlite (if needed, though here we can do it in memory since we fetch items)
+            currentInvoice.TotalAmount = items.Sum(i => i.Quantity * i.UnitPrice);
+        }
+    }
+
+    private async Task SaveInvoice()
+    {
+        if (currentInvoice.Id == 0)
+        {
+            if(currentInvoice.ServiceJobId == 0) return;
+            DbContext.Invoices.Add(currentInvoice);
+        }
+        else
+        {
+            var inv = await DbContext.Invoices.FindAsync(currentInvoice.Id);
+            if (inv != null)
+            {
+                inv.InvoiceNumber = currentInvoice.InvoiceNumber;
+                inv.Status = currentInvoice.Status;
+                inv.DueDate = currentInvoice.DueDate;
+                // Amount usually comes from items, but we allow override or recalc
+                inv.TotalAmount = currentInvoice.TotalAmount; 
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+}

@@ -1,0 +1,250 @@
+@page "/users"
+@using Microsoft.AspNetCore.Identity
+@using WMSNet.Models
+@using Microsoft.EntityFrameworkCore
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+
+<PageTitle>User Management</PageTitle>
+
+<div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">Users</h1>
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            Manage application users and their roles.
+        </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <button @onclick="OpenAddModal" class="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto">
+            Add User
+        </button>
+    </div>
+</div>
+
+<div class="mt-8 flex flex-col">
+    <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+            <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table class="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6">Username</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Full Name</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Email</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Role</th>
+                            <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                <span class="sr-only">Edit</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                        @foreach (var user in users)
+                        {
+                            <tr>
+                                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">@user.UserName</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@user.FullName</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">@user.Email</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">
+                                    <span class="inline-flex rounded-full bg-blue-100 px-2 text-xs font-semibold leading-5 text-blue-800">
+                                        @user.Role
+                                    </span>
+                                </td>
+                                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                    <button @onclick="() => EditUser(user)" class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Edit</button>
+                                    @if(user.UserName != "admin")
+                                    {
+                                        <button @onclick="() => DeleteUser(user)" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="relative z-10" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+        <div class="fixed inset-0 z-10 overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white">
+                            @(isEdit ? "Edit User" : "Add User")
+                        </h3>
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-2" role="alert">
+                                <span class="block sm:inline">@errorMessage</span>
+                            </div>
+                        }
+                        <div class="mt-2 space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                                <input @bind="userModel.UserName" disabled="@isEdit" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                                <input @bind="userModel.FullName" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                                <input @bind="userModel.Email" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                                <select @bind="userModel.Role" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border">
+                                    @foreach (var role in roles)
+                                    {
+                                        <option value="@role">@role</option>
+                                    }
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password @(isEdit ? "(Leave blank to keep current)" : "")</label>
+                                <input type="password" @bind="password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:text-white p-2 border" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                        <button type="button" @onclick="SaveUser" class="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm">
+                            Save
+                        </button>
+                        <button type="button" @onclick="CloseModal" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white dark:bg-gray-600 dark:border-gray-500 px-4 py-2 text-base font-medium text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser> users = new();
+    private List<string> roles = new() { "Admin", "Mechanic", "Cashier", "Supervisor" };
+    private bool showModal = false;
+    private bool isEdit = false;
+    private ApplicationUser userModel = new();
+    private string password = "";
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await UserManager.Users.ToListAsync();
+    }
+
+    private void OpenAddModal()
+    {
+        userModel = new ApplicationUser { Role = "Mechanic" }; // Default
+        password = "";
+        errorMessage = "";
+        isEdit = false;
+        showModal = true;
+    }
+
+    private void EditUser(ApplicationUser user)
+    {
+        // Clone simple props to avoid tracking issues if we cancel
+        userModel = new ApplicationUser
+        {
+            Id = user.Id,
+            UserName = user.UserName,
+            Email = user.Email,
+            FullName = user.FullName,
+            Role = user.Role
+        };
+        password = "";
+        errorMessage = "";
+        isEdit = true;
+        showModal = true;
+    }
+
+    private void CloseModal() => showModal = false;
+
+    private async Task SaveUser()
+    {
+        errorMessage = "";
+        try
+        {
+            if (isEdit)
+            {
+                var user = await UserManager.FindByIdAsync(userModel.Id);
+                if (user != null)
+                {
+                    user.FullName = userModel.FullName;
+                    user.Email = userModel.Email;
+                    
+                    // Update Role
+                    if (user.Role != userModel.Role)
+                    {
+                        await UserManager.RemoveFromRoleAsync(user, user.Role);
+                        await UserManager.AddToRoleAsync(user, userModel.Role);
+                        user.Role = userModel.Role;
+                    }
+
+                    // Update Password if provided
+                    if (!string.IsNullOrWhiteSpace(password))
+                    {
+                        var token = await UserManager.GeneratePasswordResetTokenAsync(user);
+                        var result = await UserManager.ResetPasswordAsync(user, token, password);
+                        if (!result.Succeeded)
+                        {
+                            errorMessage = string.Join(", ", result.Errors.Select(e => e.Description));
+                            return;
+                        }
+                    }
+
+                    await UserManager.UpdateAsync(user);
+                }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(password))
+                {
+                    errorMessage = "Password is required for new users.";
+                    return;
+                }
+
+                userModel.EmailConfirmed = true; // Auto confirm for admin created users
+                var result = await UserManager.CreateAsync(userModel, password);
+                if (result.Succeeded)
+                {
+                    await UserManager.AddToRoleAsync(userModel, userModel.Role);
+                }
+                else
+                {
+                    errorMessage = string.Join(", ", result.Errors.Select(e => e.Description));
+                    return;
+                }
+            }
+
+            await LoadUsers();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task DeleteUser(ApplicationUser user)
+    {
+        if (await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {user.UserName}?"))
+        {
+            await UserManager.DeleteAsync(user);
+            await LoadUsers();
+        }
+    }
+    
+    [Inject] IJSRuntime JS { get; set; }
+}
