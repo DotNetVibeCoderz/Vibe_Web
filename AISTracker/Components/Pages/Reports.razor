@@ -1,0 +1,91 @@
+@page "/reports"
+@inject ApplicationDbContext DbContext
+@using AISTracker.Models
+@using AISTracker.Data
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Reports & Analytics</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">Reports & Analytics</RadzenText>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5">Vessel Types</RadzenText>
+            <RadzenChart>
+                <RadzenPieSeries Data="@vesselsByType" Title="Vessels" CategoryProperty="Type" ValueProperty="Count" />
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+    <div class="col-md-6 mb-4">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5">Average Speed per Vessel</RadzenText>
+            <RadzenChart>
+                <RadzenColumnSeries Data="@vesselsSpeed" CategoryProperty="Name" ValueProperty="Speed" Title="Avg Speed" LineType="LineType.Dashed" />
+                <RadzenColumnOptions Radius="5" />
+                <RadzenValueAxis Min="0" />
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5">Alerts Activity</RadzenText>
+            <RadzenChart>
+                <RadzenColumnSeries Data="@alertsByDate" CategoryProperty="Date" TItem="AlertsByDate" ValueProperty="Count" Title="Alerts"  />
+                <RadzenCategoryAxis Padding="20" FormatString="{0:d}" />
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+</div>
+
+@code {
+
+    List<VesselTypeCount> vesselsByType = new();
+    List<VesselSpeed> vesselsSpeed = new();
+    List<AlertsByDate> alertsByDate = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        vesselsByType = await DbContext.Vessels
+            .GroupBy(v => v.VesselType)
+            .Select(g => new VesselTypeCount { Type = g.Key ?? "Unknown", Count = g.Count() })
+            .ToListAsync();
+
+        // Get average speed from last position report of each vessel
+        // This is a simplification. In reality, we'd average over a period.
+        var vessels = await DbContext.Vessels.Include(v => v.PositionReports).ToListAsync();
+        vesselsSpeed = vessels.Select(v => new VesselSpeed
+        { 
+            Name = v.Name, 
+            Speed = v.PositionReports.OrderByDescending(p => p.Timestamp).FirstOrDefault()?.SpeedOverGround ?? 0 
+        }).OrderByDescending(x => x.Speed).Take(10).ToList();
+
+
+        alertsByDate = await DbContext.Alerts.GroupBy(a => a.Timestamp.Date)
+            .Select(g => new AlertsByDate { Date = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Date)
+            .ToListAsync();
+    }
+
+    // Strongly typed models to avoid reflection issues in chart components
+    public class VesselTypeCount
+    {
+        public string Type { get; set; }
+        public int Count { get; set; }
+    }
+
+    public class VesselSpeed
+    {
+        public string Name { get; set; }
+        public double Speed { get; set; }
+    }
+
+    public class AlertsByDate
+    {
+        public DateTime Date { get; set; }
+        public int Count { get; set; }
+    }
+}

@@ -1,0 +1,103 @@
+@using AISTracker.Models
+@inject DialogService DialogService
+
+<RadzenCard Class="mb-2">
+    <RadzenText TextStyle="TextStyle.H6" Class="mb-2">Data Kapal</RadzenText>
+    <div class="row g-2">
+        <div class="col-5 text-muted">Nama</div>
+        <div class="col-7 fw-semibold">@Info?.Name</div>
+
+        <div class="col-5 text-muted">MMSI</div>
+        <div class="col-7">@Info?.MMSI</div>
+
+        <div class="col-5 text-muted">IMO</div>
+        <div class="col-7">@DisplayValue(Info?.IMONumber)</div>
+
+        <div class="col-5 text-muted">Bendera</div>
+        <div class="col-7">@DisplayValue(Info?.Flag)</div>
+
+        <div class="col-5 text-muted">Tipe</div>
+        <div class="col-7">@DisplayValue(Info?.VesselType)</div>
+
+        <div class="col-5 text-muted">Panjang</div>
+        <div class="col-7">@FormatNumber(Info?.Length) m</div>
+
+        <div class="col-5 text-muted">Lebar</div>
+        <div class="col-7">@FormatNumber(Info?.Width) m</div>
+
+        <div class="col-5 text-muted">Status Kapal</div>
+        <div class="col-7">@DisplayValue(Info?.VesselStatus)</div>
+    </div>
+</RadzenCard>
+
+<RadzenCard Class="mb-3">
+    <RadzenText TextStyle="TextStyle.H6" Class="mb-2">Posisi Terkini</RadzenText>
+    <div class="row g-2">
+        <div class="col-5 text-muted">Latitude</div>
+        <div class="col-7">@FormatCoordinate(Info?.lat)</div>
+
+        <div class="col-5 text-muted">Longitude</div>
+        <div class="col-7">@FormatCoordinate(Info?.lng)</div>
+
+        <div class="col-5 text-muted">Kecepatan</div>
+        <div class="col-7">@FormatNumber(Info?.Speed) knots</div>
+
+        <div class="col-5 text-muted">Heading</div>
+        <div class="col-7">@FormatNumber(Info?.Heading)°</div>
+
+        <div class="col-5 text-muted">Status Navigasi</div>
+        <div class="col-7">@DisplayValue(Info?.NavigationalStatus)</div>
+
+        <div class="col-5 text-muted">Update Terakhir</div>
+        <div class="col-7">@FormatDate(Info?.LastUpdate)</div>
+    </div>
+</RadzenCard>
+
+<div class="d-flex justify-content-end">
+    <RadzenButton Text="Tutup" ButtonStyle="ButtonStyle.Secondary" Click="@CloseDialog" />
+</div>
+
+@code {
+    [Parameter]
+    public VesselTrackingInfo Info { get; set; }
+
+    void CloseDialog()
+    {
+        DialogService.Close();
+    }
+
+    string DisplayValue(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    string FormatNumber(double? value)
+    {
+        if (!value.HasValue)
+        {
+            return "-";
+        }
+
+        return value.Value.ToString("0.##");
+    }
+
+    string FormatCoordinate(double? value)
+    {
+        if (!value.HasValue)
+        {
+            return "-";
+        }
+
+        return value.Value.ToString("0.0000");
+    }
+
+    string FormatDate(DateTime? value)
+    {
+        if (!value.HasValue || value.Value == DateTime.MinValue)
+        {
+            return "-";
+        }
+
+        return value.Value.ToString("yyyy-MM-dd HH:mm:ss");
+    }
+}

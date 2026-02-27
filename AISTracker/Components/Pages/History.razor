@@ -1,0 +1,126 @@
+@page "/history"
+@using AISTracker.Models
+@using AISTracker.Data
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject IJSRuntime JsRuntime
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>History & Playback</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">History & Playback</RadzenText>
+
+<div class="row mb-4 align-items-end">
+    <div class="col-md-3">
+        <RadzenLabel Text="Select Vessel" />
+        <RadzenDropDown @bind-Value="selectedVesselId" Data="@vesselsList" TextProperty="Name" ValueProperty="Id" Style="width: 100%" Change="@LoadHistory" />
+    </div>
+    <div class="col-md-3">
+        <RadzenLabel Text="Start Date" />
+        <RadzenDatePicker @bind-Value="startDate" ShowTime="true" DateFormat="g" Change="@LoadHistory" Style="width: 100%" />
+    </div>
+    <div class="col-md-3">
+        <RadzenLabel Text="End Date" />
+        <RadzenDatePicker @bind-Value="endDate" ShowTime="true" DateFormat="g" Change="@LoadHistory" Style="width: 100%" />
+    </div>
+    <div class="col-md-3 d-flex gap-2">
+        <RadzenButton Text="Playback Route" Click="@Playback" Disabled="@(positions == null || !positions.Any())" ButtonStyle="ButtonStyle.Secondary" />
+        <RadzenButton Text="Stop" Click="@StopPlayback" Disabled="@(positions == null || !positions.Any())" ButtonStyle="ButtonStyle.Light" />
+    </div>
+</div>
+
+<div class="mb-4">
+    <div id="historyMap" class="map-container"></div>
+</div>
+
+<RadzenDataGrid Data="@positions" TItem="PositionReport" AllowPaging="true" PageSize="10" AllowSorting="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="PositionReport" Property="Timestamp" Title="Time" FormatString="{0:g}" />
+        <RadzenDataGridColumn TItem="PositionReport" Property="Latitude" Title="Latitude" FormatString="{0:F5}" />
+        <RadzenDataGridColumn TItem="PositionReport" Property="Longitude" Title="Longitude" FormatString="{0:F5}" />
+        <RadzenDataGridColumn TItem="PositionReport" Property="SpeedOverGround" Title="Speed (knots)" />
+        <RadzenDataGridColumn TItem="PositionReport" Property="CourseOverGround" Title="Course" />
+        <RadzenDataGridColumn TItem="PositionReport" Property="NavigationalStatus" Title="Status" />
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    IEnumerable<Vessel> vesselsList;
+    int selectedVesselId;
+    DateTime? startDate = DateTime.UtcNow.AddHours(-24);
+    DateTime? endDate = DateTime.UtcNow;
+    List<PositionReport> positions;
+    bool mapInitialized;
+    bool pendingRouteUpdate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        vesselsList = await DbContext.Vessels.OrderBy(v => v.Name).ToListAsync();
+        if (vesselsList.Any())
+        {
+            selectedVesselId = vesselsList.First().Id;
+            await LoadHistory();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JsRuntime.InvokeVoidAsync("googleMaps.init", "historyMap", new { lat = 0.0, lng = 0.0 }, 2);
+            mapInitialized = true;
+            pendingRouteUpdate = true;
+        }
+
+        if (mapInitialized && pendingRouteUpdate)
+        {
+            await RenderRouteAsync();
+            pendingRouteUpdate = false;
+        }
+    }
+
+    async Task LoadHistory()
+    {
+        if (selectedVesselId == 0) return;
+
+        var query = DbContext.PositionReports.Where(p => p.VesselId == selectedVesselId);
+
+        if (startDate.HasValue)
+            query = query.Where(p => p.Timestamp >= startDate.Value);
+
+        if (endDate.HasValue)
+            query = query.Where(p => p.Timestamp <= endDate.Value);
+
+        positions = await query.OrderBy(p => p.Timestamp).ToListAsync();
+        pendingRouteUpdate = true;
+        StateHasChanged();
+    }
+
+    async Task Playback()
+    {
+        if (positions == null || positions.Count == 0)
+        {
+            return;
+        }
+
+        var routePoints = positions.Select(p => new { lat = p.Latitude, lng = p.Longitude }).ToList();
+        await JsRuntime.InvokeVoidAsync("googleMaps.playRoute", "historyMap", routePoints, 800);
+    }
+
+    async Task StopPlayback()
+    {
+        await JsRuntime.InvokeVoidAsync("googleMaps.stopPlayback", "historyMap");
+    }
+
+    async Task RenderRouteAsync()
+    {
+        if (positions == null || positions.Count == 0)
+        {
+            await JsRuntime.InvokeVoidAsync("googleMaps.setRoute", "historyMap", Array.Empty<object>());
+            return;
+        }
+
+        var routePoints = positions.Select(p => new { lat = p.Latitude, lng = p.Longitude }).ToList();
+        await JsRuntime.InvokeVoidAsync("googleMaps.setRoute", "historyMap", routePoints);
+    }
+}

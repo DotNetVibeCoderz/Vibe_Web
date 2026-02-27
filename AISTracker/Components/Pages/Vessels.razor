@@ -1,0 +1,91 @@
+@page "/vessels"
+@using AISTracker.Models
+@using AISTracker.Data
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>Vessels Management</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">Vessels</RadzenText>
+
+<RadzenButton Icon="add" Text="Add Vessel" Click="@AddVessel" Class="mb-4" ButtonStyle="ButtonStyle.Success" />
+
+<RadzenDataGrid @ref="grid" Data="@vessels" TItem="Vessel" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="Vessel" Property="MMSI" Title="MMSI" />
+        <RadzenDataGridColumn TItem="Vessel" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="Vessel" Property="IMONumber" Title="IMO" />
+        <RadzenDataGridColumn TItem="Vessel" Property="Flag" Title="Flag" />
+        <RadzenDataGridColumn TItem="Vessel" Property="VesselType" Title="Type" />
+        <RadzenDataGridColumn TItem="Vessel" Property="Length" Title="Length (m)" />
+        <RadzenDataGridColumn TItem="Vessel" Property="Width" Title="Width (m)" />
+        <RadzenDataGridColumn TItem="Vessel" Property="Status" Title="Status">
+            <Template Context="vessel">
+                <RadzenBadge BadgeStyle="@(vessel.Status == "Active" ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@vessel.Status" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Vessel" Context="vessel" Filterable="false" Sortable="false" TextAlign="TextAlign.Center" Width="100px">
+            <Template Context="vessel">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" Click="@(args => EditVessel(vessel))" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Flat" Size="ButtonSize.Medium" Class="my-1" Click="@(args => DeleteVessel(vessel))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<Vessel> grid;
+    IEnumerable<Vessel> vessels;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        vessels = await DbContext.Vessels.ToListAsync();
+    }
+
+    async Task AddVessel()
+    {
+        var vessel = new Vessel();
+        var result = await DialogService.OpenAsync<VesselDialog>("Add Vessel",
+            new Dictionary<string, object> { { "Vessel", vessel } });
+
+        if (result == true)
+        {
+            DbContext.Vessels.Add(vessel);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Vessel added successfully");
+        }
+    }
+
+    async Task EditVessel(Vessel vessel)
+    {
+        var result = await DialogService.OpenAsync<VesselDialog>("Edit Vessel",
+            new Dictionary<string, object> { { "Vessel", vessel } });
+
+        if (result == true)
+        {
+            DbContext.Vessels.Update(vessel);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Vessel updated successfully");
+        }
+    }
+
+    async Task DeleteVessel(Vessel vessel)
+    {
+        var result = await DialogService.Confirm("Are you sure?", "Delete Vessel", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (result == true)
+        {
+            DbContext.Vessels.Remove(vessel);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Vessel deleted successfully");
+        }
+    }
+}

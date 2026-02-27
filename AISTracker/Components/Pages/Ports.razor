@@ -1,0 +1,84 @@
+@page "/ports"
+@using AISTracker.Models
+@using AISTracker.Data
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Ports Management</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">Ports</RadzenText>
+
+<RadzenButton Icon="add" Text="Add Port" Click="@AddPort" Class="mb-4" ButtonStyle="ButtonStyle.Success" />
+
+<RadzenDataGrid Data="@ports" TItem="Port" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="Port" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="Port" Property="Country" Title="Country" />
+        <RadzenDataGridColumn TItem="Port" Property="UNLocCode" Title="UNLocCode" />
+        <RadzenDataGridColumn TItem="Port" Property="Latitude" Title="Latitude" FormatString="{0:F4}" />
+        <RadzenDataGridColumn TItem="Port" Property="Longitude" Title="Longitude" FormatString="{0:F4}" />
+        <RadzenDataGridColumn TItem="Port" Context="port" Filterable="false" Sortable="false" TextAlign="TextAlign.Center" Width="130px">
+            <Template Context="port">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" Click="@(args => EditPort(port))" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Flat" Size="ButtonSize.Medium" Class="my-1" Click="@(args => DeletePort(port))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    IEnumerable<Port> ports;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        ports = await DbContext.Ports.ToListAsync();
+    }
+
+    async Task AddPort()
+    {
+        var port = new Port();
+        var result = await DialogService.OpenAsync<PortDialog>("Add Port",
+            new Dictionary<string, object> { { "Port", port } });
+
+        if (result == true)
+        {
+            DbContext.Ports.Add(port);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Port added successfully");
+        }
+    }
+
+    async Task EditPort(Port port)
+    {
+        var result = await DialogService.OpenAsync<PortDialog>("Edit Port",
+            new Dictionary<string, object> { { "Port", port } });
+
+        if (result == true)
+        {
+            DbContext.Ports.Update(port);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Port updated successfully");
+        }
+    }
+
+    async Task DeletePort(Port port)
+    {
+        var result = await DialogService.Confirm("Are you sure?", "Delete Port", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (result == true)
+        {
+            DbContext.Ports.Remove(port);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Port deleted successfully");
+        }
+    }
+}

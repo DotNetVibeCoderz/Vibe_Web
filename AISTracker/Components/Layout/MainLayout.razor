@@ -1,0 +1,51 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<RadzenComponents />
+
+<RadzenLayout Style="height: 100vh">
+    <RadzenHeader>
+        <div class="d-flex align-items-center justify-content-between w-100 px-3">
+            <div class="d-flex align-items-center">
+                <RadzenSidebarToggle Click="@(() => sidebarExpanded = !sidebarExpanded)" />
+                <RadzenLabel Text="AISTracker" Class="ml-2" Style="font-size: 1.5rem; font-weight: bold; color: white;" />
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <RadzenSwitch @bind-Value="isDarkMode" Change="@OnThemeChange" Style="margin-right: 10px;" />
+                <RadzenLabel Text="Dark Mode" Style="color: white; margin-right: 20px;" />
+            </div>
+        </div>
+    </RadzenHeader>
+    <RadzenSidebar @bind-Expanded="@sidebarExpanded">
+        <RadzenPanelMenu>
+            <RadzenPanelMenuItem Text="Dashboard" Path="/" Icon="dashboard" />
+            <RadzenPanelMenuItem Text="Live Tracking" Path="tracking" Icon="gps_fixed" />
+            <RadzenPanelMenuItem Text="Vessels" Path="vessels" Icon="directions_boat" />
+            <RadzenPanelMenuItem Text="Ports" Path="ports" Icon="anchor" />
+            <RadzenPanelMenuItem Text="History & Playback" Path="history" Icon="history" />
+            <RadzenPanelMenuItem Text="Reports" Path="reports" Icon="assessment" />
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+    <RadzenBody>
+        <div class="p-4">
+            @Body
+        </div>
+    </RadzenBody>
+    <RadzenFooter>
+        <div class="d-flex justify-content-center">
+            <span style="color: #888; font-size: 0.8rem;">&copy; 2023 AISTracker - Vessel Monitoring System</span>
+        </div>
+    </RadzenFooter>
+</RadzenLayout>
+
+@code {
+    bool sidebarExpanded = true;
+    bool isDarkMode = false;
+
+    async Task OnThemeChange(bool value)
+    {
+        var theme = value ? "material-dark" : "material-base";
+        await JSRuntime.InvokeVoidAsync("setTheme", theme);
+    }
+}

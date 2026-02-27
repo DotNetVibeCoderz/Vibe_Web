@@ -1,0 +1,105 @@
+@page "/"
+@using AISTracker.Data
+@using AISTracker.Models
+@inject ApplicationDbContext DbContext
+@inject NavigationManager NavigationManager
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Dashboard</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">Dashboard</RadzenText>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H6">Total Vessels</RadzenText>
+            <RadzenText TextStyle="TextStyle.DisplayH3" Class="text-primary">@totalVessels</RadzenText>
+        </RadzenCard>
+    </div>
+    <div class="col-md-4 mb-4">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H6">Active Alerts</RadzenText>
+            <RadzenText TextStyle="TextStyle.DisplayH3" Class="text-danger">@activeAlerts</RadzenText>
+        </RadzenCard>
+    </div>
+    <div class="col-md-4 mb-4">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H6">Vessels Underway</RadzenText>
+            <RadzenText TextStyle="TextStyle.DisplayH3" Class="text-success">@vesselsUnderway</RadzenText>
+        </RadzenCard>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" Class="mb-3">Recent Alerts</RadzenText>
+            <RadzenDataGrid Data="@recentAlerts" TItem="Alert" PageSize="5" AllowPaging="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="Alert" Property="Timestamp" Title="Time" FormatString="{0:g}" />
+                    <RadzenDataGridColumn TItem="Alert" Property="Title" Title="Title" />
+                    <RadzenDataGridColumn TItem="Alert" Property="Severity" Title="Severity">
+                        <Template Context="data">
+                            <RadzenBadge BadgeStyle="@GetSeverityStyle(data.Severity)" Text="@data.Severity" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </div>
+    <div class="col-md-6">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" Class="mb-3">Vessels by Flag</RadzenText>
+            <RadzenChart>
+                <RadzenPieSeries Data="@vesselsByFlag" Title="Vessels" CategoryProperty="Flag" ValueProperty="Count" />
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+</div>
+
+@code {
+    int totalVessels;
+    int activeAlerts;
+    int vesselsUnderway;
+    List<Alert> recentAlerts;
+    List<FlagCount> vesselsByFlag = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalVessels = await DbContext.Vessels.CountAsync();
+        activeAlerts = await DbContext.Alerts.CountAsync(a => !a.IsRead);
+        
+        // Fix for simpler LINQ translation or client evaluation
+        var recentPositions = await DbContext.PositionReports
+            .GroupBy(p => p.VesselId)
+            .Select(g => g.OrderByDescending(p => p.Timestamp).FirstOrDefault())
+            .ToListAsync();
+            
+        vesselsUnderway = recentPositions.Count(p => p != null && p.SpeedOverGround > 0);
+
+        recentAlerts = await DbContext.Alerts.OrderByDescending(a => a.Timestamp).Take(10).ToListAsync();
+
+        var flags = await DbContext.Vessels.Select(v => v.Flag).ToListAsync();
+        vesselsByFlag = flags
+            .GroupBy(f => f ?? "Unknown")
+            .Select(g => new FlagCount { Flag = g.Key, Count = g.Count() })
+            .ToList();
+    }
+
+    BadgeStyle GetSeverityStyle(string severity)
+    {
+        return severity switch
+        {
+            "Critical" => BadgeStyle.Danger,
+            "Warning" => BadgeStyle.Warning,
+            _ => BadgeStyle.Info
+        };
+    }
+
+    // Strongly typed model to prevent reflection issues in Radzen charting
+    public class FlagCount
+    {
+        public string Flag { get; set; }
+        public int Count { get; set; }
+    }
+}

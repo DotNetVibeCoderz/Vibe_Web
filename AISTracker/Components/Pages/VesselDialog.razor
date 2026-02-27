@@ -1,0 +1,61 @@
+@using AISTracker.Models
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Vessel" Submit="@((Vessel args) => { DialogService.Close(true); })">
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="MMSI" Component="MMSI" />
+            <RadzenTextBox Name="MMSI" @bind-Value="Vessel.MMSI" Style="width: 100%" />
+            <RadzenRequiredValidator Component="MMSI" Text="MMSI is required" Popup="true" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Name" Component="Name" />
+            <RadzenTextBox Name="Name" @bind-Value="Vessel.Name" Style="width: 100%" />
+            <RadzenRequiredValidator Component="Name" Text="Name is required" Popup="true" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="IMONumber" Component="IMONumber" />
+            <RadzenTextBox Name="IMONumber" @bind-Value="Vessel.IMONumber" Style="width: 100%" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Flag" Component="Flag" />
+            <RadzenTextBox Name="Flag" @bind-Value="Vessel.Flag" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="VesselType" Component="VesselType" />
+            <RadzenDropDown @bind-Value="Vessel.VesselType" Data="@types" Style="width: 100%" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Status" Component="Status" />
+            <RadzenDropDown @bind-Value="Vessel.Status" Data="@statuses" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Length (m)" Component="Length" />
+            <RadzenNumeric @bind-Value="Vessel.Length" Style="width: 100%" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Width (m)" Component="Width" />
+            <RadzenNumeric @bind-Value="Vessel.Width" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row justify-content-center">
+        <div class="col-md-12 d-flex align-items-end justify-content-center" style="margin-top: 16px;">
+            <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" />
+            <RadzenButton ButtonStyle="ButtonStyle.Light" Icon="cancel" style="display: inline-block; margin-left: 10px;" Text="Cancel" Click="@((args) => DialogService.Close(false))" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Vessel Vessel { get; set; }
+
+    List<string> types = new List<string> { "Cargo", "Tanker", "Passenger", "Fishing", "Container", "Other" };
+    List<string> statuses = new List<string> { "Active", "Inactive", "Maintenance" };
+}

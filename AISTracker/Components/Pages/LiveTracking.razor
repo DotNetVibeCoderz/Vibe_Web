@@ -1,0 +1,198 @@
+@page "/tracking"
+@using AISTracker.Data
+@using AISTracker.Models
+@inject IServiceScopeFactory ScopeFactory
+@inject IConfiguration Configuration
+@inject IJSRuntime JsRuntime
+@inject AISTracker.Services.AISTrackingService TrackingService
+@inject DialogService DialogService
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Live Tracking</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H3" TagName="TagName.H1" Class="my-4">Live Tracking</RadzenText>
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <RadzenButton Text="@simulationButtonText" Icon="@simulationButtonIcon" ButtonStyle="@simulationButtonStyle" Click="@ToggleSimulation" />
+    <RadzenBadge Text="@simulationStatusText" BadgeStyle="@simulationBadgeStyle" />
+</div>
+
+<RadzenTabs RenderMode="TabRenderMode.Client">
+    <Tabs>
+        <RadzenTabsItem Text="List View">
+            <RadzenDataGrid @ref="grid" Data="@vessels" TItem="VesselTrackingInfo" AllowPaging="true" PageSize="10" AllowSorting="true" AllowFiltering="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="MMSI" Title="MMSI" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="Name" Title="Name" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="Latitude" Title="Latitude" FormatString="{0:F4}" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="Longitude" Title="Longitude" FormatString="{0:F4}" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="Speed" Title="Speed (knots)" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="Heading" Title="Heading" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="LastUpdate" Title="Last Update" FormatString="{0:T}" />
+                    <RadzenDataGridColumn TItem="VesselTrackingInfo" Property="NavigationalStatus" Title="Status" />
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenTabsItem>
+        <RadzenTabsItem Text="Map View (Google Maps)">
+            <div id="liveTrackingMap" class="map-container"></div>
+            <div class="alert alert-info mt-2">
+                Map menggunakan Google Maps.
+            </div>
+        </RadzenTabsItem>
+    </Tabs>
+</RadzenTabs>
+
+@code {
+    RadzenDataGrid<VesselTrackingInfo> grid;
+    List<VesselTrackingInfo> vessels = new();
+    System.Threading.Timer timer;
+    bool isDisposed;
+    bool isSimulationRunning;
+    bool mapInitialized;
+    bool pendingMarkersUpdate;
+    DotNetObjectReference<LiveTracking> dotNetRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isSimulationRunning = TrackingService.IsRunning;
+
+        await LoadData();
+        timer = new System.Threading.Timer(async _ =>
+        {
+            if (isDisposed)
+            {
+                return;
+            }
+
+            await InvokeAsync(LoadData);
+        }, null, 5000, 5000);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JsRuntime.InvokeVoidAsync("googleMaps.init", "liveTrackingMap", new { lat = 0.0, lng = 0.0 }, 2);
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JsRuntime.InvokeVoidAsync("googleMaps.registerMarkerClickHandler", "liveTrackingMap", dotNetRef);
+            mapInitialized = true;
+            pendingMarkersUpdate = true;
+        }
+
+        if (mapInitialized && pendingMarkersUpdate)
+        {
+            await UpdateMarkersAsync();
+            pendingMarkersUpdate = false;
+        }
+    }
+
+    string simulationButtonText => isSimulationRunning ? "Stop Simulation" : "Start Simulation";
+    string simulationButtonIcon => isSimulationRunning ? "stop" : "play_arrow";
+    ButtonStyle simulationButtonStyle => isSimulationRunning ? ButtonStyle.Danger : ButtonStyle.Success;
+    string simulationStatusText => isSimulationRunning ? "Simulation Running" : "Simulation Stopped";
+    BadgeStyle simulationBadgeStyle => isSimulationRunning ? BadgeStyle.Success : BadgeStyle.Warning;
+
+    void ToggleSimulation()
+    {
+        if (isSimulationRunning)
+        {
+            TrackingService.StopSimulation();
+        }
+        else
+        {
+            TrackingService.StartSimulation();
+        }
+
+        isSimulationRunning = TrackingService.IsRunning;
+        StateHasChanged();
+    }
+
+    async Task LoadData()
+    {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Simple query without transaction scope to avoid complications
+        var data = await db.Vessels.Include(v => v.PositionReports).ToListAsync();
+
+        vessels = data.Select(v =>
+        {
+            var lastPos = TrackingService.GetLastPosition(v.Id) ?? v.PositionReports.OrderByDescending(p => p.Timestamp).FirstOrDefault();
+            return new VesselTrackingInfo
+            {
+                MMSI = v.MMSI,
+                Name = v.Name,
+                IMONumber = v.IMONumber,
+                Flag = v.Flag,
+                VesselType = v.VesselType,
+                Length = v.Length,
+                Width = v.Width,
+                VesselStatus = v.Status,
+                lat = lastPos?.Latitude ?? 0,
+                lng = lastPos?.Longitude ?? 0,
+                Speed = lastPos?.SpeedOverGround ?? 0,
+                Heading = lastPos?.CourseOverGround ?? 0,
+                LastUpdate = lastPos?.Timestamp ?? DateTime.MinValue,
+                NavigationalStatus = lastPos?.NavigationalStatus ?? "Unknown"
+            };
+        }).ToList();
+
+        pendingMarkersUpdate = true;
+        StateHasChanged();
+    }
+
+    async Task UpdateMarkersAsync()
+    {
+        var markers = vessels.Select(v => new
+        {
+            lat = v.lat,
+            lng = v.lng,
+            title = v.Name,
+            mmsi = v.MMSI,
+            name = v.Name,
+            imoNumber = v.IMONumber,
+            flag = v.Flag,
+            vesselType = v.VesselType,
+            length = v.Length,
+            width = v.Width,
+            vesselStatus = v.VesselStatus,
+            speed = v.Speed,
+            heading = v.Heading,
+            navigationalStatus = v.NavigationalStatus,
+            lastUpdate = v.LastUpdate
+        }).ToList();
+
+        await JsRuntime.InvokeVoidAsync("googleMaps.setMarkers", "liveTrackingMap", markers);
+    }
+
+    [JSInvokable]
+    public async Task HandleMarkerClick(VesselTrackingInfo vessel)
+    {
+        if (vessel == null)
+        {
+            return;
+        }
+
+        var options = new DialogOptions
+        {
+            Width = "460px",
+            ShowClose = true,
+            CloseDialogOnEsc = true
+        };
+
+        await DialogService.OpenAsync<VesselInfoDialog>("Detail Kapal",
+            new Dictionary<string, object?> { { "Info", vessel } }, options);
+    }
+
+    public void Dispose()
+    {
+        isDisposed = true;
+        timer?.Dispose();
+        dotNetRef?.Dispose();
+    }
+}

@@ -1,0 +1,43 @@
+@using AISTracker.Models
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Port" Submit="@((Port args) => { DialogService.Close(true); })">
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Name" Component="Name" />
+            <RadzenTextBox Name="Name" @bind-Value="Port.Name" Style="width: 100%" />
+            <RadzenRequiredValidator Component="Name" Text="Name is required" Popup="true" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Country" Component="Country" />
+            <RadzenTextBox Name="Country" @bind-Value="Port.Country" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Latitude" Component="Latitude" />
+            <RadzenNumeric Name="Latitude" @bind-Value="Port.Latitude" Style="width: 100%" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Longitude" Component="Longitude" />
+            <RadzenNumeric Name="Longitude" @bind-Value="Port.Longitude" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="UNLocCode" Component="UNLocCode" />
+            <RadzenTextBox Name="UNLocCode" @bind-Value="Port.UNLocCode" Style="width: 100%" />
+        </div>
+    </div>
+    <div class="row justify-content-center">
+        <div class="col-md-12 d-flex align-items-end justify-content-center" style="margin-top: 16px;">
+            <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" />
+            <RadzenButton ButtonStyle="ButtonStyle.Light" Icon="cancel" style="display: inline-block; margin-left: 10px;" Text="Cancel" Click="@((args) => DialogService.Close(false))" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Port Port { get; set; }
+}
