@@ -1,0 +1,57 @@
+@page "/"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1 class="neo-heading">Welcome to EasyParking 🚗</h1>
+<p class="neo-text">The neo-brutalist smart parking management system.</p>
+
+<div class="neo-grid-dashboard">
+    <div class="neo-card neo-card-blue">
+        <h3>Occupancy Rate</h3>
+        <h1>75%</h1>
+        <p>150/200 Slots Occupied</p>
+    </div>
+    
+    <div class="neo-card neo-card-green">
+        <h3>Today's Revenue</h3>
+        <h1>Rp 2,500,000</h1>
+        <p>+15% from yesterday</p>
+    </div>
+    
+    <div class="neo-card neo-card-yellow">
+        <h3>Active Vehicles</h3>
+        <h1>124</h1>
+        <p>Currently Parked</p>
+    </div>
+
+    <div class="neo-card neo-card-pink">
+        <h3>EV Charging</h3>
+        <h1>5/10</h1>
+        <p>Active Stations</p>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="neo-card">
+            <h4>Quick Actions</h4>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <a href="/monitoring" class="neo-btn">Monitor Map</a>
+                <a href="/transactions" class="neo-btn neo-btn-secondary">Check-Out Vehicle</a>
+                <a href="/master/slots" class="neo-btn neo-btn-tertiary">Manage Slots</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="neo-card">
+            <h4>Recent Alerts</h4>
+            <ul class="neo-list">
+                <li><span class="neo-badge neo-badge-red">ALERT</span> LPR failed to read B 1234 XYZ (10 mins ago)</li>
+                <li><span class="neo-badge neo-badge-green">INFO</span> Level 1 EV Slot #3 fully charged.</li>
+                <li><span class="neo-badge neo-badge-yellow">WARN</span> Level 2 is 90% full.</li>
+            </ul>
+        </div>
+    </div>
+</div>

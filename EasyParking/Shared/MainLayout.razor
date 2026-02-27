@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Components.Authorization
+@using EasyParking.Services
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>EasyParking</PageTitle>
+
+<div class="neo-page">
+    <AuthorizeView>
+        <Authorized>
+            <div class="sidebar neo-sidebar">
+                <NavMenu />
+            </div>
+
+            <main class="main-content">
+                <div class="top-row px-4 auth neo-header">
+                    <span class="mr-3">Welcome, @context.User.Identity?.Name!</span>
+                    <button class="neo-btn neo-btn-logout" @onclick="Logout">Logout</button>
+                    <button class="neo-btn-icon ml-3" @onclick="ToggleTheme">🌓</button>
+                </div>
+
+                <article class="content px-4 py-4">
+                    @Body
+                </article>
+            </main>
+        </Authorized>
+        <NotAuthorized>
+            @if(!Nav.Uri.EndsWith("login", StringComparison.OrdinalIgnoreCase))
+            {
+                <EasyParking.Shared.RedirectToLogin />
+            }
+            <div class="d-flex align-items-center justify-content-center w-100 min-vh-100">
+                @Body
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private void Logout()
+    {
+        ((CustomAuthStateProvider)AuthStateProvider).MarkUserAsLoggedOut();
+        Nav.NavigateTo("login");
+    }
+
+    private async Task ToggleTheme()
+    {
+        await JS.InvokeVoidAsync("toggleDarkTheme");
+    }
+}

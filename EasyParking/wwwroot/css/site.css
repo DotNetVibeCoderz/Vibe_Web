@@ -1,0 +1,239 @@
+:root {
+    --neo-bg: #f4f4f0;
+    --neo-text: #000;
+    --neo-border: #000;
+    --neo-white: #ffffff;
+    --neo-blue: #93c5fd;
+    --neo-green: #86efac;
+    --neo-yellow: #fde047;
+    --neo-pink: #f9a8d4;
+    --neo-red: #fca5a5;
+    --neo-shadow: 4px 4px 0px #000;
+    --neo-hover-shadow: 6px 6px 0px #000;
+}
+
+[data-theme="dark"] {
+    --neo-bg: #1c1917;
+    --neo-text: #fff;
+    --neo-border: #fff;
+    --neo-white: #292524;
+    --neo-blue: #1d4ed8;
+    --neo-green: #15803d;
+    --neo-yellow: #ca8a04;
+    --neo-pink: #be185d;
+    --neo-red: #b91c1c;
+    --neo-shadow: 4px 4px 0px #fff;
+    --neo-hover-shadow: 6px 6px 0px #fff;
+}
+
+body {
+    background-color: var(--neo-bg);
+    color: var(--neo-text);
+    font-family: 'Courier New', Courier, monospace, sans-serif;
+    font-weight: 600;
+}
+
+h1, h2, h3, h4 {
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+}
+
+.neo-heading {
+    border-bottom: 3px solid var(--neo-border);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+/* Cards */
+.neo-card {
+    background-color: var(--neo-white);
+    border: 3px solid var(--neo-border);
+    box-shadow: var(--neo-shadow);
+    padding: 20px;
+    border-radius: 0;
+    transition: all 0.2s ease;
+    color: var(--neo-text);
+}
+
+.neo-card:hover {
+    box-shadow: var(--neo-hover-shadow);
+    transform: translate(-2px, -2px);
+}
+
+.neo-card-blue { background-color: var(--neo-blue); color: #000; }
+.neo-card-green { background-color: var(--neo-green); color: #000; }
+.neo-card-yellow { background-color: var(--neo-yellow); color: #000; }
+.neo-card-pink { background-color: var(--neo-pink); color: #000; }
+.neo-card-red { background-color: var(--neo-red); color: #000; }
+
+.neo-grid-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+/* Buttons */
+.neo-btn {
+    background-color: var(--neo-blue);
+    color: #000;
+    border: 3px solid var(--neo-border);
+    box-shadow: 3px 3px 0px var(--neo-border);
+    padding: 10px 20px;
+    font-weight: 800;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: all 0.1s;
+}
+
+.neo-btn:active {
+    box-shadow: 0px 0px 0px var(--neo-border);
+    transform: translate(3px, 3px);
+}
+
+.neo-btn-secondary { background-color: var(--neo-green); }
+.neo-btn-tertiary { background-color: var(--neo-yellow); }
+.neo-btn-danger { background-color: var(--neo-red); }
+
+/* Input fields */
+.neo-input {
+    width: 100%;
+    padding: 10px;
+    border: 3px solid var(--neo-border);
+    background-color: var(--neo-white);
+    color: var(--neo-text);
+    box-shadow: 2px 2px 0px var(--neo-border);
+    font-family: inherit;
+    font-weight: bold;
+}
+
+.neo-input:focus {
+    outline: none;
+    background-color: var(--neo-yellow);
+    color: #000;
+}
+
+/* Table */
+.neo-table-container {
+    overflow-x: auto;
+    border: 3px solid var(--neo-border);
+    box-shadow: var(--neo-shadow);
+    background-color: var(--neo-white);
+    margin-top: 20px;
+}
+
+.neo-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.neo-table th, .neo-table td {
+    padding: 12px;
+    border: 2px solid var(--neo-border);
+    text-align: left;
+    color: var(--neo-text);
+}
+
+.neo-table th {
+    background-color: var(--neo-pink);
+    color: #000;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+/* Alerts */
+.neo-alert {
+    border: 3px solid var(--neo-border);
+    box-shadow: 4px 4px 0px var(--neo-border);
+    padding: 15px;
+    font-weight: bold;
+}
+.neo-alert-error { background-color: var(--neo-red); color: #000; }
+
+/* Layout adjustments */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+    background-color: var(--neo-bg);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    background-color: var(--neo-white);
+}
+
+/* Sidebar & Navbar Layout */
+.sidebar {
+    background-color: var(--neo-blue);
+    border-right: 4px solid var(--neo-border);
+    width: 250px;
+    position: fixed;
+    height: 100vh;
+    z-index: 100;
+}
+
+.main-content {
+    margin-left: 250px;
+}
+
+.neo-brand {
+    font-weight: 900;
+    font-size: 1.5rem;
+    color: #000 !important;
+    text-shadow: 2px 2px 0px var(--neo-white);
+}
+
+.nav-link {
+    color: #000 !important;
+    font-weight: 700;
+    border: 2px solid transparent;
+    margin-bottom: 5px;
+}
+.nav-link:hover {
+    background-color: var(--neo-yellow);
+    border: 2px solid var(--neo-border);
+    box-shadow: 2px 2px 0px var(--neo-border);
+    transform: translate(-1px, -1px);
+}
+
+.neo-header {
+    background-color: var(--neo-yellow);
+    border-bottom: 4px solid var(--neo-border);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.gap-2 { gap: 0.5rem; }
+
+/* Blazor Error UI Configuration */
+#blazor-error-ui {
+    background: var(--neo-yellow);
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    border-top: 4px solid var(--neo-border);
+    color: #000;
+    font-weight: bold;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+}

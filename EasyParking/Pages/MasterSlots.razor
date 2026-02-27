@@ -1,0 +1,182 @@
+@page "/master/slots"
+@using EasyParking.Models
+@using EasyParking.Services
+@using CsvHelper
+@using System.Globalization
+@using System.IO
+@using Microsoft.JSInterop
+@inject CrudService<ParkingSlot> SlotService
+@inject IJSRuntime JSRuntime
+
+<h1 class="neo-heading">Manage Parking Slots</h1>
+
+<div class="neo-card mb-4" style="background-color: var(--neo-green); color:#000;">
+    <div class="row">
+        <div class="col-md-6">
+            <input type="text" class="neo-input" placeholder="Search code, level, or type..." @bind="searchQuery" @bind:event="oninput" />
+        </div>
+        <div class="col-md-6 text-right">
+            <button class="neo-btn" @onclick="() => isAddMode = true">+ Add Slot</button>
+            <button class="neo-btn neo-btn-tertiary ml-2" @onclick="ExportCsv">Export CSV</button>
+        </div>
+    </div>
+</div>
+
+@if (isAddMode)
+{
+    <div class="neo-card mb-4">
+        <h3>@(currentSlot.Id == 0 ? "Add New Slot" : "Edit Slot")</h3>
+        <div class="row">
+            <div class="col-md-3">
+                <label>Code</label>
+                <input class="neo-input" @bind="currentSlot.Code" />
+            </div>
+            <div class="col-md-3">
+                <label>Level</label>
+                <input class="neo-input" @bind="currentSlot.Level" />
+            </div>
+            <div class="col-md-3">
+                <label>Type</label>
+                <select class="neo-input" @bind="currentSlot.Type">
+                    <option value="Car">Car</option>
+                    <option value="Bike">Bike</option>
+                </select>
+            </div>
+            <div class="col-md-3 mt-4">
+                <label>
+                    <input type="checkbox" @bind="currentSlot.IsEV" /> EV Charging
+                </label>
+                <label class="ml-2">
+                    <input type="checkbox" @bind="currentSlot.IsReserved" /> Reserved
+                </label>
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="neo-btn" @onclick="SaveSlot">Save</button>
+            <button class="neo-btn neo-btn-danger" @onclick="CancelEdit">Cancel</button>
+        </div>
+    </div>
+}
+
+<div class="neo-table-container">
+    <table class="neo-table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Level</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>EV</th>
+                <th>Reserved</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var slot in FilteredSlots)
+            {
+                <tr>
+                    <td>@slot.Code</td>
+                    <td>@slot.Level</td>
+                    <td>@slot.Type</td>
+                    <td>
+                        @if (slot.IsOccupied)
+                        {
+                            <span class="neo-badge neo-badge-red" style="background:var(--neo-red); padding:3px 6px; border:2px solid #000;">Occupied</span>
+                        }
+                        else
+                        {
+                            <span class="neo-badge neo-badge-green" style="background:var(--neo-green); padding:3px 6px; border:2px solid #000;">Available</span>
+                        }
+                    </td>
+                    <td>@(slot.IsEV ? "Yes" : "No")</td>
+                    <td>@(slot.IsReserved ? "Yes" : "No")</td>
+                    <td>
+                        <button class="neo-btn neo-btn-secondary" style="padding: 5px 10px; font-size: 0.8em;" @onclick="() => EditSlot(slot)">Edit</button>
+                        <button class="neo-btn neo-btn-danger" style="padding: 5px 10px; font-size: 0.8em;" @onclick="() => DeleteSlot(slot.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<ParkingSlot> slots = new();
+    private string searchQuery = "";
+    private bool isAddMode = false;
+    private ParkingSlot currentSlot = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSlots();
+    }
+
+    private async Task LoadSlots()
+    {
+        slots = await SlotService.GetAllAsync();
+    }
+
+    private IEnumerable<ParkingSlot> FilteredSlots => slots.Where(s => 
+        string.IsNullOrEmpty(searchQuery) ||
+        s.Code.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+        s.Level.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+        s.Type.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+    );
+
+    private void EditSlot(ParkingSlot slot)
+    {
+        currentSlot = new ParkingSlot 
+        { 
+            Id = slot.Id, 
+            Code = slot.Code, 
+            Level = slot.Level, 
+            Type = slot.Type, 
+            IsEV = slot.IsEV, 
+            IsReserved = slot.IsReserved,
+            IsOccupied = slot.IsOccupied
+        };
+        isAddMode = true;
+    }
+
+    private void CancelEdit()
+    {
+        currentSlot = new ParkingSlot();
+        isAddMode = false;
+    }
+
+    private async Task SaveSlot()
+    {
+        if (currentSlot.Id == 0)
+        {
+            await SlotService.AddAsync(currentSlot);
+        }
+        else
+        {
+            await SlotService.UpdateAsync(currentSlot);
+        }
+        await LoadSlots();
+        CancelEdit();
+    }
+
+    private async Task DeleteSlot(int id)
+    {
+        await SlotService.DeleteAsync(id);
+        await LoadSlots();
+    }
+
+    private async Task ExportCsv()
+    {
+        using var memoryStream = new MemoryStream();
+        using var writer = new StreamWriter(memoryStream);
+        using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+
+        csv.WriteRecords(FilteredSlots);
+        await writer.FlushAsync();
+        
+        var bytes = memoryStream.ToArray();
+        var base64 = Convert.ToBase64String(bytes);
+
+        // Call JS to download
+        await JSRuntime.InvokeVoidAsync("downloadFile", "ParkingSlots.csv", "text/csv", base64);
+    }
+}

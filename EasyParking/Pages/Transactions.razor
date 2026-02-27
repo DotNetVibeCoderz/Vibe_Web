@@ -1,0 +1,103 @@
+@page "/transactions"
+@using EasyParking.Models
+@using EasyParking.Services
+@using EasyParking.Data
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject ParkingService ParkingService
+@inject IJSRuntime JSRuntime
+
+<h1 class="neo-heading">Transactions 🎫</h1>
+<p class="neo-text">Manage Check-In, Check-Out, and Billing.</p>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="neo-card">
+            <h3>Manual Check-In</h3>
+            <div class="form-group">
+                <label>Vehicle Plate</label>
+                <input class="neo-input" @bind="newPlate" />
+            </div>
+            <div class="form-group mt-2">
+                <label>Available Slot</label>
+                <select class="neo-input" @bind="selectedSlotId">
+                    <option value="">-- Select Slot --</option>
+                    @foreach (var slot in availableSlots)
+                    {
+                        <option value="@slot.Id">@slot.Code (@slot.Level)</option>
+                    }
+                </select>
+            </div>
+            <button class="neo-btn mt-3" @onclick="CheckIn">CHECK IN</button>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-4 neo-heading">Active Transactions</h3>
+<div class="neo-table-container">
+    <table class="neo-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Plate</th>
+                <th>Slot</th>
+                <th>Check In</th>
+                <th>Duration</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var trx in activeTransactions)
+            {
+                var duration = DateTime.Now - trx.CheckInTime;
+                <tr>
+                    <td>@trx.Id</td>
+                    <td>@trx.VehiclePlate</td>
+                    <td>@(trx.ParkingSlot?.Code ?? "-")</td>
+                    <td>@trx.CheckInTime.ToString("g")</td>
+                    <td>@Math.Floor(duration.TotalHours)h @duration.Minutes m</td>
+                    <td>
+                        <button class="neo-btn neo-btn-danger" style="padding: 5px 10px; font-size: 0.8em;" @onclick="() => CheckOut(trx.Id)">Check Out</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private string newPlate = "";
+    private string selectedSlotId = "";
+    private List<ParkingSlot> availableSlots = new();
+    private List<ParkingTransaction> activeTransactions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        availableSlots = await DbContext.ParkingSlots.Where(s => !s.IsOccupied).ToListAsync();
+        activeTransactions = await DbContext.Transactions.Include(t => t.ParkingSlot)
+            .Where(t => t.Status == "Active").ToListAsync();
+    }
+
+    private async Task CheckIn()
+    {
+        if (!string.IsNullOrEmpty(newPlate) && int.TryParse(selectedSlotId, out int slotId))
+        {
+            await ParkingService.CheckInAsync(newPlate, slotId);
+            newPlate = "";
+            selectedSlotId = "";
+            await LoadData();
+        }
+    }
+
+    private async Task CheckOut(int id)
+    {
+        var amount = await ParkingService.CheckOutAsync(id);
+        await JSRuntime.InvokeVoidAsync("alert", $"Check-Out Successful! Total fee: Rp {amount}");
+        await LoadData();
+    }
+}

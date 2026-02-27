@@ -1,0 +1,56 @@
+@page "/login"
+@using EasyParking.Services
+@using EasyParking.Models
+@using EasyParking.Data
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject AppDbContext DbContext
+@inject NavigationManager Nav
+
+<div class="login-container">
+    <div class="neo-card login-card">
+        <h2 class="title text-center">LOGIN</h2>
+        <p class="subtitle text-center">EasyParking Management</p>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert neo-alert neo-alert-error">@errorMessage</div>
+        }
+
+        <div class="form-group mt-3">
+            <label>Username</label>
+            <input type="text" class="neo-input" @bind="username" placeholder="admin" />
+        </div>
+        <div class="form-group mt-3">
+            <label>Password</label>
+            <input type="password" class="neo-input" @bind="password" placeholder="admin123" />
+        </div>
+
+        <button class="neo-btn mt-4 w-100" @onclick="HandleLogin">LOGIN</button>
+        
+        <p class="mt-3 text-center" style="font-size: 0.9em;">
+            Try: admin / admin123 <br/> or operator1 / password123
+        </p>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string errorMessage = "";
+
+    private void HandleLogin()
+    {
+        var user = DbContext.Users.FirstOrDefault(u => u.Username == username && u.Password == password);
+        if (user != null)
+        {
+            ((CustomAuthStateProvider)AuthStateProvider).MarkUserAsAuthenticated(user.Username, user.Role);
+            Nav.NavigateTo("/");
+        }
+        else
+        {
+            errorMessage = "Invalid username or password";
+        }
+    }
+}
