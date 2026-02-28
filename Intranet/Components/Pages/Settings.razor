@@ -1,0 +1,118 @@
+@page "/settings"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+
+<PageTitle>Portal Settings</PageTitle>
+
+<div class="max-w-4xl mx-auto">
+    <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-6">Portal Settings</h2>
+
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white">General Configuration</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Update intranet branding and general settings.</p>
+        </div>
+        
+        <div class="p-6 space-y-6">
+            @if (SavedSettings)
+            {
+                <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
+                    <div class="flex">
+                        <div class="flex-shrink-0"><i class="fas fa-check-circle text-green-400"></i></div>
+                        <div class="ml-3"><p class="text-sm text-green-700">Settings saved successfully.</p></div>
+                    </div>
+                </div>
+            }
+
+            <div class="grid grid-cols-1 gap-y-6 sm:grid-cols-6 sm:gap-x-6">
+                <div class="sm:col-span-6">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Portal Title</label>
+                    <div class="mt-1">
+                        <input type="text" @bind="PortalTitle" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white py-2 px-3" />
+                    </div>
+                </div>
+
+                <div class="sm:col-span-6">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Portal Description</label>
+                    <div class="mt-1">
+                        <textarea rows="3" @bind="PortalDescription" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white py-2 px-3"></textarea>
+                    </div>
+                </div>
+
+                <div class="sm:col-span-6">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Theme Color</label>
+                    <div class="mt-1 flex items-center space-x-4">
+                        <select @bind="ThemeColor" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white py-2 px-3">
+                            <option value="blue">Blue</option>
+                            <option value="indigo">Indigo</option>
+                            <option value="green">Green</option>
+                            <option value="red">Red</option>
+                        </select>
+                        <div class="w-8 h-8 rounded-full bg-@ThemeColor-600 border shadow"></div>
+                    </div>
+                </div>
+
+                <div class="sm:col-span-6">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Company Logo URL</label>
+                    <div class="mt-1 flex items-center space-x-4">
+                        <input type="text" @bind="LogoUrl" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white py-2 px-3" />
+                        <img src="@LogoUrl" alt="Logo preview" class="h-10 bg-gray-100 rounded border px-2 py-1" />
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button type="button" @onclick="SaveSettings" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string PortalTitle = "";
+    private string PortalDescription = "";
+    private string LogoUrl = "";
+    private string ThemeColor = "blue";
+    private bool SavedSettings = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await DbContext.AppSettings.ToListAsync();
+        
+        PortalTitle = settings.FirstOrDefault(s => s.Key == "PortalTitle")?.Value ?? "Corporate Intranet";
+        PortalDescription = settings.FirstOrDefault(s => s.Key == "PortalDescription")?.Value ?? "";
+        LogoUrl = settings.FirstOrDefault(s => s.Key == "LogoUrl")?.Value ?? "";
+        ThemeColor = settings.FirstOrDefault(s => s.Key == "ThemeColor")?.Value ?? "blue";
+    }
+
+    private async Task SaveSettings()
+    {
+        await UpdateSetting("PortalTitle", PortalTitle);
+        await UpdateSetting("PortalDescription", PortalDescription);
+        await UpdateSetting("LogoUrl", LogoUrl);
+        await UpdateSetting("ThemeColor", ThemeColor);
+
+        await DbContext.SaveChangesAsync();
+        SavedSettings = true;
+        
+        // Hide success message after 3 seconds
+        _ = Task.Delay(3000).ContinueWith(_ => { SavedSettings = false; InvokeAsync(StateHasChanged); });
+    }
+
+    private async Task UpdateSetting(string key, string value)
+    {
+        var setting = await DbContext.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
+        if (setting != null)
+        {
+            setting.Value = value;
+        }
+        else
+        {
+            DbContext.AppSettings.Add(new AppSetting { Key = key, Value = value });
+        }
+    }
+}

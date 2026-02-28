@@ -1,0 +1,181 @@
+@page "/apps"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Apps Center</PageTitle>
+
+<div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+    <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Apps Center</h2>
+    <div class="flex space-x-2 w-full sm:w-auto">
+        <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                <i class="fas fa-search text-gray-400"></i>
+            </span>
+            <input type="text" @bind="SearchQuery" @bind:event="oninput" placeholder="Search apps..." class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+        </div>
+        @if (IsAdmin)
+        {
+            <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow whitespace-nowrap">
+                <i class="fas fa-plus mr-2"></i> Add App
+            </button>
+        }
+    </div>
+</div>
+
+@if (FilteredApps == null)
+{
+    <p>Loading apps...</p>
+}
+else if (!FilteredApps.Any())
+{
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center text-gray-500 dark:text-gray-400">
+        <i class="fas fa-th-large text-4xl mb-4"></i>
+        <p>No apps found.</p>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        @foreach (var app in FilteredApps)
+        {
+            <div class="relative bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg hover:border-blue-500 transition-all text-center group flex flex-col items-center">
+                @if (IsAdmin)
+                {
+                    <div class="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button @onclick="() => OpenEditModal(app)" class="text-blue-500 hover:text-blue-700 p-1"><i class="fas fa-edit"></i></button>
+                        <button @onclick="() => DeleteApp(app)" class="text-red-500 hover:text-red-700 p-1"><i class="fas fa-trash"></i></button>
+                    </div>
+                }
+                <a href="@app.Url" target="_blank" class="w-full h-full flex flex-col items-center">
+                    <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:bg-blue-600 group-hover:text-white transition">
+                        <i class="@app.IconUrl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">@app.Name</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2 flex-1">@app.Description</p>
+                    <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs px-2 py-1 rounded mt-auto">@app.Category</span>
+                </a>
+            </div>
+        }
+    </div>
+}
+
+<!-- Modal Form -->
+@if (IsModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">@(EditingApp.Id == 0 ? "Add App" : "Edit App")</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                            <input type="text" @bind="EditingApp.Name" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                            <textarea @bind="EditingApp.Description" rows="2" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL</label>
+                            <input type="text" @bind="EditingApp.Url" placeholder="https://..." class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">FontAwesome Icon Class</label>
+                            <input type="text" @bind="EditingApp.IconUrl" placeholder="fas fa-link" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                            <input type="text" @bind="EditingApp.Category" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveApp" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AppItem>? Apps;
+    private IEnumerable<AppItem>? FilteredApps;
+    private bool IsAdmin = false;
+    private bool IsModalOpen = false;
+    private AppItem EditingApp = new();
+    
+    private string _searchQuery = "";
+    private string SearchQuery
+    {
+        get => _searchQuery;
+        set { _searchQuery = value; FilterData(); }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        IsAdmin = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value == "admin";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Apps = await DbContext.Apps.ToListAsync();
+        FilterData();
+    }
+
+    private void FilterData()
+    {
+        if (Apps == null) return;
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+            FilteredApps = Apps;
+        else
+            FilteredApps = Apps.Where(a => a.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || a.Category.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OpenAddModal() { EditingApp = new AppItem { IconUrl = "fas fa-link" }; IsModalOpen = true; }
+    private void OpenEditModal(AppItem app) 
+    { 
+        EditingApp = new AppItem { Id = app.Id, Name = app.Name, Description = app.Description, Url = app.Url, IconUrl = app.IconUrl, Category = app.Category }; 
+        IsModalOpen = true; 
+    }
+    private void CloseModal() { IsModalOpen = false; }
+
+    private async Task SaveApp()
+    {
+        if (string.IsNullOrWhiteSpace(EditingApp.Name)) return;
+
+        if (EditingApp.Id == 0) DbContext.Apps.Add(EditingApp);
+        else
+        {
+            var app = await DbContext.Apps.FindAsync(EditingApp.Id);
+            if (app != null)
+            {
+                app.Name = EditingApp.Name;
+                app.Description = EditingApp.Description;
+                app.Url = EditingApp.Url;
+                app.IconUrl = EditingApp.IconUrl;
+                app.Category = EditingApp.Category;
+                DbContext.Apps.Update(app);
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteApp(AppItem app)
+    {
+        DbContext.Apps.Remove(app);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+}

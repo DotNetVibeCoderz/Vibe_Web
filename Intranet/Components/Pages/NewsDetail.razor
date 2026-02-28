@@ -1,0 +1,70 @@
+@page "/news/{Id:int}"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject NavigationManager NavManager
+
+@if (News == null)
+{
+    <div class="text-center py-10">Loading article...</div>
+}
+else
+{
+    <PageTitle>@News.Title</PageTitle>
+
+    <div class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        @if (!string.IsNullOrEmpty(News.CoverImageUrl))
+        {
+            <div class="w-full h-64 md:h-96 bg-gray-200 dark:bg-gray-700">
+                <img src="@News.CoverImageUrl" alt="Cover" class="w-full h-full object-cover" />
+            </div>
+        }
+        
+        <div class="p-8">
+            <div class="flex items-center space-x-2 mb-4">
+                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">@News.Category</span>
+                <span class="text-sm text-gray-500 dark:text-gray-400">@News.CreatedAt.ToString("MMMM dd, yyyy")</span>
+            </div>
+            
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">@News.Title</h1>
+            
+            <div class="flex items-center space-x-3 mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg uppercase">
+                    @(News.Author.Length > 0 ? News.Author.Substring(0,1) : "A")
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">@News.Author</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Author</p>
+                </div>
+            </div>
+
+            <div class="prose dark:prose-invert max-w-none text-gray-800 dark:text-gray-200">
+                @((MarkupString)News.Content)
+            </div>
+
+            <div class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <button @onclick="GoBack" class="text-blue-600 dark:text-blue-400 hover:underline flex items-center">
+                    <i class="fas fa-arrow-left mr-2"></i> Back to News
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private NewsItem? News;
+
+    protected override async Task OnInitializedAsync()
+    {
+        News = await DbContext.NewsItems.FindAsync(Id);
+    }
+
+    private void GoBack()
+    {
+        NavManager.NavigateTo("/news");
+    }
+}

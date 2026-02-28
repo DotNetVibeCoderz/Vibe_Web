@@ -1,0 +1,73 @@
+<div class="flex flex-col w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-full">
+    <!-- Logo -->
+    <div class="flex items-center justify-center h-16 border-b border-gray-200 dark:border-gray-700 px-4">
+        <span class="text-2xl font-bold text-blue-600 dark:text-blue-400">Intranet</span>
+    </div>
+
+    <!-- Navigation Links -->
+    <nav class="flex-1 overflow-y-auto py-4 space-y-1">
+        <NavLink href="/" Match="NavLinkMatch.All" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-home w-5 h-5 mr-3"></i> Dashboard
+        </NavLink>
+        
+        <NavLink href="/news" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-newspaper w-5 h-5 mr-3"></i> Company News
+        </NavLink>
+
+        <NavLink href="/directory" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-users w-5 h-5 mr-3"></i> Employee Directory
+        </NavLink>
+
+        <NavLink href="/social" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-comments w-5 h-5 mr-3"></i> Social Feed
+        </NavLink>
+
+        <NavLink href="/documents" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-folder-open w-5 h-5 mr-3"></i> Documents
+        </NavLink>
+
+        <NavLink href="/projects" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-project-diagram w-5 h-5 mr-3"></i> Tasks & Projects
+        </NavLink>
+
+        <NavLink href="/apps" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-th w-5 h-5 mr-3"></i> Apps Center
+        </NavLink>
+
+        <NavLink href="/wiki" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-book w-5 h-5 mr-3"></i> Knowledge Base
+        </NavLink>
+
+        <NavLink href="/faq" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-question-circle w-5 h-5 mr-3"></i> FAQ
+        </NavLink>
+
+        <NavLink href="/forum" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-comments-dollar w-5 h-5 mr-3"></i> Forum Diskusi
+        </NavLink>
+        
+        <NavLink href="/gallery/image" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-images w-5 h-5 mr-3 text-purple-500"></i> Image Gallery
+        </NavLink>
+
+        <NavLink href="/gallery/video" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-video w-5 h-5 mr-3 text-red-500"></i> Video Gallery
+        </NavLink>
+
+        <NavLink href="/rewards" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-medal w-5 h-5 mr-3 text-yellow-500"></i> Recognition & Rewards
+        </NavLink>
+
+        <NavLink href="/surveys" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-poll w-5 h-5 mr-3"></i> Surveys & Feedback
+        </NavLink>
+
+        <NavLink href="/master-data" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-database w-5 h-5 mr-3"></i> Master Data
+        </NavLink>
+
+        <NavLink href="/settings" class="flex items-center px-6 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" ActiveClass="bg-blue-50 dark:bg-gray-700 text-blue-600 dark:text-white border-r-4 border-blue-600">
+            <i class="fas fa-cog w-5 h-5 mr-3"></i> Settings
+        </NavLink>
+    </nav>
+</div>

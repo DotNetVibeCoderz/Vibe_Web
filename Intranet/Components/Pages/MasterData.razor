@@ -1,0 +1,478 @@
+@page "/master-data"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@using System.Text
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Master Data</PageTitle>
+
+<div class="mb-6 flex justify-between items-center">
+    <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Master Data Management</h2>
+    <div class="flex space-x-2">
+        <button @onclick="ExportData" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded shadow text-sm transition">
+            <i class="fas fa-file-excel mr-2"></i> Export CSV
+        </button>
+        <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow text-sm transition">
+            <i class="fas fa-plus mr-2"></i> Add @(SelectedTable == "Departments" ? "Department" : "User")
+        </button>
+    </div>
+</div>
+
+<div class="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div class="flex items-center space-x-4 w-full sm:w-auto">
+            <select @bind="SelectedTable" class="border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-blue-500 focus:border-blue-500">
+                <option value="Departments">Table: Departments</option>
+                <option value="Users">Table: Users</option>
+            </select>
+        </div>
+        <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                <i class="fas fa-search text-gray-400"></i>
+            </span>
+            <input type="text" @bind="SearchQuery" @bind:event="oninput" placeholder="Search..." class="w-full pl-10 pr-4 py-1.5 border border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" />
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        @if (SelectedTable == "Departments")
+        {
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th @onclick='() => Sort("Id")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            ID @GetSortIcon("Id")
+                        </th>
+                        <th @onclick='() => Sort("Name")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Name @GetSortIcon("Name")
+                        </th>
+                        <th @onclick='() => Sort("Description")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Description @GetSortIcon("Description")
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    @if (PagedDepartments == null)
+                    {
+                        <tr><td colspan="4" class="px-6 py-4 text-center">Loading...</td></tr>
+                    }
+                    else if (!PagedDepartments.Any())
+                    {
+                        <tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">No data found</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var dept in PagedDepartments)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">@dept.Id</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">@dept.Name</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@dept.Description</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                    <button @onclick="() => OpenEditModal(dept)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300" title="Edit"><i class="fas fa-edit"></i></button>
+                                    <button @onclick="() => DeleteDept(dept)" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Delete"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+        else if (SelectedTable == "Users")
+        {
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th @onclick='() => Sort("FullName")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            User @GetSortIcon("FullName")
+                        </th>
+                        <th @onclick='() => Sort("Email")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Email @GetSortIcon("Email")
+                        </th>
+                        <th @onclick='() => Sort("Role")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Role @GetSortIcon("Role")
+                        </th>
+                        <th @onclick='() => Sort("Department")' scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Department @GetSortIcon("Department")
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    @if (PagedUsers == null)
+                    {
+                        <tr><td colspan="6" class="px-6 py-4 text-center">Loading...</td></tr>
+                    }
+                    else if (!PagedUsers.Any())
+                    {
+                        <tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No data found</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var user in PagedUsers)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-8 w-8"><img class="h-8 w-8 rounded-full" src="@user.AvatarUrl" alt="" /></div>
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900 dark:text-white">@user.FullName</div>
+                                            <div class="text-sm text-gray-500 dark:text-gray-400">@user.Username</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@user.Email</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@user.Role</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@user.Department</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    @if (user.IsActive) { <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</span> }
+                                    else { <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Inactive</span> }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                    <button @onclick="() => OpenEditUserModal(user)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300" title="Edit"><i class="fas fa-edit"></i></button>
+                                    <button @onclick="() => DeleteUser(user)" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Delete"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <!-- Paging Controls -->
+    <div class="bg-gray-50 dark:bg-gray-900 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div class="text-sm text-gray-700 dark:text-gray-400">
+            Showing <span class="font-medium">@((PageNumber - 1) * PageSize + 1)</span> to <span class="font-medium">@(Math.Min(PageNumber * PageSize, TotalCount))</span> of <span class="font-medium">@TotalCount</span> results
+        </div>
+        <div class="flex space-x-2">
+            <button @onclick="() => ChangePage(PageNumber - 1)" disabled="@(PageNumber == 1)" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm disabled:opacity-50">Previous</button>
+            @for (int i = 1; i <= TotalPages; i++)
+            {
+                var p = i;
+                <button @onclick="() => ChangePage(p)" class="px-3 py-1 border @(PageNumber == p ? "bg-blue-600 text-white border-blue-600" : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600") rounded text-sm">@p</button>
+            }
+            <button @onclick="() => ChangePage(PageNumber + 1)" disabled="@(PageNumber == TotalPages || TotalPages == 0)" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm disabled:opacity-50">Next</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+@if (IsModalOpen && SelectedTable == "Departments")
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="modal-title">
+                        @(EditingDept.Id == 0 ? "Add Department" : "Edit Department")
+                    </h3>
+                    <div class="mt-4 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                            <input type="text" @bind="EditingDept.Name" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                            <textarea @bind="EditingDept.Description" rows="3" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveDept" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm transition">Save</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (IsModalOpen && SelectedTable == "Users")
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="modal-title">
+                        @(EditingUser.Id == 0 ? "Add User" : "Edit User")
+                    </h3>
+                    <div class="mt-4 grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                            <input type="text" @bind="EditingUser.Username" disabled="@(EditingUser.Id != 0)" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                            <input type="text" @bind="EditingUser.PasswordHash" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                            <input type="text" @bind="EditingUser.FullName" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                            <input type="email" @bind="EditingUser.Email" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                            <select @bind="EditingUser.Role" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                <option value="user">User</option>
+                                <option value="creator">Creator</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                            <input type="text" @bind="EditingUser.Department" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Job Title</label>
+                            <input type="text" @bind="EditingUser.JobTitle" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div class="flex items-center mt-6">
+                            <input type="checkbox" @bind="EditingUser.IsActive" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                            <label class="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Is Active</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveUser" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm transition">Save</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Department>? DepartmentsList;
+    private List<User>? UsersList;
+    
+    private IEnumerable<Department>? PagedDepartments;
+    private IEnumerable<User>? PagedUsers;
+
+    private Department EditingDept = new();
+    private User EditingUser = new();
+
+    private bool IsModalOpen = false;
+
+    // Filtering, Sorting, Paging
+    private string _selectedTable = "Departments";
+    private string SelectedTable
+    {
+        get => _selectedTable;
+        set { _selectedTable = value; PageNumber = 1; SearchQuery = ""; FilterData(); }
+    }
+    
+    private string _searchQuery = "";
+    private string SearchQuery
+    {
+        get => _searchQuery;
+        set { _searchQuery = value; PageNumber = 1; FilterData(); }
+    }
+
+    private string SortColumn = "Id";
+    private bool SortAscending = true;
+    private int PageNumber = 1;
+    private int PageSize = 10;
+    private int TotalCount = 0;
+    private int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        DepartmentsList = await DbContext.Departments.ToListAsync();
+        UsersList = await DbContext.Users.ToListAsync();
+        FilterData();
+    }
+
+    private void FilterData()
+    {
+        if (SelectedTable == "Departments")
+        {
+            if (DepartmentsList == null) return;
+            var filtered = DepartmentsList.Where(d => string.IsNullOrWhiteSpace(SearchQuery) || 
+                d.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || 
+                d.Description.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
+
+            // Sorting
+            filtered = SortColumn switch
+            {
+                "Name" => SortAscending ? filtered.OrderBy(d => d.Name) : filtered.OrderByDescending(d => d.Name),
+                "Description" => SortAscending ? filtered.OrderBy(d => d.Description) : filtered.OrderByDescending(d => d.Description),
+                _ => SortAscending ? filtered.OrderBy(d => d.Id) : filtered.OrderByDescending(d => d.Id)
+            };
+
+            TotalCount = filtered.Count();
+            PagedDepartments = filtered.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToList();
+        }
+        else if (SelectedTable == "Users")
+        {
+            if (UsersList == null) return;
+            var filtered = UsersList.Where(u => string.IsNullOrWhiteSpace(SearchQuery) || 
+                u.FullName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || 
+                u.Username.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || 
+                u.Department.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                u.Email.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
+
+            // Sorting
+            filtered = SortColumn switch
+            {
+                "FullName" => SortAscending ? filtered.OrderBy(u => u.FullName) : filtered.OrderByDescending(u => u.FullName),
+                "Email" => SortAscending ? filtered.OrderBy(u => u.Email) : filtered.OrderByDescending(u => u.Email),
+                "Role" => SortAscending ? filtered.OrderBy(u => u.Role) : filtered.OrderByDescending(u => u.Role),
+                "Department" => SortAscending ? filtered.OrderBy(u => u.Department) : filtered.OrderByDescending(u => u.Department),
+                _ => SortAscending ? filtered.OrderBy(u => u.Id) : filtered.OrderByDescending(u => u.Id)
+            };
+
+            TotalCount = filtered.Count();
+            PagedUsers = filtered.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToList();
+        }
+    }
+
+    private void Sort(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortAscending = true;
+        }
+        FilterData();
+    }
+
+    private void ChangePage(int page)
+    {
+        if (page < 1 || page > TotalPages) return;
+        PageNumber = page;
+        FilterData();
+    }
+
+    private string GetSortIcon(string column)
+    {
+        if (SortColumn != column) return "";
+        return SortAscending ? "▲" : "▼";
+    }
+
+    private void OpenAddModal()
+    {
+        if (SelectedTable == "Departments") EditingDept = new Department();
+        if (SelectedTable == "Users") EditingUser = new User { AvatarUrl = "https://i.pravatar.cc/150", Role = "user", IsActive = true };
+        IsModalOpen = true;
+    }
+
+    private void OpenEditModal(Department dept)
+    {
+        EditingDept = new Department { Id = dept.Id, Name = dept.Name, Description = dept.Description };
+        IsModalOpen = true;
+    }
+
+    private void OpenEditUserModal(User user)
+    {
+        EditingUser = new User 
+        { 
+            Id = user.Id, Username = user.Username, PasswordHash = user.PasswordHash,
+            FullName = user.FullName, Email = user.Email, Role = user.Role, 
+            Department = user.Department, JobTitle = user.JobTitle, IsActive = user.IsActive, 
+            AvatarUrl = user.AvatarUrl
+        };
+        IsModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        IsModalOpen = false;
+    }
+
+    private async Task SaveDept()
+    {
+        if (EditingDept.Id == 0) DbContext.Departments.Add(EditingDept);
+        else
+        {
+            var dept = await DbContext.Departments.FindAsync(EditingDept.Id);
+            if (dept != null) { dept.Name = EditingDept.Name; dept.Description = EditingDept.Description; DbContext.Departments.Update(dept); }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteDept(Department dept)
+    {
+        DbContext.Departments.Remove(dept);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task SaveUser()
+    {
+        if (EditingUser.Id == 0) DbContext.Users.Add(EditingUser);
+        else
+        {
+            var u = await DbContext.Users.FindAsync(EditingUser.Id);
+            if (u != null) 
+            { 
+                u.PasswordHash = EditingUser.PasswordHash; u.FullName = EditingUser.FullName; 
+                u.Email = EditingUser.Email; u.Role = EditingUser.Role; 
+                u.Department = EditingUser.Department; u.JobTitle = EditingUser.JobTitle; 
+                u.IsActive = EditingUser.IsActive; u.AvatarUrl = EditingUser.AvatarUrl;
+                DbContext.Users.Update(u); 
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteUser(User user)
+    {
+        DbContext.Users.Remove(user);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportData()
+    {
+        StringBuilder sb = new StringBuilder();
+        string fileName = "";
+
+        if (SelectedTable == "Departments")
+        {
+            fileName = "Departments.csv";
+            sb.AppendLine("Id,Name,Description");
+            foreach (var d in DepartmentsList ?? new List<Department>())
+            {
+                sb.AppendLine($"\"{d.Id}\",\"{d.Name}\",\"{d.Description}\"");
+            }
+        }
+        else
+        {
+            fileName = "Users.csv";
+            sb.AppendLine("Id,Username,FullName,Email,Role,Department,JobTitle,IsActive");
+            foreach (var u in UsersList ?? new List<User>())
+            {
+                sb.AppendLine($"\"{u.Id}\",\"{u.Username}\",\"{u.FullName}\",\"{u.Email}\",\"{u.Role}\",\"{u.Department}\",\"{u.JobTitle}\",\"{u.IsActive}\"");
+            }
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+}

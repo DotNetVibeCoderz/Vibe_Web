@@ -1,0 +1,346 @@
+@page "/chat/{TargetUsername?}"
+@using Intranet.Data
+@using Intranet.Models
+@using Intranet.Services.Storage
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager NavManager
+@inject IFileStorageService StorageService
+
+<PageTitle>Chat</PageTitle>
+
+<div class="flex h-[calc(100vh-100px)] border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-2xl">
+    
+    <!-- Sidebar: User List -->
+    <div class="w-1/3 md:w-1/4 border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50 dark:bg-gray-900">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-white">Messages</h3>
+            <!-- Search User -->
+            <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                    <i class="fas fa-search text-gray-400 text-sm"></i>
+                </span>
+                <input type="text" @bind="SearchUserQuery" @bind:event="oninput" placeholder="Search contacts..." class="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs" />
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+            @if (FilteredUsers == null)
+            {
+                <div class="p-4 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>
+            }
+            else if (!FilteredUsers.Any())
+            {
+                <div class="p-4 text-center text-gray-400 text-sm mt-4 italic">No users found</div>
+            }
+            else
+            {
+                <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+                    @foreach (var user in FilteredUsers)
+                    {
+                        var isSelected = user.Username == TargetUsername;
+                        <li class="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition @(isSelected ? "bg-blue-50 dark:bg-gray-800 border-l-4 border-blue-600" : "border-l-4 border-transparent")" @onclick="() => SelectUser(user.Username)">
+                            <div class="flex items-center px-4 py-4">
+                                <div class="relative">
+                                    <img class="h-12 w-12 rounded-full border border-gray-200 shadow-sm object-cover" src="@user.AvatarUrl" alt="" />
+                                    <span class="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-500 border-2 border-white dark:border-gray-900"></span>
+                                </div>
+                                <div class="ml-4 hidden sm:block overflow-hidden">
+                                    <p class="text-sm font-bold text-gray-900 dark:text-white truncate">@user.FullName</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate italic">@user.Department</p>
+                                </div>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <div class="w-2/3 md:w-3/4 flex flex-col bg-white dark:bg-gray-800">
+        @if (string.IsNullOrEmpty(TargetUsername))
+        {
+            <div class="flex-1 flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                <i class="far fa-comments text-7xl mb-6 text-gray-200 dark:text-gray-600"></i>
+                <p class="text-lg font-medium">Select a user to start chatting</p>
+                <p class="text-xs mt-2 opacity-50">Choose a contact from the left list.</p>
+            </div>
+        }
+        else
+        {
+            <!-- Chat Header -->
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800 shadow-sm z-10">
+                <div class="flex items-center">
+                    <img class="h-10 w-10 rounded-full mr-3 shadow-sm" src="@Users?.FirstOrDefault(u => u.Username == TargetUsername)?.AvatarUrl" alt="" />
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white leading-tight">@TargetUserFullName</h3>
+                        <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest">Online</p>
+                    </div>
+                </div>
+                <div class="flex space-x-3 text-gray-400 dark:text-gray-500">
+                    <button class="hover:text-blue-500 transition"><i class="fas fa-phone"></i></button>
+                    <button class="hover:text-blue-500 transition"><i class="fas fa-video"></i></button>
+                    <button class="hover:text-blue-500 transition"><i class="fas fa-info-circle"></i></button>
+                </div>
+            </div>
+
+            <!-- Messages List -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 dark:bg-gray-900 bg-opacity-30" id="chat-container">
+                @if (Messages == null)
+                {
+                    <div class="text-center text-gray-500 p-10"><i class="fas fa-spinner fa-spin mr-2"></i>Loading messages...</div>
+                }
+                else if (!Messages.Any())
+                {
+                    <div class="flex flex-col items-center justify-center text-gray-400 dark:text-gray-600 mt-20">
+                        <i class="fas fa-hand-sparkles text-4xl mb-3 opacity-20"></i>
+                        <p class="text-sm italic">No messages yet. Start the conversation!</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var msg in Messages)
+                    {
+                        var isMine = msg.Sender == CurrentUser;
+                        <div class="flex @(isMine ? "justify-end" : "justify-start")">
+                            <div class="max-w-[75%] space-y-1">
+                                <div class="rounded-2xl px-4 py-2 shadow-sm @(isMine ? "bg-blue-600 text-white rounded-br-none" : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none border border-gray-100 dark:border-gray-600")">
+                                    
+                                    @if (!string.IsNullOrEmpty(msg.FileUrl))
+                                    {
+                                        <div class="mb-2 overflow-hidden rounded-lg">
+                                            @if (msg.IsImage)
+                                            {
+                                                <img src="@msg.FileUrl" class="max-w-full h-auto max-h-60 rounded cursor-pointer" @onclick="() => OpenImage(msg.FileUrl)" />
+                                            }
+                                            else
+                                            {
+                                                <a href="@msg.FileUrl" target="_blank" class="flex items-center p-3 @(isMine ? "bg-blue-700" : "bg-gray-100 dark:bg-gray-800") rounded-lg hover:underline transition">
+                                                    <i class="fas fa-file-alt text-xl mr-3 opacity-70"></i>
+                                                    <div class="overflow-hidden">
+                                                        <p class="text-xs font-bold truncate">@msg.FileName</p>
+                                                        <p class="text-[10px] opacity-60">Click to download</p>
+                                                    </div>
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                    
+                                    <p class="text-sm leading-relaxed">@msg.Content</p>
+                                    <span class="text-[9px] block mt-1 @(isMine ? "text-blue-100 text-right" : "text-gray-400 dark:text-gray-400")">
+                                        @msg.SentAt.ToString("HH:mm") @(isMine ? "✓✓" : "")
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Input Box -->
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                <!-- Attachment Preview -->
+                @if (IsUploading)
+                {
+                    <div class="mb-3 flex items-center bg-blue-50 dark:bg-blue-900 dark:bg-opacity-20 px-3 py-1 rounded text-xs text-blue-600 animate-pulse">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Uploading attachment...
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(AttachedFileUrl))
+                {
+                    <div class="mb-3 flex items-center bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-lg text-xs relative group animate-in fade-in slide-in-from-bottom-2">
+                        <i class="@(IsAttachedImage ? "fas fa-image" : "fas fa-paperclip") mr-2 text-gray-500"></i>
+                        <span class="truncate pr-8">@AttachedFileName</span>
+                        <button @onclick="ClearAttachment" class="absolute right-1 text-red-500 hover:text-red-700"><i class="fas fa-times-circle"></i></button>
+                    </div>
+                }
+
+                <div class="flex items-center space-x-3">
+                    <!-- Attachment Buttons -->
+                    <div class="flex space-x-1">
+                        <label class="cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 transition" title="Send Image">
+                            <i class="far fa-image"></i>
+                            <InputFile OnChange="UploadImage" accept="image/*" class="hidden" />
+                        </label>
+                        <label class="cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 transition" title="Send Document">
+                            <i class="fas fa-paperclip"></i>
+                            <InputFile OnChange="UploadDoc" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" class="hidden" />
+                        </label>
+                        <div class="relative">
+                            <button @onclick="() => ShowEmojiPicker = !ShowEmojiPicker" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 transition" title="Add Emoji">
+                                <i class="far fa-smile"></i>
+                            </button>
+                            @if (ShowEmojiPicker)
+                            {
+                                <div class="absolute bottom-12 left-0 bg-white dark:bg-gray-700 shadow-2xl rounded-xl p-3 grid grid-cols-6 gap-2 border border-gray-200 dark:border-gray-600 z-50 w-56 animate-in zoom-in-50">
+                                    @foreach (var e in Emojis)
+                                    {
+                                        <button @onclick="() => AddEmoji(e)" class="text-xl hover:bg-gray-100 dark:hover:bg-gray-600 rounded p-1 transition">@e</button>
+                                    }
+                                </div>
+                                <div class="fixed inset-0 z-40" @onclick="() => ShowEmojiPicker = false"></div>
+                            }
+                        </div>
+                    </div>
+
+                    <input type="text" @bind="NewMessage" @onkeyup="@(e => { if (e.Key == "Enter") SendMessage(); })" placeholder="Type a message..." class="flex-1 border border-gray-300 dark:border-gray-600 rounded-full py-2.5 px-5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white sm:text-sm transition-all" />
+                    
+                    <button @onclick="SendMessage" disabled="@(string.IsNullOrWhiteSpace(NewMessage) && string.IsNullOrEmpty(AttachedFileUrl))" class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-full p-2.5 w-11 h-11 flex items-center justify-center shadow-lg transition-all transform active:scale-90 focus:outline-none">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (ShowImageOverlay)
+{
+    <div class="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center p-4 animate-in fade-in" @onclick="() => ShowImageOverlay = false">
+        <img src="@OverlayImageUrl" class="max-w-full max-h-full rounded shadow-2xl" />
+        <button class="absolute top-6 right-6 text-white text-3xl"><i class="fas fa-times"></i></button>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? TargetUsername { get; set; }
+
+    private string CurrentUser = "";
+    private List<User>? Users;
+    private List<ChatMessage>? Messages;
+    private string NewMessage = "";
+    private string TargetUserFullName = "";
+
+    // Feature properties
+    private string SearchUserQuery = "";
+    private string AttachedFileUrl = "";
+    private string AttachedFileName = "";
+    private bool IsAttachedImage = false;
+    private bool IsUploading = false;
+    private bool ShowEmojiPicker = false;
+    private bool ShowImageOverlay = false;
+    private string OverlayImageUrl = "";
+
+    private string[] Emojis = { "😀", "😂", "🥰", "😍", "🤩", "🤔", "🙄", "🤨", "😭", "🤯", "🥳", "👍", "🙏", "🔥", "💯", "✅", "❌", "🚀" };
+
+    private IEnumerable<User>? FilteredUsers => 
+        Users?.Where(u => u.Username != CurrentUser && (string.IsNullOrEmpty(SearchUserQuery) || u.FullName.Contains(SearchUserQuery, StringComparison.OrdinalIgnoreCase) || u.Department.Contains(SearchUserQuery, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            CurrentUser = authState.User.Identity.Name ?? "";
+        }
+
+        Users = await DbContext.Users.Where(u => u.IsActive).ToListAsync();
+
+        if (!string.IsNullOrEmpty(TargetUsername))
+        {
+            await LoadChat();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrEmpty(TargetUsername))
+        {
+            await LoadChat();
+        }
+    }
+
+    private void SelectUser(string username)
+    {
+        NavManager.NavigateTo($"/chat/{username}");
+    }
+
+    private async Task LoadChat()
+    {
+        var target = Users?.FirstOrDefault(u => u.Username == TargetUsername);
+        if (target != null) TargetUserFullName = target.FullName;
+
+        Messages = await DbContext.ChatMessages
+            .Where(m => (m.Sender == CurrentUser && m.Receiver == TargetUsername) || 
+                        (m.Sender == TargetUsername && m.Receiver == CurrentUser))
+            .OrderBy(m => m.SentAt)
+            .ToListAsync();
+    }
+
+    private async Task UploadImage(InputFileChangeEventArgs e)
+    {
+        IsUploading = true;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            AttachedFileUrl = await StorageService.SaveFileAsync(stream, file.Name);
+            AttachedFileName = file.Name;
+            IsAttachedImage = true;
+        }
+        catch { }
+        finally { IsUploading = false; }
+    }
+
+    private async Task UploadDoc(InputFileChangeEventArgs e)
+    {
+        IsUploading = true;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(20 * 1024 * 1024);
+            AttachedFileUrl = await StorageService.SaveFileAsync(stream, file.Name);
+            AttachedFileName = file.Name;
+            IsAttachedImage = false;
+        }
+        catch { }
+        finally { IsUploading = false; }
+    }
+
+    private void ClearAttachment()
+    {
+        AttachedFileUrl = "";
+        AttachedFileName = "";
+        IsAttachedImage = false;
+    }
+
+    private void AddEmoji(string emoji)
+    {
+        NewMessage += emoji;
+        ShowEmojiPicker = false;
+    }
+
+    private void OpenImage(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+        OverlayImageUrl = url;
+        ShowImageOverlay = true;
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrEmpty(TargetUsername)) return;
+        if (string.IsNullOrWhiteSpace(NewMessage) && string.IsNullOrEmpty(AttachedFileUrl)) return;
+
+        var msg = new ChatMessage
+        {
+            Sender = CurrentUser,
+            Receiver = TargetUsername,
+            Content = NewMessage,
+            SentAt = DateTime.UtcNow,
+            FileUrl = AttachedFileUrl,
+            FileName = AttachedFileName,
+            IsImage = IsAttachedImage
+        };
+
+        DbContext.ChatMessages.Add(msg);
+        await DbContext.SaveChangesAsync();
+        
+        NewMessage = "";
+        ClearAttachment();
+        await LoadChat();
+    }
+}

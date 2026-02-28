@@ -1,0 +1,27 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div id="@EditorId" style="height: 300px; background: white; color: black;"></div>
+
+@code {
+    [Parameter]
+    public string Content { get; set; } = "";
+
+    [Parameter]
+    public EventCallback<string> ContentChanged { get; set; }
+
+    public string EditorId { get; set; } = "quill-editor-" + Guid.NewGuid().ToString("N");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("quillFunctions.init", EditorId, Content);
+        }
+    }
+
+    public async Task<string> GetHtml()
+    {
+        return await JSRuntime.InvokeAsync<string>("quillFunctions.getContent", EditorId);
+    }
+}

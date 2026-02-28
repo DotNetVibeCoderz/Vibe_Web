@@ -1,0 +1,80 @@
+@page "/register"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject NavigationManager NavManager
+
+<div class="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 w-full px-4 py-10">
+    <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 border border-gray-200 dark:border-gray-700">
+        <div class="text-center mb-8">
+            <h2 class="text-3xl font-bold text-gray-800 dark:text-white mb-2">Create Account</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Join the Corporate Intranet</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <span class="block sm:inline">@ErrorMessage</span>
+            </div>
+        }
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+                <input type="text" @bind="NewUser.FullName" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="John Doe" />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                <input type="email" @bind="NewUser.Email" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="john@example.com" />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                <input type="text" @bind="NewUser.Username" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="johndoe" />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                <input type="password" @bind="NewUser.PasswordHash" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="••••••••" />
+            </div>
+
+            <button @onclick="PerformRegister" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition mt-6">
+                Register
+            </button>
+        </div>
+
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+                Already have an account? <a href="/login" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400">Sign in</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private User NewUser = new() { AvatarUrl = "https://i.pravatar.cc/150", Role = "user", IsActive = true };
+    private string ErrorMessage = "";
+
+    private async Task PerformRegister()
+    {
+        if (string.IsNullOrWhiteSpace(NewUser.Username) || string.IsNullOrWhiteSpace(NewUser.PasswordHash) || string.IsNullOrWhiteSpace(NewUser.FullName))
+        {
+            ErrorMessage = "Please fill in all required fields.";
+            return;
+        }
+
+        var existingUser = await DbContext.Users.FirstOrDefaultAsync(u => u.Username == NewUser.Username);
+        if (existingUser != null)
+        {
+            ErrorMessage = "Username is already taken.";
+            return;
+        }
+
+        DbContext.Users.Add(NewUser);
+        await DbContext.SaveChangesAsync();
+        
+        NavManager.NavigateTo("/login");
+    }
+}

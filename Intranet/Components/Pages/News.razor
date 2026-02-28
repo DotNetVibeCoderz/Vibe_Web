@@ -1,0 +1,210 @@
+@page "/news"
+@using Intranet.Data
+@using Intranet.Models
+@using Intranet.Services.Storage
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager NavManager
+@inject IFileStorageService StorageService
+
+<PageTitle>Company News</PageTitle>
+
+<div class="flex justify-between items-center mb-6">
+    <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Company News & Announcements</h2>
+    @if (IsAdminOrCreator)
+    {
+        <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow">
+            <i class="fas fa-plus mr-2"></i> Create News
+        </button>
+    }
+</div>
+
+@if (NewsList == null)
+{
+    <p>Loading...</p>
+}
+else if (!NewsList.Any())
+{
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center text-gray-500 dark:text-gray-400">
+        <i class="fas fa-newspaper text-4xl mb-4"></i>
+        <p>No news articles available.</p>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        @foreach (var news in NewsList)
+        {
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition flex flex-col">
+                <div class="h-48 bg-gray-200 dark:bg-gray-700 relative flex-shrink-0">
+                    <img src="@(string.IsNullOrEmpty(news.CoverImageUrl) ? "https://placehold.co/600x400/1e3a8a/ffffff?text=News" : news.CoverImageUrl)" alt="Cover" class="w-full h-full object-cover" />
+                    <span class="absolute top-4 left-4 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded">@news.Category</span>
+                    @if (IsAdminOrCreator)
+                    {
+                        <div class="absolute top-4 right-4 flex space-x-2">
+                            <button @onclick="() => OpenEditModal(news)" class="bg-white text-blue-600 p-1.5 rounded-full shadow hover:bg-gray-100 transition" title="Edit"><i class="fas fa-edit"></i></button>
+                            <button @onclick="() => DeleteNews(news)" class="bg-white text-red-600 p-1.5 rounded-full shadow hover:bg-gray-100 transition" title="Delete"><i class="fas fa-trash"></i></button>
+                        </div>
+                    }
+                </div>
+                <div class="p-6 flex-1 flex flex-col">
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2 line-clamp-2">@news.Title</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">By @news.Author • @news.CreatedAt.ToString("MMM dd, yyyy")</p>
+                    <div class="text-gray-700 dark:text-gray-300 line-clamp-3 mb-4 flex-1">
+                        @((MarkupString)news.Content)
+                    </div>
+                    <button @onclick="() => ReadMore(news.Id)" class="text-blue-600 dark:text-blue-400 font-medium hover:underline mt-auto self-start">Read more &rarr;</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<!-- Modal Form -->
+@if (IsModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">@(EditingNews.Id == 0 ? "Create News" : "Edit News")</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                            <input type="text" @bind="EditingNews.Title" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                                <select @bind="EditingNews.Category" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                    <option value="News">News</option>
+                                    <option value="Announcement">Announcement</option>
+                                    <option value="Leadership">Leadership</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Cover Image</label>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <InputFile OnChange="HandleCoverUpload" class="block w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                                </div>
+                                @if (IsUploading) { <span class="text-xs text-blue-500">Uploading...</span> }
+                                @if (!string.IsNullOrEmpty(EditingNews.CoverImageUrl)) { <span class="text-xs text-green-500 block truncate mt-1">@EditingNews.CoverImageUrl</span> }
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content (Rich Text)</label>
+                            <RichTextEditor @ref="HtmlEditor" Content="@EditingNews.Content" />
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveNews" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<NewsItem>? NewsList;
+    private bool IsAdminOrCreator = false;
+    private bool IsModalOpen = false;
+    private bool IsUploading = false;
+    private NewsItem EditingNews = new();
+    private string CurrentUser = "Anonymous";
+    private RichTextEditor HtmlEditor = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        if (role == "admin" || role == "creator") IsAdminOrCreator = true;
+        if (user.Identity?.IsAuthenticated == true) CurrentUser = user.Identity.Name ?? "User";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        NewsList = await DbContext.NewsItems.OrderByDescending(n => n.CreatedAt).ToListAsync();
+    }
+
+    private void OpenAddModal()
+    {
+        EditingNews = new NewsItem { Category = "News" };
+        IsModalOpen = true;
+    }
+
+    private void OpenEditModal(NewsItem item)
+    {
+        EditingNews = new NewsItem
+        {
+            Id = item.Id, Title = item.Title, Category = item.Category, Content = item.Content,
+            Author = item.Author, CreatedAt = item.CreatedAt, CoverImageUrl = item.CoverImageUrl
+        };
+        IsModalOpen = true;
+    }
+
+    private void CloseModal() { IsModalOpen = false; }
+
+    private async Task HandleCoverUpload(InputFileChangeEventArgs e)
+    {
+        IsUploading = true;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            EditingNews.CoverImageUrl = await StorageService.SaveFileAsync(stream, file.Name);
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        finally { IsUploading = false; }
+    }
+
+    private async Task SaveNews()
+    {
+        EditingNews.Content = await HtmlEditor.GetHtml();
+
+        if (string.IsNullOrWhiteSpace(EditingNews.Title) || string.IsNullOrWhiteSpace(EditingNews.Content)) return;
+
+        if (EditingNews.Id == 0)
+        {
+            EditingNews.CreatedAt = DateTime.UtcNow;
+            EditingNews.Author = CurrentUser;
+            DbContext.NewsItems.Add(EditingNews);
+        }
+        else
+        {
+            var item = await DbContext.NewsItems.FindAsync(EditingNews.Id);
+            if (item != null)
+            {
+                item.Title = EditingNews.Title;
+                item.Category = EditingNews.Category;
+                item.Content = EditingNews.Content;
+                item.CoverImageUrl = EditingNews.CoverImageUrl;
+                DbContext.NewsItems.Update(item);
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteNews(NewsItem item)
+    {
+        DbContext.NewsItems.Remove(item);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private void ReadMore(int id)
+    {
+        NavManager.NavigateTo($"/news/{id}");
+    }
+}

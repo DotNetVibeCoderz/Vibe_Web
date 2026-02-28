@@ -1,0 +1,125 @@
+@page "/"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+
+<PageTitle>Dashboard - Intranet</PageTitle>
+
+<div class="space-y-6">
+    <!-- Welcome Banner -->
+    <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 text-white flex justify-between items-center">
+        <div>
+            <h2 class="text-2xl font-bold mb-2">Welcome to the Intranet Portal!</h2>
+            <p class="text-blue-100">Stay connected with your team and up to date with the latest company news.</p>
+        </div>
+        <div class="hidden md:block">
+            <i class="fas fa-rocket text-6xl text-blue-200 opacity-50"></i>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- News Widget -->
+        <div class="col-span-1 md:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Latest News</h3>
+                <a href="/news" class="text-sm text-blue-600 hover:underline">View All</a>
+            </div>
+            <div class="p-6 space-y-4">
+                @if (RecentNews == null)
+                {
+                    <p>Loading...</p>
+                }
+                else if (!RecentNews.Any())
+                {
+                    <p class="text-gray-500">No news available.</p>
+                }
+                else
+                {
+                    @foreach (var item in RecentNews)
+                    {
+                        <div class="flex items-start space-x-4 pb-4 border-b border-gray-100 dark:border-gray-700 last:border-0 last:pb-0">
+                            <div class="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded p-3">
+                                <i class="fas fa-bullhorn text-blue-600 dark:text-blue-300"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-md font-medium text-gray-900 dark:text-white">@item.Title</h4>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">@item.CreatedAt.ToString("MMM dd, yyyy") • @item.Category</p>
+                                <div class="text-gray-700 dark:text-gray-300 text-sm line-clamp-2">
+                                    @((MarkupString)item.Content)
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Right Column Widgets -->
+        <div class="space-y-6">
+            
+            <!-- Quick Links -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Quick Links</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <a href="/directory" class="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                        <i class="fas fa-address-book text-2xl text-green-500 mb-2"></i>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Directory</span>
+                    </a>
+                    <a href="/documents" class="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                        <i class="fas fa-file-alt text-2xl text-blue-500 mb-2"></i>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Documents</span>
+                    </a>
+                    <a href="/social" class="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                        <i class="fas fa-comments text-2xl text-purple-500 mb-2"></i>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Social</span>
+                    </a>
+                    <a href="/settings" class="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                        <i class="fas fa-cogs text-2xl text-gray-500 mb-2"></i>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Settings</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Stats Widget -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Portal Stats</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600 dark:text-gray-400">Total Users</span>
+                        <span class="font-bold text-gray-900 dark:text-white">@UserCount</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600 dark:text-gray-400">Documents</span>
+                        <span class="font-bold text-gray-900 dark:text-white">@DocCount</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600 dark:text-gray-400">Social Posts</span>
+                        <span class="font-bold text-gray-900 dark:text-white">@PostCount</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<NewsItem>? RecentNews;
+    private int UserCount;
+    private int DocCount;
+    private int PostCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        RecentNews = await DbContext.NewsItems
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(3)
+            .ToListAsync();
+
+        UserCount = await DbContext.Users.CountAsync();
+        DocCount = await DbContext.Documents.CountAsync();
+        PostCount = await DbContext.SocialPosts.CountAsync();
+    }
+}

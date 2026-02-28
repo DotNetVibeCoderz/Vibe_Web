@@ -1,0 +1,259 @@
+@page "/surveys"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Surveys & Feedback</PageTitle>
+
+<div class="mb-6 flex justify-between items-center">
+    <div>
+        <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Surveys & Feedback</h2>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">Suara Anda penting untuk kemajuan perusahaan.</p>
+    </div>
+    @if (IsAdminOrCreator)
+    {
+        <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition flex items-center">
+            <i class="fas fa-plus mr-2"></i> Buat Survei
+        </button>
+    }
+</div>
+
+@if (SurveysList == null)
+{
+    <p>Loading...</p>
+}
+else if (!SurveysList.Any())
+{
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center text-gray-500 dark:text-gray-400">
+        <i class="fas fa-poll-h text-5xl mb-4 text-gray-300 dark:text-gray-600"></i>
+        <p>Tidak ada survei yang aktif saat ini.</p>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        @foreach (var survey in SurveysList)
+        {
+            var totalVotes = survey.Options.Sum(o => o.Votes);
+            var userHasVoted = UserVotedSurveyIds.Contains(survey.Id);
+            
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-6 flex flex-col justify-between relative group">
+                @if (IsAdminOrCreator)
+                {
+                    <button @onclick="() => DeleteSurvey(survey)" class="absolute top-4 right-4 text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition"><i class="fas fa-trash"></i></button>
+                }
+                
+                <div>
+                    <div class="flex justify-between items-start mb-2 pr-8">
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">@survey.Title</h3>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        @if (survey.EndDate < DateTime.UtcNow || !survey.IsActive)
+                        {
+                            <span class="bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded dark:bg-red-900 dark:text-red-200">Ditutup</span>
+                        }
+                        else
+                        {
+                            <span class="bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded dark:bg-green-900 dark:text-green-200">Aktif</span>
+                        }
+
+                        @if (userHasVoted)
+                        {
+                            <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded dark:bg-blue-900 dark:text-blue-200 flex items-center"><i class="fas fa-check-circle mr-1"></i> Sudah Memilih</span>
+                        }
+                    </div>
+
+                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">@survey.Description</p>
+
+                    <div class="space-y-3 mb-6">
+                        @foreach (var option in survey.Options)
+                        {
+                            var percentage = totalVotes == 0 ? 0 : (int)Math.Round((double)option.Votes / totalVotes * 100);
+                            
+                            <div class="relative pt-1">
+                                <div class="flex mb-2 items-center justify-between">
+                                    <div>
+                                        <span class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200 dark:text-blue-200 dark:bg-blue-900">
+                                            @option.Text
+                                        </span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-xs font-semibold inline-block text-gray-600 dark:text-gray-400">
+                                            @percentage% (@option.Votes)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100 dark:bg-gray-700 @(userHasVoted || survey.EndDate < DateTime.UtcNow || !survey.IsActive ? "cursor-not-allowed" : "cursor-pointer hover:bg-blue-200") transition" @onclick="() => Vote(survey, option)">
+                                    <div style="width:@percentage%" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+                
+                <div class="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-3 flex justify-between">
+                    <span>Total Suara: @totalVotes</span>
+                    <span>Berakhir pada: @survey.EndDate.ToString("dd MMM yyyy")</span>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<!-- Add Survey Modal -->
+@if (IsModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Buat Survei / Polling Baru</h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Judul Survei</label>
+                            <input type="text" @bind="NewSurvey.Title" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Deskripsi / Pertanyaan</label>
+                            <textarea @bind="NewSurvey.Description" rows="2" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Berakhir (Hari dari sekarang)</label>
+                            <input type="number" @bind="DaysActive" min="1" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Pilihan (Options)</label>
+                            
+                            @foreach (var opt in NewOptions)
+                            {
+                                <div class="flex items-center space-x-2 mb-2">
+                                    <i class="fas fa-circle text-[8px] text-gray-400"></i>
+                                    <span class="text-sm text-gray-800 dark:text-gray-200">@opt</span>
+                                    <button @onclick="() => RemoveOption(opt)" class="text-red-500 hover:text-red-700 ml-auto"><i class="fas fa-times"></i></button>
+                                </div>
+                            }
+
+                            <div class="flex mt-3">
+                                <input type="text" @bind="TempOption" placeholder="Tambahkan pilihan..." class="flex-1 border border-gray-300 dark:border-gray-600 rounded-l-md py-1.5 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" @onkeyup="@(e => { if (e.Key == "Enter") AddOption(); })" />
+                                <button type="button" @onclick="AddOption" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 rounded-r-md text-sm dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500 transition">Add</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveSurvey" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm transition">Posting Survei</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition">Batal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Survey>? SurveysList;
+    private HashSet<int> UserVotedSurveyIds = new();
+    private bool IsAdminOrCreator = false;
+    private string CurrentUser = "Anonymous";
+
+    private bool IsModalOpen = false;
+    private Survey NewSurvey = new();
+    private int DaysActive = 7;
+    private List<string> NewOptions = new();
+    private string TempOption = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        IsAdminOrCreator = (role == "admin" || role == "creator");
+        if (user.Identity?.IsAuthenticated == true) CurrentUser = user.Identity.Name ?? "User";
+
+        await LoadSurveys();
+    }
+
+    private async Task LoadSurveys()
+    {
+        SurveysList = await DbContext.Surveys
+            .Include(s => s.Options)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync();
+            
+        var votes = await DbContext.UserVotes.Where(v => v.Username == CurrentUser).ToListAsync();
+        UserVotedSurveyIds = votes.Select(v => v.SurveyId).ToHashSet();
+    }
+
+    private void OpenAddModal()
+    {
+        NewSurvey = new Survey();
+        DaysActive = 7;
+        NewOptions = new List<string>();
+        TempOption = "";
+        IsModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        IsModalOpen = false;
+    }
+
+    private void AddOption()
+    {
+        if (!string.IsNullOrWhiteSpace(TempOption) && !NewOptions.Contains(TempOption))
+        {
+            NewOptions.Add(TempOption.Trim());
+            TempOption = "";
+        }
+    }
+
+    private void RemoveOption(string opt)
+    {
+        NewOptions.Remove(opt);
+    }
+
+    private async Task SaveSurvey()
+    {
+        if (string.IsNullOrWhiteSpace(NewSurvey.Title) || !NewOptions.Any()) return;
+
+        NewSurvey.CreatedAt = DateTime.UtcNow;
+        NewSurvey.EndDate = DateTime.UtcNow.AddDays(DaysActive);
+        NewSurvey.CreatedBy = CurrentUser;
+        NewSurvey.IsActive = true;
+        
+        NewSurvey.Options = NewOptions.Select(o => new SurveyOption { Text = o, Votes = 0 }).ToList();
+
+        DbContext.Surveys.Add(NewSurvey);
+        await DbContext.SaveChangesAsync();
+        await LoadSurveys();
+        CloseModal();
+    }
+
+    private async Task DeleteSurvey(Survey s)
+    {
+        DbContext.Surveys.Remove(s);
+        await DbContext.SaveChangesAsync();
+        await LoadSurveys();
+    }
+
+    private async Task Vote(Survey survey, SurveyOption option)
+    {
+        if (survey.EndDate < DateTime.UtcNow || !survey.IsActive) return;
+        if (UserVotedSurveyIds.Contains(survey.Id)) return; // Prevent multiple votes
+
+        option.Votes++;
+        DbContext.SurveyOptions.Update(option);
+        
+        DbContext.UserVotes.Add(new UserVote { SurveyId = survey.Id, Username = CurrentUser });
+        
+        await DbContext.SaveChangesAsync();
+        await LoadSurveys();
+    }
+}

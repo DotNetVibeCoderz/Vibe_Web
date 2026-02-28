@@ -1,0 +1,169 @@
+@page "/faq"
+@using Intranet.Data
+@using Intranet.Models
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Frequently Asked Questions</PageTitle>
+
+<div class="max-w-4xl mx-auto py-8">
+    <div class="text-center mb-10">
+        <h2 class="text-3xl font-bold text-gray-800 dark:text-white mb-4">How can we help you?</h2>
+        <div class="flex items-center space-x-2 max-w-xl mx-auto">
+            <div class="relative w-full">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                    <i class="fas fa-search text-gray-400"></i>
+                </span>
+                <input type="text" @bind="SearchQuery" @bind:event="oninput" placeholder="Search FAQ..." class="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" />
+            </div>
+            @if (IsAdmin)
+            {
+                <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-full shadow transition" title="Add FAQ">
+                    <i class="fas fa-plus"></i>
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (FilteredFaqs == null)
+    {
+        <p class="text-center text-gray-500">Loading...</p>
+    }
+    else if (!FilteredFaqs.Any())
+    {
+        <p class="text-center text-gray-500">No FAQs found matching your query.</p>
+    }
+    else
+    {
+        <div class="space-y-6">
+            @foreach (var group in FilteredFaqs.GroupBy(f => f.Category))
+            {
+                <h3 class="text-xl font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 mb-4 mt-8">@group.Key</h3>
+                <div class="space-y-4">
+                    @foreach (var faq in group)
+                    {
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 relative group">
+                            @if (IsAdmin)
+                            {
+                                <div class="absolute top-4 right-4 flex space-x-2 opacity-0 group-hover:opacity-100 transition">
+                                    <button @onclick="() => OpenEditModal(faq)" class="text-blue-500 hover:text-blue-700"><i class="fas fa-edit"></i></button>
+                                    <button @onclick="() => DeleteFaq(faq)" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+                                </div>
+                            }
+                            <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2 flex items-start pr-12">
+                                <i class="fas fa-question-circle text-blue-500 mt-1 mr-3"></i>
+                                @faq.Question
+                            </h4>
+                            <p class="text-gray-600 dark:text-gray-300 ml-8 leading-relaxed">@faq.Answer</p>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Modal Form -->
+@if (IsModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">@(EditingFaq.Id == 0 ? "Add FAQ" : "Edit FAQ")</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                            <input type="text" @bind="EditingFaq.Category" placeholder="e.g. IT Support, HR Policy" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Question</label>
+                            <input type="text" @bind="EditingFaq.Question" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Answer</label>
+                            <textarea @bind="EditingFaq.Answer" rows="4" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveFaq" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<FaqItem>? Faqs;
+    private IEnumerable<FaqItem>? FilteredFaqs;
+    private bool IsAdmin = false;
+    private bool IsModalOpen = false;
+    private FaqItem EditingFaq = new();
+
+    private string _searchQuery = "";
+    private string SearchQuery
+    {
+        get => _searchQuery;
+        set { _searchQuery = value; FilterData(); }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        IsAdmin = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value == "admin";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Faqs = await DbContext.Faqs.ToListAsync();
+        FilterData();
+    }
+
+    private void FilterData()
+    {
+        if (Faqs == null) return;
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+            FilteredFaqs = Faqs.OrderBy(f => f.Category);
+        else
+            FilteredFaqs = Faqs.Where(f => f.Question.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || f.Answer.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)).OrderBy(f => f.Category);
+    }
+
+    private void OpenAddModal() { EditingFaq = new FaqItem { Category = "General" }; IsModalOpen = true; }
+    private void OpenEditModal(FaqItem f) { EditingFaq = new FaqItem { Id = f.Id, Category = f.Category, Question = f.Question, Answer = f.Answer }; IsModalOpen = true; }
+    private void CloseModal() { IsModalOpen = false; }
+
+    private async Task SaveFaq()
+    {
+        if (string.IsNullOrWhiteSpace(EditingFaq.Question)) return;
+
+        if (EditingFaq.Id == 0) DbContext.Faqs.Add(EditingFaq);
+        else
+        {
+            var f = await DbContext.Faqs.FindAsync(EditingFaq.Id);
+            if (f != null)
+            {
+                f.Category = EditingFaq.Category;
+                f.Question = EditingFaq.Question;
+                f.Answer = EditingFaq.Answer;
+                DbContext.Faqs.Update(f);
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteFaq(FaqItem f)
+    {
+        DbContext.Faqs.Remove(f);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+}

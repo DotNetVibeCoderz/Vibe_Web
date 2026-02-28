@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- Quill Rich Text Editor -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+    
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <script>
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+            return document.documentElement.classList.contains('dark');
+        }
+
+        window.quillFunctions = {
+            init: function (elementId, content) {
+                var quill = new Quill('#' + elementId, {
+                    theme: 'snow',
+                    modules: {
+                        toolbar: [
+                            ['bold', 'italic', 'underline', 'strike'],
+                            ['blockquote', 'code-block'],
+                            [{ 'header': 1 }, { 'header': 2 }],
+                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                            [{ 'script': 'sub'}, { 'script': 'super' }],
+                            [{ 'indent': '-1'}, { 'indent': '+1' }],
+                            [{ 'size': ['small', false, 'large', 'huge'] }],
+                            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                            [{ 'color': [] }, { 'background': [] }],
+                            [{ 'align': [] }],
+                            ['clean'],
+                            ['link', 'image', 'video']
+                        ]
+                    }
+                });
+                
+                if(content) {
+                    quill.root.innerHTML = content;
+                }
+
+                quill.on('text-change', function () {
+                    var html = quill.root.innerHTML;
+                    if(html === '<p><br></p>') html = '';
+                    var element = document.getElementById(elementId);
+                    if(element && element.dataset) {
+                        element.dispatchEvent(new CustomEvent('quill-content-changed', {
+                            detail: html
+                        }));
+                    }
+                });
+            },
+            getContent: function(elementId) {
+                var container = document.getElementById(elementId);
+                var editor = container.querySelector('.ql-editor');
+                return editor.innerHTML;
+            }
+        };
+
+        window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+            const arrayBuffer = await contentStreamReference.arrayBuffer();
+            const blob = new Blob([arrayBuffer]);
+            const url = URL.createObjectURL(blob);
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? '';
+            anchorElement.click();
+            anchorElement.remove();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+
+</html>

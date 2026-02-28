@@ -1,0 +1,371 @@
+@page "/gallery/image"
+@using Intranet.Data
+@using Intranet.Models
+@using Intranet.Services.Storage
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject IFileStorageService StorageService
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Image Gallery</PageTitle>
+
+<div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+    <div>
+        <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Image Gallery</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Koleksi foto acara dan momen perusahaan.</p>
+    </div>
+    <div class="flex space-x-2">
+        <button @onclick="OpenAlbumModal" class="bg-gray-200 hover:bg-gray-300 text-gray-800 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 font-bold py-2 px-4 rounded shadow transition text-sm flex items-center">
+            <i class="fas fa-folder-plus mr-2"></i> Add Album
+        </button>
+        <button @onclick="OpenMediaModal" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition text-sm flex items-center">
+            <i class="fas fa-cloud-upload-alt mr-2"></i> Input Media
+        </button>
+    </div>
+</div>
+
+@if (Albums == null)
+{
+    <p>Loading gallery...</p>
+}
+else if (!Albums.Any())
+{
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center text-gray-500 dark:text-gray-400">
+        <i class="far fa-images text-5xl mb-4 text-gray-300 dark:text-gray-600"></i>
+        <p>Belum ada album foto. Silakan buat album baru.</p>
+    </div>
+}
+else
+{
+    <div class="space-y-8">
+        @foreach (var album in Albums)
+        {
+            <div>
+                <div class="flex items-end justify-between border-b border-gray-200 dark:border-gray-700 pb-2 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">@album.Title</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">@album.Description</p>
+                    </div>
+                    <span class="text-xs text-gray-400">@album.MediaItems.Count items</span>
+                </div>
+
+                @if (!album.MediaItems.Any())
+                {
+                    <p class="text-sm text-gray-400 italic">Tidak ada foto di album ini.</p>
+                }
+                else
+                {
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        @foreach (var media in album.MediaItems)
+                        {
+                            <div class="group relative bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition aspect-w-4 aspect-h-3" @onclick="() => OpenViewer(media)">
+                                <img src="@media.ThumbnailUrl" alt="@media.Title" class="w-full h-48 object-cover group-hover:scale-105 transition duration-300" />
+                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition flex flex-col justify-end p-4 opacity-0 group-hover:opacity-100">
+                                    <h4 class="text-white font-semibold truncate">@media.Title</h4>
+                                    <div class="flex text-xs text-gray-200 space-x-3 mt-1">
+                                        <span><i class="fas fa-heart text-red-400"></i> @media.Likes</span>
+                                        <span><i class="fas fa-comment"></i> @media.Comments.Count</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Album Modal -->
+@if (IsAlbumModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModals"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Add New Image Album</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                            <input type="text" @bind="NewAlbum.Title" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                            <textarea @bind="NewAlbum.Description" rows="3" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveAlbum" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" @onclick="CloseModals" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Media Input Modal -->
+@if (IsMediaModalOpen)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModals"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Input Media (Image)</h3>
+                    
+                    @if(IsUploading)
+                    {
+                        <div class="mb-4 text-blue-600"><i class="fas fa-spinner fa-spin mr-2"></i> Uploading file... please wait.</div>
+                    }
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                            <input type="text" @bind="NewMedia.Title" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Album</label>
+                            <select @bind="NewMedia.AlbumId" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                <option value="0">-- Select Album --</option>
+                                @if (Albums != null)
+                                {
+                                    @foreach(var a in Albums)
+                                    {
+                                        <option value="@a.Id">@a.Title</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Image File (Upload)</label>
+                            <InputFile OnChange="HandleFileUpload" class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-300" />
+                            @if (!string.IsNullOrEmpty(NewMedia.MediaUrl))
+                            {
+                                <p class="text-xs text-green-600 mt-1">File selected and ready.</p>
+                            }
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Thumbnail URL (Optional)</label>
+                            <input type="text" @bind="NewMedia.ThumbnailUrl" placeholder="Leave blank to use original image" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Tags (comma separated)</label>
+                            <input type="text" @bind="NewMedia.Tags" placeholder="event, 2023, team" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveMedia" disabled="@IsUploading" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-50 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" @onclick="CloseModals" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Viewer Modal -->
+@if (ViewerMedia != null)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen p-4 text-center sm:p-0">
+            <div class="fixed inset-0 bg-black bg-opacity-90 transition-opacity" @onclick="CloseViewer"></div>
+            
+            <button class="absolute top-4 right-4 text-white hover:text-gray-300 z-50 text-3xl" @onclick="CloseViewer">&times;</button>
+            
+            <div class="relative bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all w-full max-w-5xl flex flex-col md:flex-row h-[80vh]">
+                
+                <!-- Left: Media -->
+                <div class="w-full md:w-2/3 bg-black flex items-center justify-center relative">
+                    <img src="@ViewerMedia.MediaUrl" alt="@ViewerMedia.Title" class="max-w-full max-h-full object-contain" />
+                </div>
+
+                <!-- Right: Details & Comments -->
+                <div class="w-full md:w-1/3 flex flex-col bg-white dark:bg-gray-900 h-full border-l border-gray-200 dark:border-gray-700">
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex justify-between items-start">
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">@ViewerMedia.Title</h3>
+                            <button @onclick="LikeViewerMedia" class="text-gray-500 hover:text-red-500 transition focus:outline-none">
+                                <i class="fas fa-heart text-xl @(HasLiked ? "text-red-500" : "")"></i> <span class="text-sm">@ViewerMedia.Likes</span>
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">@ViewerMedia.CreatedAt.ToString("MMM dd, yyyy")</p>
+                        @if(!string.IsNullOrEmpty(ViewerMedia.Tags))
+                        {
+                            <div class="mt-2 flex flex-wrap gap-1">
+                                @foreach(var tag in ViewerMedia.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                {
+                                    <span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded dark:bg-gray-800 dark:text-gray-300">#@tag.Trim()</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Comments List -->
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                        @if (!ViewerMedia.Comments.Any())
+                        {
+                            <p class="text-sm text-gray-400 text-center mt-4">Belum ada komentar.</p>
+                        }
+                        else
+                        {
+                            @foreach (var c in ViewerMedia.Comments.OrderBy(c => c.CreatedAt))
+                            {
+                                <div>
+                                    <span class="font-bold text-sm text-gray-900 dark:text-white mr-2">@c.Author</span>
+                                    <span class="text-sm text-gray-700 dark:text-gray-300">@c.Content</span>
+                                    <p class="text-xs text-gray-400 mt-0.5">@c.CreatedAt.ToString("g")</p>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <!-- Add Comment -->
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        <div class="flex items-center">
+                            <input type="text" @bind="NewCommentText" placeholder="Add a comment..." class="flex-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-l-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-white" @onkeyup="@(e => { if (e.Key == "Enter") AddComment(); })" />
+                            <button @onclick="AddComment" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md text-sm transition">Post</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Album>? Albums;
+    private bool IsAlbumModalOpen = false;
+    private bool IsMediaModalOpen = false;
+    private bool IsUploading = false;
+    private Album NewAlbum = new() { Type = "Image" };
+    private MediaItem NewMedia = new() { Type = "Image" };
+    private MediaItem? ViewerMedia;
+    private bool HasLiked = false;
+    private string NewCommentText = "";
+    private string CurrentUser = "Anonymous";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true) CurrentUser = authState.User.Identity.Name ?? "User";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Albums = await DbContext.Albums
+            .Include(a => a.MediaItems)
+            .ThenInclude(m => m.Comments)
+            .Where(a => a.Type == "Image")
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        if (ViewerMedia != null)
+        {
+            ViewerMedia = Albums.SelectMany(a => a.MediaItems).FirstOrDefault(m => m.Id == ViewerMedia.Id);
+            if (ViewerMedia != null)
+            {
+                HasLiked = await DbContext.MediaLikes.AnyAsync(l => l.MediaItemId == ViewerMedia.Id && l.Username == CurrentUser);
+            }
+        }
+    }
+
+    private void OpenAlbumModal() { NewAlbum = new Album { Type = "Image" }; IsAlbumModalOpen = true; }
+    private void OpenMediaModal() { NewMedia = new MediaItem { Type = "Image" }; IsMediaModalOpen = true; }
+    private void CloseModals() { IsAlbumModalOpen = false; IsMediaModalOpen = false; }
+
+    private async Task SaveAlbum()
+    {
+        if (!string.IsNullOrWhiteSpace(NewAlbum.Title))
+        {
+            NewAlbum.CreatedAt = DateTime.UtcNow;
+            DbContext.Albums.Add(NewAlbum);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            CloseModals();
+        }
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        IsUploading = true;
+        try
+        {
+            var file = e.File;
+            var maxFileSize = 10 * 1024 * 1024; // 10 MB limit for images
+            using var stream = file.OpenReadStream(maxFileSize);
+            var filePath = await StorageService.SaveFileAsync(stream, file.Name);
+            NewMedia.MediaUrl = filePath;
+            if (string.IsNullOrWhiteSpace(NewMedia.ThumbnailUrl)) { NewMedia.ThumbnailUrl = filePath; }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+        finally { IsUploading = false; }
+    }
+
+    private async Task SaveMedia()
+    {
+        if (NewMedia.AlbumId > 0 && !string.IsNullOrWhiteSpace(NewMedia.Title) && !string.IsNullOrWhiteSpace(NewMedia.MediaUrl))
+        {
+            NewMedia.CreatedAt = DateTime.UtcNow;
+            DbContext.MediaItems.Add(NewMedia);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            CloseModals();
+        }
+    }
+
+    private async Task OpenViewer(MediaItem media)
+    {
+        ViewerMedia = media;
+        NewCommentText = "";
+        HasLiked = await DbContext.MediaLikes.AnyAsync(l => l.MediaItemId == media.Id && l.Username == CurrentUser);
+    }
+
+    private void CloseViewer()
+    {
+        ViewerMedia = null;
+    }
+
+    private async Task LikeViewerMedia()
+    {
+        if (ViewerMedia != null)
+        {
+            if (HasLiked) return;
+
+            var like = new MediaLike { MediaItemId = ViewerMedia.Id, Username = CurrentUser };
+            DbContext.MediaLikes.Add(like);
+            
+            ViewerMedia.Likes++;
+            DbContext.MediaItems.Update(ViewerMedia);
+            await DbContext.SaveChangesAsync();
+            HasLiked = true;
+        }
+    }
+
+    private async Task AddComment()
+    {
+        if (ViewerMedia != null && !string.IsNullOrWhiteSpace(NewCommentText))
+        {
+            var comment = new MediaComment
+            {
+                MediaItemId = ViewerMedia.Id,
+                Content = NewCommentText,
+                Author = CurrentUser,
+                CreatedAt = DateTime.UtcNow
+            };
+            DbContext.MediaComments.Add(comment);
+            await DbContext.SaveChangesAsync();
+            
+            NewCommentText = "";
+            await LoadData();
+        }
+    }
+}

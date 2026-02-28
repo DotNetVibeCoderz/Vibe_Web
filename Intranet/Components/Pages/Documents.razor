@@ -1,0 +1,342 @@
+@page "/documents"
+@using Intranet.Data
+@using Intranet.Models
+@using Intranet.Services.Storage
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject IFileStorageService StorageService
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Document Management</PageTitle>
+
+<div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+    <div>
+        <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Document Repository</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Pusat penyimpanan dokumen, kebijakan, dan panduan.</p>
+    </div>
+    <div class="flex items-center space-x-4">
+        <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition text-sm">
+            <i class="fas fa-upload mr-2"></i> Upload Document
+            <InputFile OnChange="@UploadFile" class="hidden" />
+        </label>
+    </div>
+</div>
+
+@if (IsUploading)
+{
+    <div class="mb-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200 px-4 py-3 rounded relative">
+        <span class="block sm:inline"><i class="fas fa-spinner fa-spin mr-2"></i> Uploading file...</span>
+    </div>
+}
+
+<div class="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <!-- Controls -->
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                <i class="fas fa-search text-gray-400"></i>
+            </span>
+            <input type="text" @bind="SearchQuery" @bind:event="oninput" placeholder="Search by title or category..." class="w-full pl-10 pr-4 py-1.5 border border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" />
+        </div>
+        <div class="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+            <span>Sort by:</span>
+            <select @bind="SortBy" class="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <option value="DateDesc">Newest</option>
+                <option value="DateAsc">Oldest</option>
+                <option value="TitleAsc">Title (A-Z)</option>
+                <option value="SizeDesc">Largest</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Title / File Name</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Category</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Uploaded By</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                @if (DocumentList == null)
+                {
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 whitespace-nowrap text-center text-gray-500 dark:text-gray-400">Loading documents...</td>
+                    </tr>
+                }
+                else if (!PagedDocuments.Any())
+                {
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 whitespace-nowrap text-center text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-folder-open text-3xl mb-2 block"></i>
+                            No documents found.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var doc in PagedDocuments)
+                    {
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                            <td class="px-6 py-4">
+                                <div class="flex items-center">
+                                    <i class="@GetFileIcon(doc.ContentType) mr-3 text-xl text-gray-400"></i>
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-900 dark:text-white">@(string.IsNullOrEmpty(doc.Title) ? doc.FileName : doc.Title)</div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">@doc.Description</div>
+                                        <div class="text-[10px] text-gray-400 italic">File: @doc.FileName</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                <span class="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">@doc.Category</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@FormatSize(doc.Size)</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@doc.Uploader</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@doc.UploadedAt.ToString("MMM dd, yyyy")</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                <button @onclick="() => OpenEditModal(doc)" class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300" title="Edit"><i class="fas fa-edit"></i></button>
+                                <a href="@doc.FilePath" target="_blank" class="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300" title="Download"><i class="fas fa-download"></i></a>
+                                <button @onclick="() => DeleteDocument(doc)" class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Delete"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Paging -->
+    @if (TotalPages > 1)
+    {
+        <div class="px-4 py-3 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button @onclick="() => Page--" disabled="@(Page == 1)" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">Previous</button>
+                <button @onclick="() => Page++" disabled="@(Page == TotalPages)" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">Next</button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700 dark:text-gray-400">
+                        Showing <span class="font-medium">@((Page - 1) * PageSize + 1)</span> to <span class="font-medium">@(Math.Min(Page * PageSize, FilteredDocuments.Count()))</span> of <span class="font-medium">@FilteredDocuments.Count()</span> results
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        @for (int i = 1; i <= TotalPages; i++)
+                        {
+                            var p = i;
+                            <button @onclick="() => Page = p" class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium @(Page == p ? "text-blue-600 bg-blue-50 z-10" : "text-gray-500 hover:bg-gray-50")">@p</button>
+                        }
+                    </nav>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Edit Modal -->
+@if (IsEditModalOpen && EditingDocument != null)
+{
+    <div class="fixed z-50 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @onclick="CloseModal"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Edit Document Info</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Display Title</label>
+                            <input type="text" @bind="EditingDocument.Title" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                            <select @bind="EditingDocument.Category" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                <option value="General">General</option>
+                                <option value="Policy">Policy</option>
+                                <option value="Guide">Guide</option>
+                                <option value="Finance">Finance</option>
+                                <option value="Human Resources">Human Resources</option>
+                                <option value="Marketing">Marketing</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                            <textarea @bind="EditingDocument.Description" rows="3" class="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" @onclick="SaveDocumentInfo" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save Changes</button>
+                    <button type="button" @onclick="CloseModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Document>? DocumentList;
+    private bool IsUploading = false;
+    private string CurrentUser = "Anonymous";
+
+    // Filtering, Sorting, Paging
+    private string SearchQuery = "";
+    private string SortBy = "DateDesc";
+    private int Page = 1;
+    private int PageSize = 10;
+
+    private bool IsEditModalOpen = false;
+    private Document? EditingDocument;
+
+    private IEnumerable<Document> FilteredDocuments => 
+        (DocumentList ?? new List<Document>())
+        .Where(d => string.IsNullOrWhiteSpace(SearchQuery) || 
+                    (d.Title != null && d.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)) || 
+                    (d.Category != null && d.Category.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)) || 
+                    d.FileName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(d => SortBy == "DateDesc" ? d.UploadedAt.Ticks : 0)
+        .OrderBy(d => SortBy == "DateAsc" ? d.UploadedAt.Ticks : 0)
+        .OrderBy(d => SortBy == "TitleAsc" ? d.Title ?? d.FileName : "")
+        .OrderByDescending(d => SortBy == "SizeDesc" ? d.Size : 0);
+
+    private IEnumerable<Document> PagedDocuments => 
+        FilteredDocuments.Skip((Page - 1) * PageSize).Take(PageSize);
+
+    private int TotalPages => (int)Math.Ceiling((double)FilteredDocuments.Count() / PageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            CurrentUser = authState.User.Identity.Name ?? "User";
+        }
+
+        await LoadDocuments();
+    }
+
+    private async Task LoadDocuments()
+    {
+        DocumentList = await DbContext.Documents.ToListAsync();
+    }
+
+    private async Task UploadFile(InputFileChangeEventArgs e)
+    {
+        IsUploading = true;
+        try
+        {
+            var file = e.File;
+            var maxFileSize = 50 * 1024 * 1024; // 50 MB limit
+            
+            using var stream = file.OpenReadStream(maxFileSize);
+            var filePath = await StorageService.SaveFileAsync(stream, file.Name);
+
+            var doc = new Document
+            {
+                Title = file.Name,
+                FileName = file.Name,
+                FilePath = filePath,
+                ContentType = file.ContentType,
+                Size = file.Size,
+                UploadedAt = DateTime.UtcNow,
+                Uploader = CurrentUser,
+                Category = "General",
+                Description = ""
+            };
+
+            DbContext.Documents.Add(doc);
+            await DbContext.SaveChangesAsync();
+            await LoadDocuments();
+            
+            // Optionally open edit modal for the newly uploaded doc
+            OpenEditModal(doc);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error uploading file: {ex.Message}");
+        }
+        finally
+        {
+            IsUploading = false;
+        }
+    }
+
+    private void OpenEditModal(Document doc)
+    {
+        EditingDocument = new Document 
+        { 
+            Id = doc.Id, 
+            Title = doc.Title, 
+            Category = doc.Category, 
+            Description = doc.Description,
+            FileName = doc.FileName,
+            FilePath = doc.FilePath,
+            ContentType = doc.ContentType,
+            Size = doc.Size,
+            UploadedAt = doc.UploadedAt,
+            Uploader = doc.Uploader
+        };
+        IsEditModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        IsEditModalOpen = false;
+        EditingDocument = null;
+    }
+
+    private async Task SaveDocumentInfo()
+    {
+        if (EditingDocument != null)
+        {
+            var doc = await DbContext.Documents.FindAsync(EditingDocument.Id);
+            if (doc != null)
+            {
+                doc.Title = EditingDocument.Title;
+                doc.Category = EditingDocument.Category;
+                doc.Description = EditingDocument.Description;
+                
+                DbContext.Documents.Update(doc);
+                await DbContext.SaveChangesAsync();
+                await LoadDocuments();
+                CloseModal();
+            }
+        }
+    }
+
+    private async Task DeleteDocument(Document doc)
+    {
+        try { await StorageService.DeleteFileAsync(doc.FilePath); } catch { }
+        DbContext.Documents.Remove(doc);
+        await DbContext.SaveChangesAsync();
+        await LoadDocuments();
+    }
+
+    private string FormatSize(long bytes)
+    {
+        string[] suffixes = { "B", "KB", "MB", "GB" };
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return string.Format("{0:n1} {1}", number, suffixes[counter]);
+    }
+
+    private string GetFileIcon(string contentType)
+    {
+        if (contentType.Contains("pdf")) return "fas fa-file-pdf text-red-500";
+        if (contentType.Contains("word") || contentType.Contains("officedocument.word")) return "fas fa-file-word text-blue-500";
+        if (contentType.Contains("excel") || contentType.Contains("officedocument.spreadsheet")) return "fas fa-file-excel text-green-500";
+        if (contentType.Contains("image")) return "fas fa-file-image text-purple-500";
+        return "fas fa-file text-gray-500";
+    }
+}

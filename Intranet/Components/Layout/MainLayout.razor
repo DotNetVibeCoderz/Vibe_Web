@@ -1,0 +1,75 @@
+@inherits LayoutComponentBase
+@inject NavigationManager NavManager
+@inject AuthenticationStateProvider AuthProvider
+
+<CascadingAuthenticationState>
+    <AuthorizeView>
+        <Authorized>
+            <div class="flex h-screen overflow-hidden">
+                <!-- Sidebar -->
+                <NavMenu />
+
+                <!-- Main Content -->
+                <div class="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
+                    <!-- Header -->
+                    <header class="sticky top-0 z-30 flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center">
+                            <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Intranet Portal</h1>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <!-- Theme Toggle -->
+                            <button @onclick="ToggleTheme" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i class="fas @(IsDarkMode ? "fa-sun" : "fa-moon") text-gray-600 dark:text-gray-300"></i>
+                            </button>
+                            <!-- User Menu -->
+                            <div class="relative">
+                                <button @onclick="ToggleUserMenu" class="flex items-center space-x-2 focus:outline-none">
+                                    <img src="@(context.User.FindFirst("AvatarUrl")?.Value ?? "https://i.pravatar.cc/150")" alt="Avatar" class="w-8 h-8 rounded-full border border-gray-300" />
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">@context.User.Identity?.Name</span>
+                                </button>
+                                @if (IsUserMenuOpen)
+                                {
+                                    <div class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-200 dark:border-gray-700">
+                                        <a href="/profile" @onclick="() => IsUserMenuOpen = false" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Your Profile</a>
+                                        <a href="/settings" @onclick="() => IsUserMenuOpen = false" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Settings</a>
+                                        <button @onclick="Logout" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700">Sign out</button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </header>
+
+                    <main class="w-full grow p-6">
+                        @Body
+                    </main>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <Intranet.Components.Pages.Auth.Login />
+        </NotAuthorized>
+    </AuthorizeView>
+</CascadingAuthenticationState>
+
+@code {
+    [Inject] IJSRuntime JSRuntime { get; set; } = default!;
+    private bool IsDarkMode = false;
+    private bool IsUserMenuOpen = false;
+
+    private async Task ToggleTheme()
+    {
+        IsDarkMode = await JSRuntime.InvokeAsync<bool>("toggleDarkMode");
+    }
+
+    private void ToggleUserMenu()
+    {
+        IsUserMenuOpen = !IsUserMenuOpen;
+    }
+
+    private void Logout()
+    {
+        var customAuth = (Intranet.Services.Auth.CustomAuthenticationStateProvider)AuthProvider;
+        customAuth.Logout();
+        NavManager.NavigateTo("/");
+    }
+}
