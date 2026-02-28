@@ -1,0 +1,158 @@
+@page "/Identity/Account/Manage"
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using ERM.Data
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NotificationService NotificationService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Manage Profile</PageTitle>
+
+<div class="row">
+    <div class="col-md-6">
+        <RadzenCard class="rz-p-4">
+            <h3 class="mb-4">Edit Profile</h3>
+
+            <EditForm Model="@Input" OnValidSubmit="UpdateProfile">
+                <DataAnnotationsValidator />
+                
+                <div class="mb-3">
+                    <RadzenLabel Text="Email (Username)" />
+                    <RadzenTextBox Value="@email" Class="w-100" Disabled="true" />
+                </div>
+
+                <div class="mb-3">
+                    <RadzenLabel Text="Full Name" />
+                    <RadzenTextBox @bind-Value="Input.FullName" Class="w-100" />
+                    <ValidationMessage For="() => Input.FullName" />
+                </div>
+
+                <div class="mb-3">
+                    <RadzenLabel Text="Department" />
+                    <RadzenDropDown @bind-Value="Input.DepartmentId" Data="@departments" TextProperty="Name" ValueProperty="Id" Class="w-100" AllowClear="true" />
+                </div>
+
+                <div class="mt-4">
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="Save Changes" ButtonStyle="ButtonStyle.Primary" />
+                </div>
+            </EditForm>
+        </RadzenCard>
+    </div>
+
+    <div class="col-md-6">
+        <RadzenCard class="rz-p-4 mt-4 mt-md-0">
+            <h3 class="mb-4">Change Password</h3>
+
+            <EditForm Model="@PasswordInput" OnValidSubmit="ChangePassword">
+                <DataAnnotationsValidator />
+                
+                <div class="mb-3">
+                    <RadzenLabel Text="Current Password" />
+                    <RadzenPassword @bind-Value="PasswordInput.CurrentPassword" Class="w-100" />
+                    <ValidationMessage For="() => PasswordInput.CurrentPassword" />
+                </div>
+
+                <div class="mb-3">
+                    <RadzenLabel Text="New Password" />
+                    <RadzenPassword @bind-Value="PasswordInput.NewPassword" Class="w-100" />
+                    <ValidationMessage For="() => PasswordInput.NewPassword" />
+                </div>
+
+                <div class="mb-3">
+                    <RadzenLabel Text="Confirm New Password" />
+                    <RadzenPassword @bind-Value="PasswordInput.ConfirmPassword" Class="w-100" />
+                    <ValidationMessage For="() => PasswordInput.ConfirmPassword" />
+                </div>
+
+                <div class="mt-4">
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="Update Password" ButtonStyle="ButtonStyle.Warning" />
+                </div>
+            </EditForm>
+        </RadzenCard>
+    </div>
+</div>
+
+@code {
+    public class ProfileModel
+    {
+        public string FullName { get; set; } = string.Empty;
+        public string? DepartmentId { get; set; }
+    }
+
+    public class ChangePasswordModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+
+    private ProfileModel Input = new();
+    private ChangePasswordModel PasswordInput = new();
+    private ApplicationUser? user;
+    private string email = string.Empty;
+    private List<Department> departments = new();
+
+    [Inject] private ApplicationDbContext DbContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userPrincipal = authState.User;
+
+        if (userPrincipal.Identity?.IsAuthenticated == true)
+        {
+            user = await UserManager.GetUserAsync(userPrincipal);
+            if (user != null)
+            {
+                email = await UserManager.GetEmailAsync(user) ?? string.Empty;
+                Input.FullName = user.FullName;
+                Input.DepartmentId = user.DepartmentId;
+            }
+        }
+
+        departments = DbContext.Departments.ToList();
+    }
+
+    private async Task UpdateProfile()
+    {
+        if (user != null)
+        {
+            user.FullName = Input.FullName;
+            user.DepartmentId = Input.DepartmentId;
+            
+            var result = await UserManager.UpdateAsync(user);
+            if (result.Succeeded)
+            {
+                NotificationService.Notify(NotificationSeverity.Success, "Success", "Profile updated successfully.");
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", "Failed to update profile.");
+            }
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        if (PasswordInput.NewPassword != PasswordInput.ConfirmPassword)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Validation Error", "Passwords do not match.");
+            return;
+        }
+
+        if (user != null)
+        {
+            var result = await UserManager.ChangePasswordAsync(user, PasswordInput.CurrentPassword, PasswordInput.NewPassword);
+            if (result.Succeeded)
+            {
+                NotificationService.Notify(NotificationSeverity.Success, "Success", "Password changed successfully.");
+                PasswordInput = new(); // Reset form
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", string.Join(", ", result.Errors.Select(e => e.Description)));
+            }
+        }
+    }
+}

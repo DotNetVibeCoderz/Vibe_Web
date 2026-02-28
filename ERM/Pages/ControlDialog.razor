@@ -1,0 +1,48 @@
+@using ERM.Data
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Control" Submit="@((Control args) => { Submit(args); })">
+    <div class="row">
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Name" />
+            <RadzenTextBox @bind-Value="Control.Name" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Description" />
+            <RadzenTextArea @bind-Value="Control.Description" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Type" />
+            <RadzenDropDown @bind-Value="Control.Type" Data="@types" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Effectiveness" />
+            <RadzenDropDown @bind-Value="Control.Effectiveness" Data="@effectivenessLevels" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Associated Risk" />
+            <RadzenDropDown @bind-Value="Control.RiskRegisterId" Data="@Risks" TextProperty="Title" ValueProperty="Id" Class="w-100" AllowClear="true" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 text-right">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" ButtonStyle="ButtonStyle.Primary" />
+            <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Control Control { get; set; }
+    [Parameter] public List<RiskRegister> Risks { get; set; }
+
+    List<string> types = new() { "Preventive", "Detective", "Corrective" };
+    List<string> effectivenessLevels = new() { "High", "Medium", "Low" };
+
+    void Submit(Control control)
+    {
+        DialogService.Close(control);
+    }
+}

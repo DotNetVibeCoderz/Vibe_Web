@@ -1,0 +1,87 @@
+@page "/controls"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>Control Management</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Control Management</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Control" Click="@AddControl" ButtonStyle="ButtonStyle.Primary" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@controls" TItem="Control" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="Control" Property="Name" Title="Control Name" />
+        <RadzenDataGridColumn TItem="Control" Property="Type" Title="Type" />
+        <RadzenDataGridColumn TItem="Control" Property="Effectiveness" Title="Effectiveness">
+            <Template Context="data">
+                <RadzenBadge BadgeStyle="@(data.Effectiveness == "Low" ? BadgeStyle.Danger : (data.Effectiveness == "Medium" ? BadgeStyle.Warning : BadgeStyle.Success))" Text="@data.Effectiveness" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Control" Property="RiskRegister.Title" Title="Associated Risk" />
+        <RadzenDataGridColumn TItem="Control" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditControl(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeleteControl(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<Control> grid;
+    IEnumerable<Control> controls;
+    List<RiskRegister> risks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        risks = await DbContext.RiskRegisters.ToListAsync();
+    }
+
+    async Task LoadData()
+    {
+        controls = await DbContext.Controls.Include(c => c.RiskRegister).ToListAsync();
+    }
+
+    async Task AddControl()
+    {
+        var result = await DialogService.OpenAsync<ControlDialog>("Add Control", new Dictionary<string, object> { { "Control", new Control() }, { "Risks", risks } });
+        if (result != null)
+        {
+            DbContext.Controls.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "Control added successfully");
+        }
+    }
+
+    async Task EditControl(Control control)
+    {
+        var result = await DialogService.OpenAsync<ControlDialog>("Edit Control", new Dictionary<string, object> { { "Control", control }, { "Risks", risks } });
+        if (result != null)
+        {
+            DbContext.Controls.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "Control updated successfully");
+        }
+    }
+
+    async Task DeleteControl(Control control)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Control", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.Controls.Remove(control);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Control deleted");
+        }
+    }
+}

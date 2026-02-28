@@ -1,0 +1,76 @@
+@page "/analytics"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Advanced Analytics & Predictive KRI</PageTitle>
+
+<h1>Advanced Analytics (Predictive & KRI)</h1>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <RadzenCard>
+            <h4>Predictive Risk Trend (AI Model Mock)</h4>
+            <RadzenChart>
+                <RadzenLineSeries Data="@trendData" CategoryProperty="Month" Title="Predicted Incidents" ValueProperty="PredictedValue">
+                    <RadzenMarkers MarkerType="MarkerType.Circle" />
+                </RadzenLineSeries>
+                <RadzenLineSeries Data="@trendData" CategoryProperty="Month" Title="Actual Incidents" ValueProperty="ActualValue">
+                    <RadzenMarkers MarkerType="MarkerType.Square" />
+                </RadzenLineSeries>
+                <RadzenCategoryAxis Padding="20" />
+                <RadzenValueAxis>
+                    <RadzenGridLines Visible="true" />
+                    <RadzenAxisTitle Text="Number of Incidents" />
+                </RadzenValueAxis>
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+    
+    <div class="col-md-6">
+        <RadzenCard>
+            <h4>Controls Effectiveness vs Risks</h4>
+            <RadzenChart>
+                <RadzenColumnSeries Data="@controlData" CategoryProperty="Category" Title="High Effect" ValueProperty="HighEffect" />
+                <RadzenColumnSeries Data="@controlData" CategoryProperty="Category" Title="Low Effect" ValueProperty="LowEffect" />
+                <RadzenColumnOptions Radius="5" />
+                <RadzenCategoryAxis Padding="20" />
+                <RadzenValueAxis>
+                    <RadzenGridLines Visible="true" />
+                    <RadzenAxisTitle Text="Control Count" />
+                </RadzenValueAxis>
+            </RadzenChart>
+        </RadzenCard>
+    </div>
+</div>
+
+@code {
+    class TrendItem { public string Month { get; set; } = ""; public int ActualValue { get; set; } public int PredictedValue { get; set; } }
+    class ControlEffectItem { public string Category { get; set; } = ""; public int HighEffect { get; set; } public int LowEffect { get; set; } }
+
+    List<TrendItem> trendData = new();
+    List<ControlEffectItem> controlData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Mock Predictive Data
+        trendData = new List<TrendItem>
+        {
+            new TrendItem { Month = "Jan", ActualValue = 5, PredictedValue = 4 },
+            new TrendItem { Month = "Feb", ActualValue = 8, PredictedValue = 7 },
+            new TrendItem { Month = "Mar", ActualValue = 6, PredictedValue = 6 },
+            new TrendItem { Month = "Apr", ActualValue = 0, PredictedValue = 5 }, // future prediction
+            new TrendItem { Month = "May", ActualValue = 0, PredictedValue = 3 },
+            new TrendItem { Month = "Jun", ActualValue = 0, PredictedValue = 2 },
+        };
+
+        // Query Control stats
+        var controls = await DbContext.Controls.Include(c => c.RiskRegister).ToListAsync();
+        controlData = controls.GroupBy(c => c.RiskRegister?.Category ?? "Unknown")
+            .Select(g => new ControlEffectItem {
+                Category = g.Key,
+                HighEffect = g.Count(c => c.Effectiveness == "High"),
+                LowEffect = g.Count(c => c.Effectiveness == "Low" || c.Effectiveness == "Medium")
+            }).ToList();
+    }
+}

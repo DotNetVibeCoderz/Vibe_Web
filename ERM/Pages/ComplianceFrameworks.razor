@@ -1,0 +1,81 @@
+@page "/compliance-frameworks"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>Compliance Frameworks</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Compliance Frameworks</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Framework" Click="@AddFramework" ButtonStyle="ButtonStyle.Primary" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@frameworks" TItem="ComplianceFramework" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="ComplianceFramework" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="ComplianceFramework" Property="Version" Title="Version" />
+        <RadzenDataGridColumn TItem="ComplianceFramework" Property="Description" Title="Description" />
+        <RadzenDataGridColumn TItem="ComplianceFramework" Property="LastUpdated" Title="Last Updated" FormatString="{0:d}" />
+        <RadzenDataGridColumn TItem="ComplianceFramework" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditFramework(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeleteFramework(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<ComplianceFramework> grid = default!;
+    IEnumerable<ComplianceFramework> frameworks = new List<ComplianceFramework>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        frameworks = await DbContext.ComplianceFrameworks.ToListAsync();
+    }
+
+    async Task AddFramework()
+    {
+        var result = await DialogService.OpenAsync<ComplianceFrameworkDialog>("Add Framework", new Dictionary<string, object> { { "Framework", new ComplianceFramework() } });
+        if (result != null)
+        {
+            DbContext.ComplianceFrameworks.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "Framework added successfully");
+        }
+    }
+
+    async Task EditFramework(ComplianceFramework framework)
+    {
+        var result = await DialogService.OpenAsync<ComplianceFrameworkDialog>("Edit Framework", new Dictionary<string, object> { { "Framework", framework } });
+        if (result != null)
+        {
+            DbContext.ComplianceFrameworks.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "Framework updated successfully");
+        }
+    }
+
+    async Task DeleteFramework(ComplianceFramework framework)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Framework", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.ComplianceFrameworks.Remove(framework);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Framework deleted");
+        }
+    }
+}

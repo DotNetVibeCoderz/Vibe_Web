@@ -1,0 +1,83 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<RadzenDialog />
+<RadzenNotification />
+<RadzenTooltip />
+<RadzenContextMenu />
+
+<RadzenLayout Style="grid-template-areas: 'rz-sidebar rz-header' 'rz-sidebar rz-body'">
+    <RadzenHeader>
+        <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center">
+                <RadzenSidebarToggle Click="@(() => sidebarExpanded = !sidebarExpanded)" />
+                <RadzenLabel Text="Enterprise Risk Management (ERM)" Style="margin-left: 10px; font-weight: bold; font-size: 1.5rem;" />
+            </div>
+            <div class="d-flex align-items-center">
+                <!-- Theme Toggle Button -->
+                <RadzenButton Icon="@(isDarkMode ? "light_mode" : "dark_mode")" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Text" Click="@ToggleTheme" Class="rz-mr-4" title="Toggle Theme" />
+
+                <AuthorizeView>
+                    <Authorized>
+                        <RadzenButton Text="Profile" Click="@(() => NavigationManager.NavigateTo("Identity/Account/Manage"))" ButtonStyle="ButtonStyle.Light" Class="rz-mr-2" />
+                        <form method="post" action="/api/auth/logout" style="display:inline;">
+                            <button type="submit" class="btn btn-danger">Logout</button>
+                        </form>
+                    </Authorized>
+                    <NotAuthorized>
+                        <RadzenButton Text="Login" Click="@(() => NavigationManager.NavigateTo("Identity/Account/Login"))" ButtonStyle="ButtonStyle.Primary" />
+                        <RadzenButton Text="Register" Click="@(() => NavigationManager.NavigateTo("Identity/Account/Register"))" ButtonStyle="ButtonStyle.Secondary" Class="rz-ml-2" />
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </RadzenHeader>
+    <RadzenSidebar @bind-Expanded="@sidebarExpanded">
+        <RadzenPanelMenu>
+            <RadzenPanelMenuItem Text="Dashboard" Path="/" Icon="dashboard" />
+            <AuthorizeView>
+                <Authorized>
+                    <RadzenPanelMenuItem Text="Risk Management" Icon="warning">
+                        <RadzenPanelMenuItem Text="Risk Register" Path="/risks" Icon="list" />
+                        <RadzenPanelMenuItem Text="Scenario Analysis" Path="/scenarios" Icon="science" />
+                        <RadzenPanelMenuItem Text="Advanced Analytics" Path="/analytics" Icon="insights" />
+                    </RadzenPanelMenuItem>
+                    <RadzenPanelMenuItem Text="Mitigation & Control" Icon="security">
+                        <RadzenPanelMenuItem Text="Controls" Path="/controls" Icon="verified_user" />
+                        <RadzenPanelMenuItem Text="Incident Management" Path="/incidents" Icon="report_problem" />
+                        <RadzenPanelMenuItem Text="BCP Plans" Path="/bcp-plans" Icon="restore_page" />
+                    </RadzenPanelMenuItem>
+                    <RadzenPanelMenuItem Text="Master Data" Icon="dns">
+                        <RadzenPanelMenuItem Text="Departments" Path="/departments" Icon="business" />
+                        <RadzenPanelMenuItem Text="Vendors" Path="/vendors" Icon="store" />
+                        <RadzenPanelMenuItem Text="Compliance Frameworks" Path="/compliance-frameworks" Icon="gavel" />
+                    </RadzenPanelMenuItem>
+                    <RadzenPanelMenuItem Text="System Admin" Icon="settings">
+                        <RadzenPanelMenuItem Text="User Management" Path="/user-management" Icon="people" />
+                        <RadzenPanelMenuItem Text="Audit Logs" Path="/audit-logs" Icon="history" />
+                    </RadzenPanelMenuItem>
+                </Authorized>
+            </AuthorizeView>
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+    <RadzenBody>
+        <div class="p-4">
+            @Body
+        </div>
+    </RadzenBody>
+</RadzenLayout>
+
+@code {
+    bool sidebarExpanded = true;
+    bool isDarkMode = false;
+
+    async Task ToggleTheme()
+    {
+        isDarkMode = !isDarkMode;
+        var theme = isDarkMode ? "dark" : "standard";
+        await JSRuntime.InvokeVoidAsync("setTheme", theme);
+    }
+}

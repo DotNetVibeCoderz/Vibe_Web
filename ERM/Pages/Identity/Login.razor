@@ -1,0 +1,57 @@
+@page "/Identity/Account/Login"
+@using Microsoft.AspNetCore.WebUtilities
+@inject NavigationManager NavigationManager
+@attribute [AllowAnonymous]
+
+<PageTitle>Log in</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-4">
+        <RadzenCard class="rz-mt-4 rz-p-4">
+            <h3 class="text-center mb-4">Log in to ERM</h3>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Danger" Text="@errorMessage" />
+            }
+
+            <form method="post" action="/api/auth/login">
+                <div class="mb-3">
+                    <RadzenLabel Text="Email" />
+                    <input name="email" type="email" class="form-control w-100" required />
+                </div>
+
+                <div class="mb-3">
+                    <RadzenLabel Text="Password" />
+                    <input name="password" type="password" class="form-control w-100" required />
+                </div>
+
+                <div class="mb-3">
+                    <input type="checkbox" name="rememberMe" value="true" />
+                    <RadzenLabel Text="Remember me" class="rz-ml-2" />
+                </div>
+
+                <div class="d-grid mt-4">
+                    <button type="submit" class="btn btn-primary w-100 py-2">Log in</button>
+                </div>
+            </form>
+            
+            <div class="text-center mt-3">
+                <a href="/Identity/Account/Register">Register as a new user</a>
+            </div>
+        </RadzenCard>
+    </div>
+</div>
+
+@code {
+    private string errorMessage = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("error", out var error))
+        {
+            errorMessage = error;
+        }
+    }
+}

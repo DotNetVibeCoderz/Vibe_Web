@@ -1,0 +1,41 @@
+@using ERM.Data
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Vendor" Submit="@((Vendor args) => { Submit(args); })">
+    <div class="row">
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Name" />
+            <RadzenTextBox @bind-Value="Vendor.Name" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Contact Person" />
+            <RadzenTextBox @bind-Value="Vendor.ContactPerson" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Risk Level" />
+            <RadzenDropDown @bind-Value="Vendor.RiskLevel" Data="@riskLevels" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Last Evaluation" />
+            <RadzenDatePicker @bind-Value="Vendor.LastEvaluation" Class="w-100" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 text-right">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" ButtonStyle="ButtonStyle.Primary" />
+            <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Vendor Vendor { get; set; }
+    List<string> riskLevels = new() { "Low", "Medium", "High" };
+
+    void Submit(Vendor vendor)
+    {
+        DialogService.Close(vendor);
+    }
+}

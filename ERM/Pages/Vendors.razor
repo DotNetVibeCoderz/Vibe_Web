@@ -1,0 +1,101 @@
+@page "/vendors"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject ERM.Services.ExportService ExportService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Vendor Management</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Vendor Management</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Vendor" Click="@AddVendor" ButtonStyle="ButtonStyle.Primary" />
+        <RadzenButton Icon="file_download" Text="Export Excel" Click="@ExportExcel" ButtonStyle="ButtonStyle.Success" Class="ml-2" />
+        <RadzenButton Icon="file_download" Text="Export CSV" Click="@ExportCsv" ButtonStyle="ButtonStyle.Info" Class="ml-2" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@vendors" TItem="Vendor" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="Vendor" Property="Name" Title="Vendor Name" />
+        <RadzenDataGridColumn TItem="Vendor" Property="ContactPerson" Title="Contact Person" />
+        <RadzenDataGridColumn TItem="Vendor" Property="RiskLevel" Title="Risk Level">
+            <Template Context="data">
+                <RadzenBadge BadgeStyle="@(data.RiskLevel == "High" ? BadgeStyle.Danger : (data.RiskLevel == "Medium" ? BadgeStyle.Warning : BadgeStyle.Success))" Text="@data.RiskLevel" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Vendor" Property="LastEvaluation" Title="Last Evaluation" FormatString="{0:d}" />
+        <RadzenDataGridColumn TItem="Vendor" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditVendor(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeleteVendor(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<Vendor> grid;
+    IEnumerable<Vendor> vendors;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        vendors = await DbContext.Vendors.ToListAsync();
+    }
+
+    async Task AddVendor()
+    {
+        var result = await DialogService.OpenAsync<VendorDialog>("Add Vendor", new Dictionary<string, object> { { "Vendor", new Vendor { LastEvaluation = DateTime.UtcNow } } });
+        if (result != null)
+        {
+            DbContext.Vendors.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "Vendor added successfully");
+        }
+    }
+
+    async Task EditVendor(Vendor vendor)
+    {
+        var result = await DialogService.OpenAsync<VendorDialog>("Edit Vendor", new Dictionary<string, object> { { "Vendor", vendor } });
+        if (result != null)
+        {
+            DbContext.Vendors.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "Vendor updated successfully");
+        }
+    }
+
+    async Task DeleteVendor(Vendor vendor)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Vendor", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.Vendors.Remove(vendor);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Vendor deleted");
+        }
+    }
+
+    async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(vendors, "Vendors");
+        await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", "Vendors.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+
+    async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(vendors);
+        await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", "Vendors.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

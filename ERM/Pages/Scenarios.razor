@@ -1,0 +1,276 @@
+@page "/scenarios"
+@using BlazorMonaco
+@using BlazorMonaco.Editor
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.CodeAnalysis.CSharp.Scripting
+@using Microsoft.CodeAnalysis.Scripting
+@using System.Text
+@using ERM.Services
+@using System.IO
+@using System.Reflection
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject IFileStorageService FileStorageService
+
+<PageTitle>Scenario Analysis & Stress Testing</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Scenario Analysis (Interactive Notebook)</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="New Notebook" Click="@OpenTemplateDialog" ButtonStyle="ButtonStyle.Primary" />
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <RadzenListBox @bind-Value="selectedNotebookId" Data="@notebooks" TextProperty="Title" ValueProperty="Id" Style="height: 600px; width: 100%;" Change="@OnNotebookSelected" />
+    </div>
+    <div class="col-md-9">
+        @if (selectedNotebook != null)
+        {
+            <div class="mb-2 d-flex justify-content-between">
+                <div>
+                    <h4 style="display:inline; margin-right: 10px;">@selectedNotebook.Title</h4>
+                    <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@RenameNotebook" title="Rename" />
+                    <br />
+                    <span class="text-muted" style="font-size: 0.9em;">Category: @selectedNotebook.Category</span>
+                </div>
+                <div>
+                    <RadzenButton Icon="save" Text="Save" Click="@SaveNotebook" ButtonStyle="ButtonStyle.Success" />
+                    <RadzenButton Icon="play_arrow" Text="Run" Click="@RunNotebook" ButtonStyle="ButtonStyle.Secondary" Class="ml-2" />
+                    <RadzenButton Icon="delete" Text="Delete" Click="@DeleteNotebook" ButtonStyle="ButtonStyle.Danger" Class="ml-2" />
+                </div>
+            </div>
+            
+            <div style="height: 450px; border: 1px solid #ccc; display: block; width: 100%;">
+                <StandaloneCodeEditor @ref="editor" Id="notebook-editor" ConstructionOptions="EditorConstructionOptions" />
+            </div>
+            
+            <div class="mt-3">
+                <h5>Output:</h5>
+                <RadzenTextArea @bind-Value="output" Style="width:100%; height:200px; font-family: monospace;" ReadOnly="true" />
+            </div>
+        }
+        else
+        {
+            <p>Select a notebook to edit or create a new one from templates.</p>
+        }
+    </div>
+</div>
+
+@code {
+    List<ScenarioNotebook> notebooks = new();
+    string selectedNotebookId = string.Empty;
+    ScenarioNotebook? selectedNotebook;
+    StandaloneCodeEditor? editor;
+    string output = "Result will be shown here...";
+
+    public class ScriptGlobals
+    {
+        public Action<string> Print { get; set; } = delegate { };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNotebooks();
+    }
+
+    async Task LoadNotebooks()
+    {
+        notebooks = await DbContext.ScenarioNotebooks.ToListAsync();
+        if (notebooks.Any())
+        {
+            if (string.IsNullOrEmpty(selectedNotebookId) || !notebooks.Any(n => n.Id == selectedNotebookId))
+            {
+                selectedNotebookId = notebooks.First().Id;
+            }
+            await OnNotebookSelected(selectedNotebookId);
+        }
+        else
+        {
+            selectedNotebook = null;
+            selectedNotebookId = string.Empty;
+        }
+    }
+
+    StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+        {
+            Language = "csharp",
+            Value = "Print(\"Hello Risk Analysis\");",
+            Theme = "vs-dark",
+            AutomaticLayout = true
+        };
+    }
+
+    async Task OnNotebookSelected(object id)
+    {
+        if (id == null) return;
+        
+        selectedNotebook = notebooks.FirstOrDefault(n => n.Id == id.ToString());
+        if (editor != null && selectedNotebook != null)
+        {
+            string codeContent = "";
+            if (!string.IsNullOrEmpty(selectedNotebook.FilePath))
+            {
+                var fileBytes = await FileStorageService.GetFileAsync(selectedNotebook.FilePath);
+                if (fileBytes != null)
+                {
+                    codeContent = Encoding.UTF8.GetString(fileBytes);
+                }
+            }
+            
+            await editor.SetValue(codeContent);
+            output = "Ready.";
+        }
+    }
+
+    async Task OpenTemplateDialog()
+    {
+        var templates = new List<string> { "Operational", "Financial", "Compliance", "Cyber", "Blank" };
+        var result = await DialogService.OpenAsync("Select Notebook Template", ds => 
+            @<div class="p-3">
+                <p>Choose a template for your risk simulation:</p>
+                @foreach(var t in templates)
+                {
+                    <RadzenButton Text="@t" Click="() => ds.Close(t)" ButtonStyle="ButtonStyle.Light" Class="m-1" />
+                }
+            </div>);
+
+        if (result != null)
+        {
+            await CreateNotebookFromTemplate(result.ToString());
+        }
+    }
+
+    async Task CreateNotebookFromTemplate(string templateType)
+    {
+        string defaultCode = "Print(\"Hello Risk Analysis\");";
+        string filePathTemplate = $"NotebookTemplates/{templateType}Template.csx";
+
+        if (templateType != "Blank" && File.Exists(filePathTemplate))
+        {
+            defaultCode = await File.ReadAllTextAsync(filePathTemplate);
+        }
+
+        var nb = new ScenarioNotebook
+        {
+            Id = Guid.NewGuid().ToString(),
+            Title = $"New {templateType} Simulation",
+            Category = templateType == "Blank" ? "Custom" : templateType,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = "user"
+        };
+        
+        var fileName = $"{nb.Id}.csx";
+        var fileBytes = Encoding.UTF8.GetBytes(defaultCode);
+        nb.FilePath = await FileStorageService.SaveFileAsync(fileName, fileBytes);
+
+        DbContext.ScenarioNotebooks.Add(nb);
+        await DbContext.SaveChangesAsync();
+        
+        selectedNotebookId = nb.Id;
+        await LoadNotebooks();
+    }
+
+    async Task RenameNotebook()
+    {
+        if (selectedNotebook == null) return;
+
+        string newName = selectedNotebook.Title;
+
+        var result = await DialogService.OpenAsync("Rename Notebook", ds => 
+            @<div class="p-3">
+                <RadzenLabel Text="New Title:" Class="mb-2" />
+                <RadzenTextBox @bind-Value="newName" Class="w-100 mb-3" />
+                <div class="text-right">
+                    <RadzenButton Text="Save" Click="() => ds.Close(newName)" ButtonStyle="ButtonStyle.Primary" />
+                    <RadzenButton Text="Cancel" Click="() => ds.Close(null)" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+                </div>
+            </div>);
+
+        if (result != null && !string.IsNullOrWhiteSpace(result.ToString()))
+        {
+            selectedNotebook.Title = result.ToString()!;
+            DbContext.ScenarioNotebooks.Update(selectedNotebook);
+            await DbContext.SaveChangesAsync();
+            
+            NotificationService.Notify(NotificationSeverity.Success, "Renamed", "Notebook renamed successfully.");
+            await LoadNotebooks();
+        }
+    }
+
+    async Task SaveNotebook()
+    {
+        if (editor != null && selectedNotebook != null)
+        {
+            var code = await editor.GetValue();
+            var fileName = $"{selectedNotebook.Id}.csx";
+            var fileBytes = Encoding.UTF8.GetBytes(code);
+            var savedPath = await FileStorageService.SaveFileAsync(fileName, fileBytes);
+            
+            selectedNotebook.FilePath = savedPath;
+            DbContext.ScenarioNotebooks.Update(selectedNotebook);
+            await DbContext.SaveChangesAsync();
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved", "Notebook saved successfully");
+            await LoadNotebooks(); // Refresh to update list if title changed
+        }
+    }
+
+    async Task DeleteNotebook()
+    {
+        if (selectedNotebook != null)
+        {
+            var confirm = await DialogService.Confirm($"Are you sure you want to delete '{selectedNotebook.Title}'?", "Delete Notebook", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+            if (confirm == true)
+            {
+                DbContext.ScenarioNotebooks.Remove(selectedNotebook);
+                await DbContext.SaveChangesAsync();
+                
+                NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Notebook deleted successfully");
+                
+                selectedNotebookId = string.Empty;
+                await LoadNotebooks();
+            }
+        }
+    }
+
+    async Task RunNotebook()
+    {
+        if (editor != null)
+        {
+            output = "Running simulation...\n";
+            var code = await editor.GetValue();
+            
+            var outputLog = new StringBuilder();
+            var globals = new ScriptGlobals { Print = s => outputLog.AppendLine(s) };
+            
+            var options = ScriptOptions.Default
+                .WithReferences(
+                    Assembly.GetAssembly(typeof(System.Object)),     
+                    Assembly.GetAssembly(typeof(System.Linq.Enumerable)), 
+                    Assembly.GetAssembly(typeof(System.Collections.Generic.List<>)) 
+                )
+                .WithImports("System", "System.Math", "System.Collections.Generic", "System.Linq");
+
+            try
+            {
+                await CSharpScript.EvaluateAsync(code, options, globals);
+                output += "Compilation & Execution successful.\n";
+                output += "==================================================\n";
+                output += outputLog.ToString();
+                output += "==================================================\n";
+                output += "Simulation completed.";
+            }
+            catch (Exception ex)
+            {
+                output += "Compilation failed.\n";
+                output += "Error: " + ex.Message;
+            }
+        }
+    }
+}

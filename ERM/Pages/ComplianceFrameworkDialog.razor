@@ -1,0 +1,40 @@
+@using ERM.Data
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Framework" Submit="@((ComplianceFramework args) => { Submit(args); })">
+    <div class="row">
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Name (e.g. ISO 27001)" />
+            <RadzenTextBox @bind-Value="Framework.Name" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Version/Year" />
+            <RadzenTextBox @bind-Value="Framework.Version" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Description" />
+            <RadzenTextArea @bind-Value="Framework.Description" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Last Updated" />
+            <RadzenDatePicker @bind-Value="Framework.LastUpdated" Class="w-100" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 text-right">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" ButtonStyle="ButtonStyle.Primary" />
+            <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public ComplianceFramework Framework { get; set; } = new();
+
+    void Submit(ComplianceFramework framework)
+    {
+        DialogService.Close(framework);
+    }
+}

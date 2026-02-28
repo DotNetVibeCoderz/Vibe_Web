@@ -1,0 +1,86 @@
+@page "/user-management"
+@using ERM.Data
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>User Management</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>User Management</h1>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@users" TItem="UserViewModel" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="UserViewModel" Property="Email" Title="Email" />
+        <RadzenDataGridColumn TItem="UserViewModel" Property="FullName" Title="Full Name" />
+        <RadzenDataGridColumn TItem="UserViewModel" Property="DepartmentName" Title="Department" />
+        <RadzenDataGridColumn TItem="UserViewModel" Property="Role" Title="Role" />
+        <RadzenDataGridColumn TItem="UserViewModel" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditUser(data))" @onclick:stopPropagation="true" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    public class UserViewModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string DepartmentName { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+    }
+
+    RadzenDataGrid<UserViewModel> grid = default!;
+    List<UserViewModel> users = new();
+    List<string> roles = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        roles = await RoleManager.Roles.Select(r => r.Name).ToListAsync();
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        var appUsers = await UserManager.Users.Include(u => u.Department).ToListAsync();
+        users.Clear();
+        foreach(var u in appUsers)
+        {
+            var userRoles = await UserManager.GetRolesAsync(u);
+            users.Add(new UserViewModel
+            {
+                Id = u.Id,
+                Email = u.Email ?? "",
+                FullName = u.FullName ?? "",
+                DepartmentName = u.Department?.Name ?? "None",
+                Role = userRoles.FirstOrDefault() ?? "None"
+            });
+        }
+    }
+
+    async Task EditUser(UserViewModel userView)
+    {
+        var result = await DialogService.OpenAsync<UserDialog>("Edit User Role", new Dictionary<string, object> { { "UserView", userView }, { "Roles", roles } });
+        if (result != null)
+        {
+            var newRole = result.ToString();
+            var appUser = await UserManager.FindByIdAsync(userView.Id);
+            if (appUser != null && newRole != null)
+            {
+                var currentRoles = await UserManager.GetRolesAsync(appUser);
+                await UserManager.RemoveFromRolesAsync(appUser, currentRoles);
+                await UserManager.AddToRoleAsync(appUser, newRole);
+                
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "User role updated successfully");
+                await LoadData();
+            }
+        }
+    }
+}

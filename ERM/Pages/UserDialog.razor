@@ -1,0 +1,37 @@
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<div class="row">
+    <div class="col-md-12 mb-3">
+        <RadzenLabel Text="Email" />
+        <RadzenTextBox Value="@UserView.Email" Class="w-100" Disabled="true" />
+    </div>
+    <div class="col-md-12 mb-3">
+        <RadzenLabel Text="Role" />
+        <RadzenDropDown @bind-Value="selectedRole" Data="@Roles" Class="w-100" />
+    </div>
+</div>
+<div class="row mt-3">
+    <div class="col-md-12 text-right">
+        <RadzenButton Text="Save" Click="Save" ButtonStyle="ButtonStyle.Primary" />
+        <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public dynamic UserView { get; set; } = default!;
+    [Parameter] public List<string> Roles { get; set; } = new();
+
+    string selectedRole = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        selectedRole = UserView.Role;
+    }
+
+    void Save()
+    {
+        DialogService.Close(selectedRole);
+    }
+}

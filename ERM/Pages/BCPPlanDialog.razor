@@ -1,0 +1,47 @@
+@using ERM.Data
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Plan" Submit="@((BusinessContinuityPlan args) => { Submit(args); })">
+    <div class="row">
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Title" />
+            <RadzenTextBox @bind-Value="Plan.Title" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Description" />
+            <RadzenTextArea @bind-Value="Plan.Description" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Department" />
+            <RadzenDropDown @bind-Value="Plan.DepartmentId" Data="@Departments" TextProperty="Name" ValueProperty="Id" Class="w-100" AllowClear="true" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Last Tested Date" />
+            <RadzenDatePicker @bind-Value="Plan.LastTested" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Status" />
+            <RadzenDropDown @bind-Value="Plan.Status" Data="@statuses" Class="w-100" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 text-right">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" ButtonStyle="ButtonStyle.Primary" />
+            <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public BusinessContinuityPlan Plan { get; set; } = new();
+    [Parameter] public List<Department> Departments { get; set; } = new();
+
+    List<string> statuses = new() { "Draft", "Active", "Archived" };
+
+    void Submit(BusinessContinuityPlan plan)
+    {
+        DialogService.Close(plan);
+    }
+}

@@ -1,0 +1,87 @@
+@page "/bcp-plans"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>Business Continuity Plans</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Business Continuity Plans</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Plan" Click="@AddPlan" ButtonStyle="ButtonStyle.Primary" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@plans" TItem="BusinessContinuityPlan" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="BusinessContinuityPlan" Property="Title" Title="Plan Title" />
+        <RadzenDataGridColumn TItem="BusinessContinuityPlan" Property="Department.Name" Title="Department" />
+        <RadzenDataGridColumn TItem="BusinessContinuityPlan" Property="LastTested" Title="Last Tested" FormatString="{0:d}" />
+        <RadzenDataGridColumn TItem="BusinessContinuityPlan" Property="Status" Title="Status">
+            <Template Context="data">
+                <RadzenBadge BadgeStyle="@(data.Status == "Draft" ? BadgeStyle.Warning : (data.Status == "Active" ? BadgeStyle.Success : BadgeStyle.Light))" Text="@data.Status" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="BusinessContinuityPlan" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditPlan(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeletePlan(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<BusinessContinuityPlan> grid = default!;
+    IEnumerable<BusinessContinuityPlan> plans = new List<BusinessContinuityPlan>();
+    List<Department> departments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        departments = await DbContext.Departments.ToListAsync();
+    }
+
+    async Task LoadData()
+    {
+        plans = await DbContext.BusinessContinuityPlans.Include(p => p.Department).ToListAsync();
+    }
+
+    async Task AddPlan()
+    {
+        var result = await DialogService.OpenAsync<BCPPlanDialog>("Add BCP Plan", new Dictionary<string, object> { { "Plan", new BusinessContinuityPlan() }, { "Departments", departments } });
+        if (result != null)
+        {
+            DbContext.BusinessContinuityPlans.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "BCP Plan added successfully");
+        }
+    }
+
+    async Task EditPlan(BusinessContinuityPlan plan)
+    {
+        var result = await DialogService.OpenAsync<BCPPlanDialog>("Edit BCP Plan", new Dictionary<string, object> { { "Plan", plan }, { "Departments", departments } });
+        if (result != null)
+        {
+            DbContext.BusinessContinuityPlans.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "BCP Plan updated successfully");
+        }
+    }
+
+    async Task DeletePlan(BusinessContinuityPlan plan)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Plan", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.BusinessContinuityPlans.Remove(plan);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "BCP Plan deleted");
+        }
+    }
+}

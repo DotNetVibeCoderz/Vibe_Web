@@ -1,0 +1,56 @@
+@using ERM.Data
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@Risk" Submit="@((RiskRegister args) => { Submit(args); })">
+    <div class="row">
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Title" />
+            <RadzenTextBox @bind-Value="Risk.Title" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Category" />
+            <RadzenDropDown @bind-Value="Risk.Category" Data="@categories" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Description" />
+            <RadzenTextArea @bind-Value="Risk.Description" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Probability (1-5)" />
+            <RadzenNumeric @bind-Value="Risk.Probability" Min="1" Max="5" Class="w-100" />
+        </div>
+        <div class="col-md-6 mb-3">
+            <RadzenLabel Text="Impact (1-5)" />
+            <RadzenNumeric @bind-Value="Risk.Impact" Min="1" Max="5" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Department" />
+            <RadzenDropDown @bind-Value="Risk.DepartmentId" Data="@Departments" TextProperty="Name" ValueProperty="Id" Class="w-100" />
+        </div>
+        <div class="col-md-12 mb-3">
+            <RadzenLabel Text="Status" />
+            <RadzenDropDown @bind-Value="Risk.Status" Data="@statuses" Class="w-100" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 text-right">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" ButtonStyle="ButtonStyle.Primary" />
+            <RadzenButton Text="Cancel" Click="@(() => DialogService.Close(null))" ButtonStyle="ButtonStyle.Light" Class="ml-2" />
+        </div>
+    </div>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public RiskRegister Risk { get; set; }
+    [Parameter] public List<Department> Departments { get; set; }
+
+    List<string> categories = new() { "Operational", "Financial", "Compliance", "Cyber" };
+    List<string> statuses = new() { "Open", "Mitigated", "Closed" };
+
+    void Submit(RiskRegister risk)
+    {
+        DialogService.Close(risk);
+    }
+}

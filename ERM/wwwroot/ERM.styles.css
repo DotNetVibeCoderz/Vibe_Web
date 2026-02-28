@@ -1,0 +1,59 @@
+/* ERM Component Specific Scoped Styles */
+
+/* Make sure Sidebar gets full height */
+.rz-sidebar {
+    height: 100vh;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+
+.rz-header {
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+/* Card customizations for Analytics & Dashboard */
+.rz-card {
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    transition: transform 0.2s ease-in-out;
+}
+
+.rz-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+}
+
+/* Notebook Editor Fix: Monaco requires a strict container height */
+#notebook-editor {
+    height: 100% !important;
+    width: 100% !important;
+    min-height: 450px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.monaco-editor {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Fix for datagrid row hover */
+.rz-datatable-data td {
+    padding: 0.5rem;
+}
+
+.rz-datatable-even>td {
+    background-color: #fcfcfc;
+}
+
+.rz-datatable-odd>td {
+    background-color: #ffffff;
+}
+
+/* Make text area monospace for output */
+.output-console textarea {
+    font-family: 'Consolas', 'Courier New', monospace;
+    background-color: #1e1e1e !important;
+    color: #00ff00 !important;
+    font-size: 14px;
+}

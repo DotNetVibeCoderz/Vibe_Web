@@ -1,0 +1,106 @@
+@page "/risks"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject ERM.Services.ExportService ExportService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Risk Register</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Risk Register</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Risk" Click="@AddRisk" ButtonStyle="ButtonStyle.Primary" />
+        <RadzenButton Icon="file_download" Text="Export Excel" Click="@ExportExcel" ButtonStyle="ButtonStyle.Success" Class="ml-2" />
+        <RadzenButton Icon="file_download" Text="Export CSV" Click="@ExportCsv" ButtonStyle="ButtonStyle.Info" Class="ml-2" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@risks" TItem="RiskRegister" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Title" Title="Title" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Category" Title="Category" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Department.Name" Title="Department" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Probability" Title="Probability" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Impact" Title="Impact" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="RiskScore" Title="Risk Score" />
+        <RadzenDataGridColumn TItem="RiskRegister" Property="Status" Title="Status">
+            <Template Context="data">
+                <RadzenBadge BadgeStyle="@(data.Status == "Open" ? BadgeStyle.Danger : (data.Status == "Mitigated" ? BadgeStyle.Warning : BadgeStyle.Success))" Text="@data.Status" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RiskRegister" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditRisk(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeleteRisk(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<RiskRegister> grid;
+    IEnumerable<RiskRegister> risks;
+    List<Department> departments;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        departments = await DbContext.Departments.ToListAsync();
+    }
+
+    async Task LoadData()
+    {
+        risks = await DbContext.RiskRegisters.Include(r => r.Department).ToListAsync();
+    }
+
+    async Task AddRisk()
+    {
+        var result = await DialogService.OpenAsync<RiskDialog>("Add Risk", new Dictionary<string, object> { { "Risk", new RiskRegister() }, { "Departments", departments } });
+        if (result != null)
+        {
+            DbContext.RiskRegisters.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "Risk added successfully");
+        }
+    }
+
+    async Task EditRisk(RiskRegister risk)
+    {
+        var result = await DialogService.OpenAsync<RiskDialog>("Edit Risk", new Dictionary<string, object> { { "Risk", risk }, { "Departments", departments } });
+        if (result != null)
+        {
+            DbContext.RiskRegisters.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "Risk updated successfully");
+        }
+    }
+
+    async Task DeleteRisk(RiskRegister risk)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Risk", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.RiskRegisters.Remove(risk);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Risk deleted");
+        }
+    }
+
+    async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(risks, "Risks");
+        await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", "Risks.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+
+    async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(risks);
+        await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", "Risks.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

@@ -1,0 +1,79 @@
+@page "/"
+@using ERM.Data
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1>Dashboard</h1>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="row">
+            <div class="col-md-3">
+                <RadzenCard class="rz-text-align-center rz-mt-4">
+                    <h3>Open Risks</h3>
+                    <h2>@openRisks</h2>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="rz-text-align-center rz-mt-4">
+                    <h3>Total Incidents</h3>
+                    <h2>@totalIncidents</h2>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="rz-text-align-center rz-mt-4">
+                    <h3>Total Departments</h3>
+                    <h2>@totalDepartments</h2>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="rz-text-align-center rz-mt-4">
+                    <h3>Vendors</h3>
+                    <h2>@totalVendors</h2>
+                </RadzenCard>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <RadzenChart>
+                    <RadzenDonutSeries Data="@riskCategories" CategoryProperty="Category" ValueProperty="Count">
+                        <TitleTemplate>
+                            <div class="rz-donut-content">
+                                <div>Risks</div>
+                            </div>
+                        </TitleTemplate>
+                    </RadzenDonutSeries>
+                </RadzenChart>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <p>Welcome to Enterprise Risk Management System. Please login to access your dashboard.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    int openRisks;
+    int totalIncidents;
+    int totalDepartments;
+    int totalVendors;
+
+    class RiskCategoryStat { public string Category { get; set; } public int Count { get; set; } }
+    List<RiskCategoryStat> riskCategories = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        openRisks = await DbContext.RiskRegisters.CountAsync(r => r.Status == "Open");
+        totalIncidents = await DbContext.Incidents.CountAsync();
+        totalDepartments = await DbContext.Departments.CountAsync();
+        totalVendors = await DbContext.Vendors.CountAsync();
+
+        var stats = await DbContext.RiskRegisters
+            .GroupBy(r => r.Category)
+            .Select(g => new RiskCategoryStat { Category = g.Key, Count = g.Count() })
+            .ToListAsync();
+        riskCategories = stats;
+    }
+}

@@ -1,0 +1,85 @@
+@page "/incidents"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<PageTitle>Incident Management</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Incident Management</h1>
+    <div>
+        <RadzenButton Icon="add_circle_outline" Text="Add Incident" Click="@AddIncident" ButtonStyle="ButtonStyle.Primary" />
+    </div>
+</div>
+
+<RadzenDataGrid @ref="grid" Data="@incidents" TItem="Incident" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="Incident" Property="Title" Title="Title" />
+        <RadzenDataGridColumn TItem="Incident" Property="DateOccurred" Title="Date Occurred" FormatString="{0:d}" />
+        <RadzenDataGridColumn TItem="Incident" Property="FinancialImpact" Title="Financial Impact" FormatString="{0:C}" />
+        <RadzenDataGridColumn TItem="Incident" Property="Status" Title="Status">
+            <Template Context="data">
+                <RadzenBadge BadgeStyle="@(data.Status == "Reported" ? BadgeStyle.Danger : (data.Status == "Investigating" ? BadgeStyle.Warning : BadgeStyle.Success))" Text="@data.Status" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Incident" Title="Actions" Sortable="false" Filterable="false" Width="120px">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => EditIncident(data))" @onclick:stopPropagation="true" />
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => DeleteIncident(data))" @onclick:stopPropagation="true" Class="ml-2" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<Incident> grid;
+    IEnumerable<Incident> incidents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    async Task LoadData()
+    {
+        incidents = await DbContext.Incidents.ToListAsync();
+    }
+
+    async Task AddIncident()
+    {
+        var result = await DialogService.OpenAsync<IncidentDialog>("Add Incident", new Dictionary<string, object> { { "Incident", new Incident { DateOccurred = DateTime.UtcNow } } });
+        if (result != null)
+        {
+            DbContext.Incidents.Add(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Success, "Added", "Incident added successfully");
+        }
+    }
+
+    async Task EditIncident(Incident incident)
+    {
+        var result = await DialogService.OpenAsync<IncidentDialog>("Edit Incident", new Dictionary<string, object> { { "Incident", incident } });
+        if (result != null)
+        {
+            DbContext.Incidents.Update(result);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Info, "Updated", "Incident updated successfully");
+        }
+    }
+
+    async Task DeleteIncident(Incident incident)
+    {
+        var confirm = await DialogService.Confirm("Are you sure?", "Delete Incident", new ConfirmOptions() { OkButtonText = "Yes", CancelButtonText = "No" });
+        if (confirm == true)
+        {
+            DbContext.Incidents.Remove(incident);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+            NotificationService.Notify(NotificationSeverity.Error, "Deleted", "Incident deleted");
+        }
+    }
+}

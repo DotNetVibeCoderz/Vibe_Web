@@ -1,0 +1,29 @@
+@page "/audit-logs"
+@using ERM.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Audit Logs</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Audit Logs</h1>
+</div>
+
+<RadzenDataGrid Data="@logs" TItem="AuditLog" AllowFiltering="true" AllowSorting="true" AllowPaging="true" PageSize="15" ColumnWidth="150px">
+    <Columns>
+        <RadzenDataGridColumn TItem="AuditLog" Property="Timestamp" Title="Time" FormatString="{0:g}" Width="150px" />
+        <RadzenDataGridColumn TItem="AuditLog" Property="Action" Title="Action" Width="100px" />
+        <RadzenDataGridColumn TItem="AuditLog" Property="EntityName" Title="Entity" Width="150px" />
+        <RadzenDataGridColumn TItem="AuditLog" Property="UserId" Title="User" />
+        <RadzenDataGridColumn TItem="AuditLog" Property="Details" Title="Details" />
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    IEnumerable<AuditLog> logs = new List<AuditLog>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        logs = await DbContext.AuditLogs.OrderByDescending(l => l.Timestamp).ToListAsync();
+    }
+}
