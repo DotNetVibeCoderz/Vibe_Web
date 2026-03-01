@@ -1,0 +1,115 @@
+@page "/Account/Login"
+@using LMSNet.Data
+@inject NavigationManager NavigationManager
+@layout LMSNet.Components.Layout.MainLayout // We might want a clean layout for auth
+
+<PageTitle>Log In - LMSNet</PageTitle>
+
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900 absolute inset-0 z-50">
+    <div class="max-w-md w-full space-y-8 bg-white dark:bg-gray-800 p-10 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700">
+        <div>
+            <div class="flex justify-center text-blue-600 dark:text-blue-500 mb-4">
+                <i class="fas fa-graduation-cap text-5xl"></i>
+            </div>
+            <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
+                Welcome back
+            </h2>
+            <p class="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
+                Or
+                <a href="/Account/Register" class="font-medium text-blue-600 hover:text-blue-500 transition-colors">
+                    create a new account
+                </a>
+            </p>
+        </div>
+        
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-exclamation-circle text-red-500"></i>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-red-700">
+                            @errorMessage
+                        </p>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* 
+           Gunakan form HTML biasa (POST) agar proses sign-in terjadi lewat request HTTP baru.
+           Ini mencegah error "Headers are read-only" di Blazor Server.
+        *@
+        <form method="post" action="/Account/Login">
+            <div class="rounded-md shadow-sm space-y-4">
+                <div>
+                    <label for="email-address" class="sr-only">Email address</label>
+                    <input id="email-address" name="Email" type="email" autocomplete="email" required class="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm transition-colors" placeholder="Email address" />
+                </div>
+                <div>
+                    <label for="password" class="sr-only">Password</label>
+                    <input id="password" name="Password" type="password" autocomplete="current-password" required class="appearance-none rounded-lg relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm transition-colors" placeholder="Password" />
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between mt-4">
+                <div class="flex items-center">
+                    <input id="remember-me" name="RememberMe" type="checkbox" value="true" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer" />
+                    <label for="remember-me" class="ml-2 block text-sm text-gray-900 dark:text-gray-300 cursor-pointer">
+                        Remember me
+                    </label>
+                </div>
+
+                <div class="text-sm">
+                    <a href="/Account/ForgotPassword" class="font-medium text-blue-600 hover:text-blue-500 transition-colors">
+                        Forgot your password?
+                    </a>
+                </div>
+            </div>
+
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+            <div class="mt-6">
+                <button type="submit" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md transition-colors">
+                    <span class="absolute left-0 inset-y-0 flex items-center pl-3">
+                        <i class="fas fa-lock text-blue-500 group-hover:text-blue-400 transition-colors"></i>
+                    </span>
+                    <span>Sign in</span>
+                </button>
+            </div>
+            
+            <div class="mt-6">
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Demo Credentials</span>
+                    </div>
+                </div>
+                <div class="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <p>Admin: admin@lmsnet.com / Admin123!</p>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        errorMessage = string.IsNullOrWhiteSpace(Error)
+            ? null
+            : "Invalid login attempt.";
+    }
+}

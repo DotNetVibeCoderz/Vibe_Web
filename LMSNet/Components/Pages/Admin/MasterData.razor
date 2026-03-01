@@ -1,0 +1,421 @@
+@page "/admin/master-data"
+@using LMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using ClosedXML.Excel
+@using System.IO
+@using Microsoft.JSInterop
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Roles = "admin")]
+
+<PageTitle>Master Data (Courses) - LMSNet</PageTitle>
+
+<div class="space-y-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">Master Data: Courses</h1>
+        <div class="flex space-x-2">
+            <button @onclick="ExportToExcel" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-medium text-sm transition-colors shadow-sm flex items-center">
+                <i class="fas fa-file-excel mr-2"></i> Export Excel
+            </button>
+            <button @onclick="ShowAddModal" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium text-sm transition-colors shadow-sm flex items-center">
+                <i class="fas fa-plus mr-2"></i> Add Record
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters & Search -->
+    <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-6 flex flex-wrap gap-4 items-center justify-between">
+        <div class="flex items-center space-x-4 flex-1">
+            <div class="relative w-full max-w-md">
+                <input type="text" @bind="SearchTerm" @bind:event="oninput" placeholder="Search any text..." class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 pl-10 pr-4 focus:ring-2 focus:ring-blue-500 dark:text-gray-200 text-sm" />
+                <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+            </div>
+            
+            <select @bind="FilterStatus" class="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-4 focus:ring-2 focus:ring-blue-500 dark:text-gray-200 text-sm">
+                <option value="">All Status</option>
+                <option value="Published">Published</option>
+                <option value="Draft">Draft</option>
+                <option value="Archived">Archived</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" @onclick="() => SortBy(nameof(Course.Id))">
+                            ID @GetSortIcon(nameof(Course.Id))
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" @onclick="() => SortBy(nameof(Course.Title))">
+                            Title @GetSortIcon(nameof(Course.Title))
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" @onclick="() => SortBy(nameof(Course.Price))">
+                            Price @GetSortIcon(nameof(Course.Price))
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" @onclick="() => SortBy(nameof(Course.Status))">
+                            Status @GetSortIcon(nameof(Course.Status))
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" @onclick="() => SortBy(nameof(Course.CreatedAt))">
+                            Created @GetSortIcon(nameof(Course.CreatedAt))
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">Loading data...</td>
+                        </tr>
+                    }
+                    else if (!PagedData.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No records found.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in PagedData)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@item.Id</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-medium text-gray-900 dark:text-white">@item.Title</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    @(item.Price == 0 ? "Free" : $"${item.Price:0.00}")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full @(item.Status == "Published" ? "bg-green-100 text-green-800" : item.Status == "Draft" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-800")">
+                                        @item.Status
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    @item.CreatedAt.ToString("MMM dd, yyyy")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button @onclick="() => ShowEditModal(item)" class="text-blue-600 hover:text-blue-900 mr-3" title="Edit"><i class="fas fa-edit"></i></button>
+                                    <button @onclick="() => DeleteRecord(item)" class="text-red-600 hover:text-red-900" title="Delete"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+            <span class="text-sm text-gray-700 dark:text-gray-300">
+                Showing <span class="font-medium">@(PagedData.Any() ? ((CurrentPage - 1) * PageSize) + 1 : 0)</span> to 
+                <span class="font-medium">@(Math.Min(CurrentPage * PageSize, TotalRecords))</span> of 
+                <span class="font-medium">@TotalRecords</span> results
+            </span>
+            <div class="flex space-x-1">
+                <button @onclick="PreviousPage" disabled="@(CurrentPage == 1)" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50">Previous</button>
+                
+                @for (int i = 1; i <= TotalPages; i++)
+                {
+                    var pageNumber = i;
+                    <button @onclick="() => GoToPage(pageNumber)" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm @(CurrentPage == pageNumber ? "bg-blue-50 text-blue-600 font-bold border-blue-300 dark:bg-blue-900/30 dark:border-blue-700" : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600")">
+                        @pageNumber
+                    </button>
+                }
+                
+                <button @onclick="NextPage" disabled="@(CurrentPage == TotalPages || TotalPages == 0)" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+@if (isModalVisible)
+{
+    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+        <div class="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-md mx-4">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white">@(isEditing ? "Edit Record" : "Add Record")</h3>
+                <button @onclick="CloseModal" class="text-gray-400 hover:text-gray-500 dark:hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="p-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                    <input type="text" @bind="CurrentRecord.Title" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white text-sm" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price</label>
+                    <input type="number" step="0.01" @bind="CurrentRecord.Price" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white text-sm" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                    <select @bind="CurrentRecord.Status" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white text-sm">
+                        <option value="Draft">Draft</option>
+                        <option value="Published">Published</option>
+                        <option value="Archived">Archived</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-end space-x-3 rounded-b-lg">
+                <button @onclick="CloseModal" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Cancel
+                </button>
+                <button @onclick="SaveRecord" class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 flex items-center">
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<script>
+    function saveAsFile(filename, bytesBase64) {
+        var link = document.createElement('a');
+        link.download = filename;
+        link.href = 'data:application/octet-stream;base64,' + bytesBase64;
+        document.body.appendChild(link); // Needed for Firefox
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+@code {
+    private List<Course> AllData = new();
+    private List<Course> FilteredData => ApplyFiltersAndSort();
+    private List<Course> PagedData => FilteredData.Skip((CurrentPage - 1) * PageSize).Take(PageSize).ToList();
+    
+    private bool isLoading = true;
+    
+    // Modal state
+    private bool isModalVisible = false;
+    private bool isEditing = false;
+    private Course CurrentRecord = new Course();
+    
+    // Pagination
+    private int CurrentPage = 1;
+    private int PageSize = 10;
+    private int TotalRecords => FilteredData.Count;
+    private int TotalPages => (int)Math.Ceiling((double)TotalRecords / PageSize);
+    
+    // Search & Filter
+    private string _searchTerm = string.Empty;
+    private string SearchTerm
+    {
+        get => _searchTerm;
+        set { _searchTerm = value; CurrentPage = 1; }
+    }
+    
+    private string _filterStatus = string.Empty;
+    private string FilterStatus
+    {
+        get => _filterStatus;
+        set { _filterStatus = value; CurrentPage = 1; }
+    }
+    
+    // Sorting
+    private string SortColumn = nameof(Course.Id);
+    private bool SortAscending = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+    
+    private async Task LoadData()
+    {
+        isLoading = true;
+        AllData = await DbContext.Courses.Include(c => c.Instructor).ToListAsync();
+        
+        // Ensure at least some dummy data if db is empty for preview
+        if(!AllData.Any())
+        {
+            AllData.Add(new Course { Id = 1, Title = "Sample Master Course 1", Price = 10.99m, Status = "Published", CreatedAt = DateTime.Now });
+            AllData.Add(new Course { Id = 2, Title = "Another Course Info", Price = 0m, Status = "Draft", CreatedAt = DateTime.Now.AddDays(-2) });
+        }
+        
+        isLoading = false;
+    }
+
+    private void ShowAddModal()
+    {
+        isEditing = false;
+        CurrentRecord = new Course { Status = "Draft", CreatedAt = DateTime.UtcNow };
+        isModalVisible = true;
+    }
+    
+    private void ShowEditModal(Course item)
+    {
+        isEditing = true;
+        CurrentRecord = new Course 
+        { 
+            Id = item.Id, 
+            Title = item.Title, 
+            Price = item.Price, 
+            Status = item.Status,
+            InstructorId = item.InstructorId,
+            CreatedAt = item.CreatedAt
+        };
+        isModalVisible = true;
+    }
+    
+    private void CloseModal()
+    {
+        isModalVisible = false;
+    }
+    
+    private async Task SaveRecord()
+    {
+        if (isEditing)
+        {
+            var existing = await DbContext.Courses.FindAsync(CurrentRecord.Id);
+            if (existing != null)
+            {
+                existing.Title = CurrentRecord.Title;
+                existing.Price = CurrentRecord.Price;
+                existing.Status = CurrentRecord.Status;
+                existing.UpdatedAt = DateTime.UtcNow;
+                DbContext.Courses.Update(existing);
+            }
+        }
+        else
+        {
+            // For simple master data add, require an instructor, fallback to first admin
+            var adminUser = await DbContext.Users.FirstOrDefaultAsync();
+            CurrentRecord.InstructorId = adminUser?.Id ?? string.Empty;
+            CurrentRecord.CreatedAt = DateTime.UtcNow;
+            DbContext.Courses.Add(CurrentRecord);
+        }
+        
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        isModalVisible = false;
+    }
+    
+    private async Task DeleteRecord(Course item)
+    {
+        var existing = await DbContext.Courses.FindAsync(item.Id);
+        if (existing != null)
+        {
+            DbContext.Courses.Remove(existing);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private List<Course> ApplyFiltersAndSort()
+    {
+        var query = AllData.AsEnumerable();
+
+        // Global Text Search
+        if (!string.IsNullOrWhiteSpace(SearchTerm))
+        {
+            var lowerSearch = SearchTerm.ToLower();
+            query = query.Where(x => 
+                (x.Title?.ToLower().Contains(lowerSearch) ?? false) ||
+                (x.Description?.ToLower().Contains(lowerSearch) ?? false) ||
+                (x.Status?.ToLower().Contains(lowerSearch) ?? false) ||
+                x.Id.ToString().Contains(lowerSearch));
+        }
+
+        // Column Filter
+        if (!string.IsNullOrWhiteSpace(FilterStatus))
+        {
+            query = query.Where(x => x.Status == FilterStatus);
+        }
+
+        // Sorting
+        query = SortColumn switch
+        {
+            nameof(Course.Id) => SortAscending ? query.OrderBy(x => x.Id) : query.OrderByDescending(x => x.Id),
+            nameof(Course.Title) => SortAscending ? query.OrderBy(x => x.Title) : query.OrderByDescending(x => x.Title),
+            nameof(Course.Price) => SortAscending ? query.OrderBy(x => x.Price) : query.OrderByDescending(x => x.Price),
+            nameof(Course.Status) => SortAscending ? query.OrderBy(x => x.Status) : query.OrderByDescending(x => x.Status),
+            nameof(Course.CreatedAt) => SortAscending ? query.OrderBy(x => x.CreatedAt) : query.OrderByDescending(x => x.CreatedAt),
+            _ => query.OrderByDescending(x => x.Id)
+        };
+
+        return query.ToList();
+    }
+
+    private void SortBy(string columnName)
+    {
+        if (SortColumn == columnName)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = columnName;
+            SortAscending = true;
+        }
+        CurrentPage = 1;
+    }
+
+    private MarkupString GetSortIcon(string columnName)
+    {
+        if (SortColumn != columnName) return new MarkupString("<i class='fas fa-sort text-gray-300 ml-1'></i>");
+        
+        return SortAscending 
+            ? new MarkupString("<i class='fas fa-sort-up text-gray-500 dark:text-gray-300 ml-1'></i>") 
+            : new MarkupString("<i class='fas fa-sort-down text-gray-500 dark:text-gray-300 ml-1'></i>");
+    }
+
+    private void PreviousPage()
+    {
+        if (CurrentPage > 1) CurrentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (CurrentPage < TotalPages) CurrentPage++;
+    }
+
+    private void GoToPage(int page)
+    {
+        CurrentPage = page;
+    }
+    
+    private async Task ExportToExcel()
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Courses");
+        
+        // Headers
+        worksheet.Cell(1, 1).Value = "ID";
+        worksheet.Cell(1, 2).Value = "Title";
+        worksheet.Cell(1, 3).Value = "Price";
+        worksheet.Cell(1, 4).Value = "Status";
+        worksheet.Cell(1, 5).Value = "Created At";
+        worksheet.Range("A1:E1").Style.Font.Bold = true;
+        worksheet.Range("A1:E1").Style.Fill.BackgroundColor = XLColor.LightBlue;
+
+        // Data
+        var dataToExport = FilteredData; // Export currently filtered data
+        for (int i = 0; i < dataToExport.Count; i++)
+        {
+            var item = dataToExport[i];
+            worksheet.Cell(i + 2, 1).Value = item.Id;
+            worksheet.Cell(i + 2, 2).Value = item.Title;
+            worksheet.Cell(i + 2, 3).Value = item.Price;
+            worksheet.Cell(i + 2, 4).Value = item.Status;
+            worksheet.Cell(i + 2, 5).Value = item.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        var content = stream.ToArray();
+        
+        var fileName = $"MasterData_Courses_{DateTime.Now:yyyyMMddHHmmss}.xlsx";
+        await JSRuntime.InvokeVoidAsync("saveAsFile", fileName, Convert.ToBase64String(content));
+    }
+}

@@ -1,0 +1,259 @@
+@page "/instructor/courses/create"
+@page "/instructor/courses/edit/{Id:int}"
+@using LMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Security.Claims
+@using Microsoft.JSInterop
+@inject ApplicationDbContext DbContext
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Roles = "admin,mentor,creator")]
+
+<PageTitle>@(Id > 0 ? "Edit Course" : "Create Course") - LMSNet</PageTitle>
+
+<div class="max-w-4xl mx-auto space-y-6 pb-20">
+    <div class="flex items-center space-x-4 mb-6">
+        <button @onclick="GoBack" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-colors">
+            <i class="fas fa-arrow-left text-xl"></i>
+        </button>
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">@(Id > 0 ? "Edit Course" : "Create New Course")</h1>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="flex justify-center items-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="CourseModel" OnValidSubmit="SaveCourse">
+            <DataAnnotationsValidator />
+
+            <!-- Basic Info Section -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden mb-6">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                    <h2 class="text-lg font-bold text-gray-800 dark:text-white">Basic Information</h2>
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full @(CourseModel.Status == "Published" ? "bg-green-100 text-green-800" : CourseModel.Status == "Draft" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-800")">
+                        @CourseModel.Status
+                    </span>
+                </div>
+                <div class="p-6 space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Course Title *</label>
+                        <InputText @bind-Value="CourseModel.Title" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white" placeholder="e.g. Mastering ASP.NET Core 8" />
+                        <ValidationMessage For="@(() => CourseModel.Title)" class="text-red-500 text-xs mt-1" />
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description (HTML / Rich Text) *</label>
+                        <div class="border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden bg-white dark:bg-gray-700">
+                            <div id="quill-toolbar" class="bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-600 px-3 py-2 flex gap-2 flex-wrap">
+                                <button type="button" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" onclick="document.execCommand('bold',false,null)"><i class="fas fa-bold"></i></button>
+                                <button type="button" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" onclick="document.execCommand('italic',false,null)"><i class="fas fa-italic"></i></button>
+                                <button type="button" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" onclick="document.execCommand('underline',false,null)"><i class="fas fa-underline"></i></button>
+                                <div class="w-px bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                                <button type="button" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" onclick="document.execCommand('insertUnorderedList',false,null)"><i class="fas fa-list-ul"></i></button>
+                                <button type="button" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" onclick="document.execCommand('insertOrderedList',false,null)"><i class="fas fa-list-ol"></i></button>
+                            </div>
+                            <div id="wysiwyg-editor" class="p-4 min-h-[200px] outline-none prose dark:prose-invert max-w-none dark:text-white" contenteditable="true" @onblur="UpdateDescriptionFromEditor">
+                                @((MarkupString)CourseModel.Description)
+                            </div>
+                        </div>
+                        <ValidationMessage For="@(() => CourseModel.Description)" class="text-red-500 text-xs mt-1" />
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (USD)</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span class="text-gray-500 sm:text-sm">$</span>
+                                </div>
+                                <InputNumber @bind-Value="CourseModel.Price" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 pl-7 pr-3 focus:ring-2 focus:ring-blue-500 dark:text-white" placeholder="0.00" step="0.01" min="0" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Thumbnail URL</label>
+                            <InputText @bind-Value="CourseModel.ThumbnailUrl" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white" placeholder="https://..." />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Curriculum Section -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden mb-6">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                    <h2 class="text-lg font-bold text-gray-800 dark:text-white">Curriculum</h2>
+                    <button type="button" class="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" @onclick="AddModule">
+                        <i class="fas fa-plus mr-1"></i> Add Module
+                    </button>
+                </div>
+                <div class="p-6 space-y-6">
+                    @if (CourseModel.Modules == null || !CourseModel.Modules.Any())
+                    {
+                        <div class="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
+                            <p class="text-gray-500 dark:text-gray-400">No modules added yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="space-y-4">
+                            @foreach (var module in CourseModel.Modules.OrderBy(m => m.OrderIndex))
+                            {
+                                <div class="border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 overflow-hidden">
+                                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 flex items-center justify-between group">
+                                        <div class="flex items-center flex-1">
+                                            <input type="text" @bind="module.Title" class="bg-transparent border-none focus:ring-0 font-bold text-gray-800 dark:text-white w-full" />
+                                        </div>
+                                        <div class="flex space-x-2">
+                                            <button type="button" class="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors" @onclick="() => AddLesson(module)">+ Lesson</button>
+                                            <button type="button" class="text-red-500 hover:text-red-700" @onclick="() => RemoveModule(module)"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                    <div class="p-4 space-y-2">
+                                        @foreach (var lesson in module.Lessons.OrderBy(l => l.OrderIndex))
+                                        {
+                                            <div class="flex items-center justify-between px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded hover:border-blue-300 dark:hover:border-blue-700 transition-colors group">
+                                                <div class="flex items-center">
+                                                    <i class="fas @(lesson.Type == "Video" ? "fa-play-circle text-blue-500" : lesson.Type == "Quiz" ? "fa-question-circle text-purple-500" : "fa-file-alt text-green-500") mr-2 text-sm"></i>
+                                                    <span class="text-sm text-gray-700 dark:text-gray-300">@lesson.Title</span>
+                                                </div>
+                                                <div class="flex items-center space-x-3">
+                                                    <button type="button" class="text-gray-500 hover:text-blue-600" @onclick="() => EditLesson(lesson)"><i class="fas fa-edit"></i></button>
+                                                    <button type="button" class="text-gray-500 hover:text-red-600" @onclick="() => RemoveLesson(module, lesson)"><i class="fas fa-trash"></i></button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-end space-x-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 sticky bottom-6 z-10">
+                <button type="button" @onclick="GoBack" class="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    Cancel
+                </button>
+                
+                <button type="submit" @onclick='() => CourseModel.Status = "Draft"' class="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-medium rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                    Save as Draft
+                </button>
+                
+                <button type="submit" @onclick='() => CourseModel.Status = "Published"' class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 shadow-md transition-colors">
+                    Publish Course
+                </button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@if (isLessonModalVisible && editingLesson != null)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800">
+                <h3 class="font-bold text-gray-800 dark:text-white">Edit Lesson</h3>
+                <button @onclick="CloseLessonModal" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lesson Title</label>
+                    <input type="text" @bind="editingLesson.Title" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lesson Type</label>
+                    <select @bind="editingLesson.Type" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white">
+                        <option value="Video">Video</option>
+                        <option value="Article">Article</option>
+                        <option value="Quiz">Quiz</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content / URL</label>
+                    <textarea @bind="editingLesson.Content" rows="5" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 dark:text-white"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                <button @onclick="CloseLessonModal" class="bg-blue-600 text-white px-6 py-2 rounded-md font-bold hover:bg-blue-700">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Course CourseModel { get; set; } = new Course { Modules = new List<Module>() };
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string? currentUserId;
+    private string? errorMessage;
+
+    // Lesson Modal
+    private bool isLessonModalVisible = false;
+    private Lesson? editingLesson;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (Id > 0)
+        {
+            CourseModel = await DbContext.Courses.Include(c => c.Modules).ThenInclude(m => m.Lessons).FirstOrDefaultAsync(c => c.Id == Id) ?? new Course();
+        }
+        else
+        {
+            CourseModel = new Course { InstructorId = currentUserId ?? "", Modules = new List<Module>() };
+        }
+        isLoading = false;
+    }
+
+    private async Task UpdateDescriptionFromEditor()
+    {
+        var html = await JSRuntime.InvokeAsync<string>("eval", "document.getElementById('wysiwyg-editor').innerHTML");
+        CourseModel.Description = html;
+    }
+
+    private void AddModule()
+    {
+        var order = CourseModel.Modules.Any() ? CourseModel.Modules.Max(m => m.OrderIndex) + 1 : 1;
+        CourseModel.Modules.Add(new Module { Title = "New Module", OrderIndex = order, Lessons = new List<Lesson>() });
+    }
+
+    private void RemoveModule(Module module) => CourseModel.Modules.Remove(module);
+
+    private void AddLesson(Module module)
+    {
+        var order = module.Lessons.Any() ? module.Lessons.Max(l => l.OrderIndex) + 1 : 1;
+        module.Lessons.Add(new Lesson { Title = "New Lesson", OrderIndex = order, Type = "Video" });
+    }
+
+    private void RemoveLesson(Module module, Lesson lesson) => module.Lessons.Remove(lesson);
+
+    private void EditLesson(Lesson lesson)
+    {
+        editingLesson = lesson;
+        isLessonModalVisible = true;
+    }
+
+    private void CloseLessonModal() => isLessonModalVisible = false;
+
+    private async Task SaveCourse()
+    {
+        await UpdateDescriptionFromEditor();
+        if (Id == 0) DbContext.Courses.Add(CourseModel);
+        else DbContext.Courses.Update(CourseModel);
+        await DbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo("/instructor/courses");
+    }
+
+    private void GoBack() => NavigationManager.NavigateTo("/instructor/courses");
+}

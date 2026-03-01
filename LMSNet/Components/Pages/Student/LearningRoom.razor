@@ -1,0 +1,436 @@
+@page "/learning/{CourseId:int}"
+@page "/learning/{CourseId:int}/lesson/{LessonId:int}"
+@using LMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject ApplicationDbContext DbContext
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+@layout LMSNet.Components.Layout.MainLayout
+
+<PageTitle>Learning Room - LMSNet</PageTitle>
+
+@if (isLoading)
+{
+    <div class="flex justify-center items-center h-screen">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+}
+else if (!hasAccess)
+{
+    <div class="flex items-center justify-center h-[80vh]">
+        <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 max-w-md">
+            <i class="fas fa-lock text-5xl text-gray-400 mb-4"></i>
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-2">Access Denied</h2>
+            <p class="text-gray-600 dark:text-gray-400 mb-6">You need to enroll in this course to access the learning materials.</p>
+            <a href="/courses/@CourseId" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium">Go to Course Page</a>
+        </div>
+    </div>
+}
+else if (Course == null)
+{
+    <div class="text-center py-20">
+        <h3 class="text-xl font-medium text-gray-600 dark:text-gray-300">Course not found</h3>
+    </div>
+}
+else
+{
+    <div class="flex h-[calc(100vh-4rem)] -m-6"> <!-- Negative margin to break out of MainLayout padding -->
+        <!-- Content Area -->
+        <div class="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 overflow-y-auto">
+            
+            <!-- Video/Content Header -->
+            <div class="bg-black text-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
+                <div class="flex items-center">
+                    <a href="/my-learning" class="text-gray-400 hover:text-white mr-4 transition-colors"><i class="fas fa-arrow-left"></i></a>
+                    <h1 class="font-bold text-lg truncate">@Course.Title</h1>
+                </div>
+                <div class="text-sm text-gray-400">
+                    <span class="mr-2">Your Progress: @(Enrollment != null ? ((int)Enrollment.ProgressPercentage).ToString() : "0")%</span>
+                </div>
+            </div>
+
+            <!-- Main Learning Area -->
+            <div class="flex-1 p-6 max-w-5xl mx-auto w-full">
+                @if (CurrentLesson != null)
+                {
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">@CurrentLesson.Title</h2>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">Module: @CurrentLesson.Module?.Title</div>
+                    </div>
+
+                    @if (CurrentLesson.Type == "Video" && !string.IsNullOrEmpty(CurrentLesson.VideoUrl))
+                    {
+                        <div class="aspect-w-16 aspect-h-9 bg-black rounded-lg overflow-hidden shadow-lg mb-8 relative">
+                            <!-- In a real app, use an iframe or video tag -->
+                            @if (CurrentLesson.VideoUrl.Contains("youtube.com") || CurrentLesson.VideoUrl.Contains("youtu.be"))
+                            {
+                                var videoId = GetYouTubeId(CurrentLesson.VideoUrl);
+                                <iframe class="absolute inset-0 w-full h-full" src="https://www.youtube.com/embed/@videoId" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                            }
+                            else
+                            {
+                                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                    <i class="fas fa-play-circle text-6xl text-white opacity-80 cursor-pointer hover:opacity-100 transition-opacity"></i>
+                                    <span class="text-white mt-4 font-medium">Video Player</span>
+                                    <span class="text-gray-400 text-sm mt-1">URL: @CurrentLesson.VideoUrl</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <div class="prose dark:prose-invert max-w-none">
+                            @if (!string.IsNullOrEmpty(CurrentLesson.Content))
+                            {
+                                @((MarkupString)CurrentLesson.Content)
+                            }
+                            else
+                            {
+                                <p class="text-gray-500 italic">No rich text content provided for this lesson.</p>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(CurrentLesson.AttachmentUrl))
+                        {
+                            <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                                <h4 class="font-bold text-gray-900 dark:text-white mb-3">Resources</h4>
+                                <a href="@CurrentLesson.AttachmentUrl" target="_blank" class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
+                                    <i class="fas fa-download mr-2"></i> Download Attachment
+                                </a>
+                            </div>
+                        }
+
+                        <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                            <button @onclick="NavigateToPrevious" class="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors disabled:opacity-50" disabled="@(IsFirstLesson)">
+                                <i class="fas fa-chevron-left mr-2"></i> Previous Lesson
+                            </button>
+                            
+                            <button @onclick="MarkAsCompleteAndNext" class="bg-blue-600 text-white px-6 py-2 rounded-md font-bold hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+                                <span>Complete & Continue</span> <i class="fas fa-chevron-right ml-2"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Discussion -->
+                    <div class="mt-8 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4"><i class="fas fa-comments mr-2 text-blue-500"></i> Lesson Discussion</h3>
+                        <div class="flex space-x-4 mb-6">
+                            <img src="https://ui-avatars.com/api/?name=@currentUserName&background=random" class="w-10 h-10 rounded-full" />
+                            <div class="flex-1 relative">
+                                <textarea @bind="newDiscussionContent" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 dark:text-white text-sm resize-none" rows="2" placeholder="Ask a question or share your thoughts..."></textarea>
+                                <div class="absolute right-2 bottom-2">
+                                    <button @onclick="PostDiscussion" class="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-blue-700 transition-colors" disabled="@string.IsNullOrWhiteSpace(newDiscussionContent)">Post</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        @if (Discussions == null)
+                        {
+                            <div class="flex justify-center py-4">
+                                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                            </div>
+                        }
+                        else if (!Discussions.Any())
+                        {
+                            <div class="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+                                No discussions yet. Be the first to start!
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="space-y-4">
+                                @foreach (var discussion in Discussions)
+                                {
+                                    <div class="flex space-x-3">
+                                        <img src="https://ui-avatars.com/api/?name=@(discussion.User.FirstName + "+" + discussion.User.LastName)&background=random" class="w-8 h-8 rounded-full" />
+                                        <div class="flex-1 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <span class="text-sm font-bold text-gray-900 dark:text-white">@(discussion.User.FirstName) @(discussion.User.LastName)</span>
+                                                <span class="text-xs text-gray-500 dark:text-gray-400">@discussion.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</span>
+                                            </div>
+                                            <p class="text-sm text-gray-700 dark:text-gray-300">@discussion.Content</p>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-20 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                        <i class="fas fa-flag-checkered text-5xl text-green-500 mb-4"></i>
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Course Completed!</h2>
+                        <p class="text-gray-600 dark:text-gray-400 mb-6">Congratulations on completing the course.</p>
+                        
+                        <div class="max-w-md mx-auto mb-8 p-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <h3 class="font-bold text-gray-800 dark:text-white mb-4">Rate this course</h3>
+                            <div class="flex justify-center space-x-2 mb-4">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    int starIndex = i;
+                                    <i @onclick="() => SetRating(starIndex)" class="fas fa-star text-3xl cursor-pointer transition-colors @(selectedRating >= starIndex ? "text-yellow-400" : "text-gray-300")"></i>
+                                }
+                            </div>
+                            <textarea @bind="reviewText" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 dark:text-white text-sm resize-none mb-3" rows="3" placeholder="Write your review here..."></textarea>
+                            <button @onclick="SubmitRating" class="w-full bg-blue-600 text-white py-2 rounded-md font-bold hover:bg-blue-700 transition-colors" disabled="@(selectedRating == 0)">
+                                Submit Review
+                            </button>
+                        </div>
+                        
+                        <a href="/my-learning" class="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-6 py-2 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 font-medium transition-colors">Back to Dashboard</a>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Sidebar Curriculum -->
+        <div class="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-bold text-gray-900 dark:text-white">Course Content</h3>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                @if (Course.Modules != null)
+                {
+                    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                        @foreach (var module in Course.Modules.OrderBy(m => m.OrderIndex))
+                        {
+                            <div class="bg-gray-50 dark:bg-gray-800/80">
+                                <div class="px-4 py-3 font-semibold text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700/50 sticky top-0">
+                                    @module.Title
+                                </div>
+                                <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                    @foreach (var lesson in module.Lessons.OrderBy(l => l.OrderIndex))
+                                    {
+                                        var isCurrent = CurrentLesson?.Id == lesson.Id;
+                                        <div @onclick="() => NavigateToLesson(lesson.Id)" 
+                                             class="px-4 py-3 flex items-start cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors @(isCurrent ? "bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500" : "border-l-4 border-transparent")">
+                                            
+                                            <div class="mt-0.5 mr-3">
+                                                @if (CompletedLessonIds.Contains(lesson.Id))
+                                                {
+                                                    <i class="fas fa-check-circle text-green-500"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="far fa-circle text-gray-400"></i>
+                                                }
+                                            </div>
+                                            
+                                            <div class="flex-1">
+                                                <div class="text-sm @(isCurrent ? "font-bold text-blue-700 dark:text-blue-400" : "text-gray-700 dark:text-gray-300")">@lesson.Title</div>
+                                                <div class="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                                    <i class="fas @(lesson.Type == "Video" ? "fa-play-circle" : lesson.Type == "Quiz" ? "fa-question-circle" : "fa-file-alt") mr-1"></i> @lesson.Type
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int CourseId { get; set; }
+
+    [Parameter]
+    public int? LessonId { get; set; }
+
+    private Course? Course;
+    private Enrollment? Enrollment;
+    private Lesson? CurrentLesson;
+    private bool isLoading = true;
+    private bool hasAccess = false;
+    private string? currentUserId;
+    private string? currentUserName;
+    
+    private List<LearningDiscussion>? Discussions;
+    private string newDiscussionContent = "";
+    
+    private int selectedRating = 0;
+    private string reviewText = "";
+
+    private HashSet<int> CompletedLessonIds = new HashSet<int>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            currentUserName = user.Identity.Name;
+        }
+
+        if (string.IsNullOrEmpty(currentUserId))
+        {
+            isLoading = false;
+            return;
+        }
+
+        Enrollment = await DbContext.Enrollments
+            .FirstOrDefaultAsync(e => e.CourseId == CourseId && e.StudentId == currentUserId);
+
+        if (Enrollment != null)
+        {
+            hasAccess = true;
+            
+            Course = await DbContext.Courses
+                .Include(c => c.Modules)
+                    .ThenInclude(m => m.Lessons)
+                .FirstOrDefaultAsync(c => c.Id == CourseId);
+
+            if (Course != null && Course.Modules != null)
+            {
+                var allLessons = Course.Modules.SelectMany(m => m.Lessons).ToList();
+                
+                if (LessonId.HasValue && LessonId.Value > 0)
+                {
+                    CurrentLesson = allLessons.FirstOrDefault(l => l.Id == LessonId.Value);
+                }
+                
+                if (CurrentLesson == null && allLessons.Any())
+                {
+                    CurrentLesson = allLessons.OrderBy(l => l.Module.OrderIndex).ThenBy(l => l.OrderIndex).First();
+                }
+
+                if (CurrentLesson != null)
+                {
+                    await LoadDiscussions();
+                }
+            }
+        }
+
+        isLoading = false;
+    }
+
+    private async Task LoadDiscussions()
+    {
+        if (CurrentLesson == null) return;
+        
+        Discussions = await DbContext.LearningDiscussions
+            .Include(d => d.User)
+            .Where(d => d.LessonId == CurrentLesson.Id)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync();
+    }
+
+    private bool IsFirstLesson => Course?.Modules?.SelectMany(m => m.Lessons).OrderBy(l => l.Module.OrderIndex).ThenBy(l => l.OrderIndex).FirstOrDefault()?.Id == CurrentLesson?.Id;
+
+    private void NavigateToLesson(int id)
+    {
+        NavigationManager.NavigateTo($"/learning/{CourseId}/lesson/{id}");
+        CurrentLesson = Course?.Modules?.SelectMany(m => m.Lessons).FirstOrDefault(l => l.Id == id);
+        _ = LoadDiscussions();
+    }
+
+    private void NavigateToPrevious()
+    {
+        var allLessons = Course?.Modules?.SelectMany(m => m.Lessons).OrderBy(l => l.Module.OrderIndex).ThenBy(l => l.OrderIndex).ToList();
+        if (allLessons == null || CurrentLesson == null) return;
+        
+        var currentIndex = allLessons.FindIndex(l => l.Id == CurrentLesson.Id);
+        if (currentIndex > 0)
+        {
+            NavigateToLesson(allLessons[currentIndex - 1].Id);
+        }
+    }
+
+    private async Task MarkAsCompleteAndNext()
+    {
+        if (CurrentLesson != null && Enrollment != null)
+        {
+            CompletedLessonIds.Add(CurrentLesson.Id);
+            
+            if (Course != null && Course.Modules != null)
+            {
+                var allLessons = Course.Modules.SelectMany(m => m.Lessons).OrderBy(l => l.Module.OrderIndex).ThenBy(l => l.OrderIndex).ToList();
+                var totalLessons = allLessons.Count;
+                
+                if (totalLessons > 0)
+                {
+                    var completedCount = CompletedLessonIds.Count;
+                    Enrollment.ProgressPercentage = Math.Min(100, Math.Round((decimal)completedCount / totalLessons * 100, 0));
+                    
+                    if (Enrollment.ProgressPercentage == 100)
+                    {
+                        Enrollment.CompletedAt = DateTime.UtcNow;
+                    }
+                    
+                    await DbContext.SaveChangesAsync();
+                }
+                
+                var currentIndex = allLessons.FindIndex(l => l.Id == CurrentLesson.Id);
+                
+                if (currentIndex >= 0 && currentIndex < allLessons.Count - 1)
+                {
+                    NavigateToLesson(allLessons[currentIndex + 1].Id);
+                }
+                else
+                {
+                    CurrentLesson = null;
+                }
+            }
+        }
+    }
+
+    private async Task PostDiscussion()
+    {
+        if (string.IsNullOrWhiteSpace(newDiscussionContent) || CurrentLesson == null || string.IsNullOrEmpty(currentUserId)) return;
+
+        var discussion = new LearningDiscussion
+        {
+            LessonId = CurrentLesson.Id,
+            UserId = currentUserId,
+            Content = newDiscussionContent,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        DbContext.LearningDiscussions.Add(discussion);
+        await DbContext.SaveChangesAsync();
+
+        newDiscussionContent = "";
+        await LoadDiscussions();
+    }
+
+    private void SetRating(int rating)
+    {
+        selectedRating = rating;
+    }
+
+    private async Task SubmitRating()
+    {
+        if (Enrollment != null && selectedRating > 0)
+        {
+            Enrollment.Rating = selectedRating;
+            Enrollment.Review = reviewText;
+            Enrollment.RatedAt = DateTime.UtcNow;
+            
+            await DbContext.SaveChangesAsync();
+            NavigationManager.NavigateTo("/my-learning");
+        }
+    }
+
+    private string GetYouTubeId(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return "";
+        
+        try {
+            var uri = new Uri(url);
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            if (query.TryGetValue("v", out var v)) return v.ToString();
+            
+            return uri.Segments.Last();
+        } catch { return ""; }
+    }
+}

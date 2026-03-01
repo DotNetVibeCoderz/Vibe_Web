@@ -1,0 +1,212 @@
+@page "/instructor/students"
+@using LMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using ClosedXML.Excel
+@using System.IO
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Roles = "admin,mentor,creator")]
+
+<PageTitle>Students Analytics - LMSNet</PageTitle>
+
+<div class="space-y-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">Student Analytics</h1>
+        <button @onclick="ExportToExcel" class="bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-4 py-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm flex items-center transition-colors text-sm font-medium">
+            <i class="fas fa-download mr-2"></i> Export Report
+        </button>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Enrollments</div>
+            <div class="text-3xl font-bold text-gray-900 dark:text-white">@TotalEnrollments</div>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Active Students</div>
+            <div class="text-3xl font-bold text-gray-900 dark:text-white">@TotalStudents</div>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Avg. Completion Rate</div>
+            <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">@AvgCompletion%</div>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Certificates Issued</div>
+            <div class="text-3xl font-bold text-gray-900 dark:text-white">@CertificatesIssued</div>
+        </div>
+    </div>
+
+    <!-- Student List -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex flex-wrap gap-4 items-center justify-between">
+            <h2 class="text-lg font-medium text-gray-800 dark:text-white">Recent Enrollments & Progress</h2>
+            <div class="flex space-x-3">
+                <select @bind="SelectedCourseId" class="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-3 text-sm focus:ring-2 focus:ring-blue-500 dark:text-gray-200">
+                    <option value="">All Courses</option>
+                    @if (MyCourses != null)
+                    {
+                        foreach (var c in MyCourses)
+                        {
+                            <option value="@c.Id">@c.Title</option>
+                        }
+                    }
+                </select>
+                <div class="relative w-64">
+                    <input type="text" @bind="SearchTerm" @bind:event="oninput" placeholder="Search student..." class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 pl-8 pr-3 text-sm focus:ring-2 focus:ring-blue-500 dark:text-gray-200" />
+                    <i class="fas fa-search absolute left-3 top-2 text-gray-400 text-xs"></i>
+                </div>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enrolled Date</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
+                    @if (Enrollments == null)
+                    {
+                        <tr><td colspan="5" class="px-6 py-4 text-center">Loading data...</td></tr>
+                    }
+                    else if (!FilteredEnrollments.Any())
+                    {
+                        <tr><td colspan="5" class="px-6 py-4 text-center">No students found.</td></tr>
+                    }
+                    else
+                    {
+                        foreach (var e in FilteredEnrollments)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-8 w-8">
+                                            <img class="h-8 w-8 rounded-full object-cover" src="https://ui-avatars.com/api/?name=@(e.Student?.FirstName + "+" + e.Student?.LastName)&background=random" alt="" />
+                                        </div>
+                                        <div class="ml-3">
+                                            <div class="text-sm font-medium text-gray-900 dark:text-white">@(e.Student?.FirstName) @(e.Student?.LastName)</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400">@e.Student?.Email</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm text-gray-900 dark:text-gray-300">@e.Course.Title</div></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">@e.EnrolledAt.ToString("MMM dd, yyyy")</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2 w-8 text-right">@e.ProgressPercentage%</span>
+                                        <div class="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                            <div class="bg-blue-600 h-1.5 rounded-full" style="width: @e.ProgressPercentage%"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <span class="px-2 py-0.5 rounded-full text-xs @(e.ProgressPercentage == 100 ? "bg-green-100 text-green-800" : e.ProgressPercentage > 0 ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800")">
+                                        @(e.ProgressPercentage == 100 ? "Completed" : e.ProgressPercentage > 0 ? "In Progress" : "Not Started")
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Enrollment>? Enrollments;
+    private List<Course>? MyCourses;
+    private string SearchTerm = string.Empty;
+    private string SelectedCourseId = string.Empty;
+    private string? currentUserId;
+    
+    // Stats
+    private int TotalEnrollments = 0;
+    private int TotalStudents = 0;
+    private decimal AvgCompletion = 0;
+    private int CertificatesIssued = 0;
+
+    private IEnumerable<Enrollment> FilteredEnrollments => Enrollments?.Where(e => 
+        (string.IsNullOrEmpty(SelectedCourseId) || e.CourseId.ToString() == SelectedCourseId) &&
+        (string.IsNullOrEmpty(SearchTerm) || 
+         (e.Student?.FirstName?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+         (e.Student?.LastName?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+         (e.Student?.Email?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+    ) ?? Enumerable.Empty<Enrollment>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (!string.IsNullOrEmpty(currentUserId))
+        {
+            MyCourses = await DbContext.Courses.Where(c => c.InstructorId == currentUserId).ToListAsync();
+            var courseIds = MyCourses.Select(c => c.Id).ToList();
+            Enrollments = await DbContext.Enrollments.Include(e => e.Student).Include(e => e.Course).Where(e => courseIds.Contains(e.CourseId)).OrderByDescending(e => e.EnrolledAt).ToListAsync();
+            CalculateStats();
+        }
+    }
+    
+    private void CalculateStats()
+    {
+        if (Enrollments != null && Enrollments.Any())
+        {
+            TotalEnrollments = Enrollments.Count;
+            TotalStudents = Enrollments.Select(e => e.StudentId).Distinct().Count();
+            AvgCompletion = Math.Round(Enrollments.Average(e => e.ProgressPercentage), 0);
+            CertificatesIssued = Enrollments.Count(e => e.ProgressPercentage == 100);
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        using (var workbook = new XLWorkbook())
+        {
+            var worksheet = workbook.Worksheets.Add("Students Report");
+            worksheet.Cell(1, 1).Value = "Student Name";
+            worksheet.Cell(1, 2).Value = "Email";
+            worksheet.Cell(1, 3).Value = "Course";
+            worksheet.Cell(1, 4).Value = "Enrolled Date";
+            worksheet.Cell(1, 5).Value = "Progress";
+
+            var row = 2;
+            foreach (var e in FilteredEnrollments)
+            {
+                worksheet.Cell(row, 1).Value = $"{e.Student?.FirstName} {e.Student?.LastName}";
+                worksheet.Cell(row, 2).Value = e.Student?.Email;
+                worksheet.Cell(row, 3).Value = e.Course.Title;
+                worksheet.Cell(row, 4).Value = e.EnrolledAt;
+                worksheet.Cell(row, 5).Value = $"{e.ProgressPercentage}%";
+                row++;
+            }
+
+            using (var stream = new MemoryStream())
+            {
+                workbook.SaveAs(stream);
+                var content = stream.ToArray();
+                var base64 = Convert.ToBase64String(content);
+                await JSRuntime.InvokeVoidAsync("eval", $@"
+                    var link = document.createElement('a');
+                    link.download = 'StudentsReport.xlsx';
+                    link.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{base64}';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                ");
+            }
+        }
+    }
+}

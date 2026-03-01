@@ -1,0 +1,14 @@
+@* Komponen logout tanpa route untuk menghindari konflik endpoint POST /Account/Logout *@
+@using Microsoft.AspNetCore.Identity
+@using LMSNet.Data
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Jika komponen ini dipakai secara manual, tetap bisa sign-out.
+        await SignInManager.SignOutAsync();
+        NavigationManager.NavigateTo("/", true);
+    }
+}

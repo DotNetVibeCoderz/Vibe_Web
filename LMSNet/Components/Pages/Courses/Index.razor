@@ -1,0 +1,129 @@
+@page "/courses"
+@using LMSNet.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@inject NavigationManager NavigationManager
+
+<PageTitle>Course Catalog - LMSNet</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">Explore Courses</h1>
+        
+        <!-- Search and Filter -->
+        <div class="flex flex-wrap gap-4">
+            <div class="relative w-full md:w-64">
+                <input type="text" @bind="SearchTerm" @bind:event="oninput" placeholder="Search courses..." class="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md py-2 pl-10 pr-4 focus:ring-2 focus:ring-blue-500 dark:text-gray-200" />
+                <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+            </div>
+            <select @bind="SelectedCategory" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-4 focus:ring-2 focus:ring-blue-500 dark:text-gray-200">
+                <option value="">All Categories</option>
+                <option value="development">Development</option>
+                <option value="design">Design</option>
+                <option value="business">Business</option>
+            </select>
+        </div>
+    </div>
+
+    @if (Courses == null)
+    {
+        <div class="flex justify-center items-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+    }
+    else if (!FilteredCourses.Any())
+    {
+        <div class="text-center py-20 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+            <i class="fas fa-search text-gray-400 text-5xl mb-4"></i>
+            <h3 class="text-xl font-medium text-gray-600 dark:text-gray-300">No courses found</h3>
+            <p class="text-gray-500 dark:text-gray-400">Try adjusting your search criteria</p>
+        </div>
+    }
+    else
+    {
+        <!-- Course Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            @foreach (var course in FilteredCourses)
+            {
+                var ratings = course.Enrollments.Where(e => e.Rating.HasValue).Select(e => e.Rating!.Value).ToList();
+                var avgRating = ratings.Any() ? ratings.Average() : 0;
+                
+                <div @onclick="() => NavigateToDetails(course.Id)" class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all border border-gray-100 dark:border-gray-700 flex flex-col cursor-pointer h-full">
+                    <div class="h-48 bg-gray-200 dark:bg-gray-700 relative group flex-shrink-0">
+                        <img src="@(string.IsNullOrEmpty(course.ThumbnailUrl) ? "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" : course.ThumbnailUrl)" alt="@course.Title" class="w-full h-full object-cover group-hover:opacity-75 transition-opacity" />
+                        <div class="absolute top-2 right-2 bg-white dark:bg-gray-800 text-xs font-bold px-2 py-1 rounded-md shadow-sm">
+                            <i class="fas fa-star text-yellow-400 mr-1"></i> @(avgRating > 0 ? avgRating.ToString("0.0") : "N/A")
+                        </div>
+                    </div>
+                    
+                    <div class="p-5 flex-grow flex flex-col">
+                        <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">Technology</div>
+                        <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-2 line-clamp-2" title="@course.Title">@course.Title</h3>
+                        
+                        <div class="text-sm text-gray-500 dark:text-gray-400 mb-4 line-clamp-2 flex-grow">
+                            @((MarkupString)StripHtml(course.Description))
+                        </div>
+                        
+                        <div class="flex items-center justify-between mt-auto pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <div class="flex items-center">
+                                <img src="https://ui-avatars.com/api/?name=@(course.Instructor?.FirstName + "+" + course.Instructor?.LastName)&background=random" alt="Instructor" class="w-6 h-6 rounded-full mr-2" />
+                                <span class="text-xs text-gray-600 dark:text-gray-300 font-medium line-clamp-1">@(course.Instructor?.FirstName ?? "Admin")</span>
+                            </div>
+                            <div class="font-bold text-lg text-gray-900 dark:text-white">
+                                @if(course.Price == 0)
+                                {
+                                    <span class="text-green-500">Free</span>
+                                }
+                                else
+                                {
+                                    @($"${course.Price:0.00}")
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<Course>? Courses;
+    private string SearchTerm = string.Empty;
+    private string SelectedCategory = string.Empty;
+
+    private IEnumerable<Course> FilteredCourses => Courses?.Where(c => 
+        (string.IsNullOrWhiteSpace(SearchTerm) || 
+         c.Title.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
+         c.Description.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) &&
+        (string.IsNullOrWhiteSpace(SelectedCategory) || true) // Category not in model, just placeholder logic
+    ) ?? Enumerable.Empty<Course>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Parse search query from URL
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("q", out var q))
+        {
+            SearchTerm = q.ToString();
+        }
+
+        Courses = await DbContext.Courses
+            .Include(c => c.Instructor)
+            .Include(c => c.Enrollments)
+            .Where(c => c.Status == "Published")
+            .ToListAsync();
+    }
+    
+    private void NavigateToDetails(int courseId)
+    {
+        NavigationManager.NavigateTo($"/courses/{courseId}");
+    }
+
+    private string StripHtml(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return string.Empty;
+        return System.Text.RegularExpressions.Regex.Replace(input, "<.*?>", String.Empty);
+    }
+}

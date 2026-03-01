@@ -1,0 +1,21 @@
+@page "/{**catchallroute}"
+@using LMSNet.Components.Layout
+@layout MainLayout
+
+<PageTitle>Not found - LMSNet</PageTitle>
+
+<div class="flex items-center justify-center min-h-[60vh]">
+    <div class="text-center bg-white dark:bg-gray-800 p-10 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 max-w-lg w-full">
+        <div class="text-6xl font-bold text-blue-500 mb-4">404</div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Page Not Found</h1>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">Sorry, but the page you are looking for doesn't exist or has been moved.</p>
+        <a href="/" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-medium transition-colors shadow-sm inline-block">
+            <i class="fas fa-home mr-2"></i> Back to Home
+        </a>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string? catchallroute { get; set; }
+}

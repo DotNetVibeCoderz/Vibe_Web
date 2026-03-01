@@ -1,0 +1,241 @@
+@page "/profile"
+@using LMSNet.Data
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject NavigationManager NavigationManager
+@attribute [Authorize]
+
+<PageTitle>My Profile - LMSNet</PageTitle>
+
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">Profile Settings</h1>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="flex justify-center items-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+    }
+    else
+    {
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="p-6 md:p-8">
+                
+                @if (isSuccess)
+                {
+                    <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
+                        <div class="flex">
+                            <i class="fas fa-check-circle text-green-500 mt-0.5"></i>
+                            <div class="ml-3">
+                                <p class="text-sm text-green-700">Profile updated successfully.</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                        <div class="flex">
+                            <i class="fas fa-exclamation-circle text-red-500 mt-0.5"></i>
+                            <div class="ml-3">
+                                <p class="text-sm text-red-700">@errorMessage</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="flex flex-col md:flex-row gap-8">
+                    <!-- Avatar Upload -->
+                    <div class="flex-shrink-0 flex flex-col items-center">
+                        <div class="relative group cursor-pointer">
+                            <img src="@AvatarUrl" class="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-md" alt="Avatar" />
+                            <div class="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="fas fa-camera text-white text-2xl"></i>
+                            </div>
+                        </div>
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Click to change avatar</p>
+                    </div>
+
+                    <!-- Profile Form -->
+                    <div class="flex-grow">
+                        <EditForm Model="Input" OnValidSubmit="UpdateProfile" FormName="profile">
+                            <DataAnnotationsValidator />
+                            
+                            <div class="space-y-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name</label>
+                                        <InputText @bind-Value="Input.FirstName" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white" />
+                                        <ValidationMessage For="() => Input.FirstName" class="text-red-500 text-xs mt-1" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last Name</label>
+                                        <InputText @bind-Value="Input.LastName" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white" />
+                                        <ValidationMessage For="() => Input.LastName" class="text-red-500 text-xs mt-1" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                                    <InputText @bind-Value="Input.Email" type="email" disabled class="w-full bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-500 dark:text-gray-400 cursor-not-allowed" />
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Email address cannot be changed.</p>
+                                </div>
+                                
+                                <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Change Password</h3>
+                                    <div class="space-y-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Current Password</label>
+                                            <InputText @bind-Value="Input.OldPassword" type="password" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white" />
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
+                                                <InputText @bind-Value="Input.NewPassword" type="password" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white" />
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm New Password</label>
+                                                <InputText @bind-Value="Input.ConfirmPassword" type="password" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white" />
+                                                <ValidationMessage For="() => Input.ConfirmPassword" class="text-red-500 text-xs mt-1" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-6 flex justify-end">
+                                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-medium transition-colors shadow-sm flex items-center" disabled="@isSaving">
+                                        @if (isSaving)
+                                        {
+                                            <i class="fas fa-spinner fa-spin mr-2"></i> <span>Saving...</span>
+                                        }
+                                        else
+                                        {
+                                            <i class="fas fa-save mr-2"></i> <span>Save Changes</span>
+                                        }
+                                    </button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationState { get; set; }
+    
+    private ApplicationUser? user;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isSuccess = false;
+    private string? errorMessage;
+    private string AvatarUrl = "https://ui-avatars.com/api/?name=User&background=random";
+
+    [SupplyParameterFromForm]
+    private ProfileModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (authenticationState is not null)
+        {
+            var authState = await authenticationState;
+            var authUser = authState?.User;
+
+            if (authUser?.Identity is not null && authUser.Identity.IsAuthenticated)
+            {
+                var userId = authUser.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    user = await UserManager.FindByIdAsync(userId);
+                    if (user != null)
+                    {
+                        Input.FirstName = user.FirstName;
+                        Input.LastName = user.LastName;
+                        Input.Email = user.Email ?? "";
+                        AvatarUrl = $"https://ui-avatars.com/api/?name={user.FirstName}+{user.LastName}&background=0D8ABC&color=fff";
+                    }
+                }
+            }
+        }
+        isLoading = false;
+    }
+
+    private async Task UpdateProfile()
+    {
+        if (user == null) return;
+
+        isSaving = true;
+        isSuccess = false;
+        errorMessage = null;
+
+        user.FirstName = Input.FirstName;
+        user.LastName = Input.LastName;
+
+        var updateResult = await UserManager.UpdateAsync(user);
+
+        if (!updateResult.Succeeded)
+        {
+            errorMessage = "Failed to update profile.";
+            isSaving = false;
+            return;
+        }
+
+        // Change password if provided
+        if (!string.IsNullOrEmpty(Input.OldPassword) && !string.IsNullOrEmpty(Input.NewPassword))
+        {
+            if (Input.NewPassword != Input.ConfirmPassword)
+            {
+                errorMessage = "New passwords do not match.";
+                isSaving = false;
+                return;
+            }
+
+            var changePasswordResult = await UserManager.ChangePasswordAsync(user, Input.OldPassword, Input.NewPassword);
+            if (!changePasswordResult.Succeeded)
+            {
+                errorMessage = string.Join(", ", changePasswordResult.Errors.Select(e => e.Description));
+                isSaving = false;
+                return;
+            }
+            
+            // Clear password fields
+            Input.OldPassword = "";
+            Input.NewPassword = "";
+            Input.ConfirmPassword = "";
+        }
+
+        // Refresh sign-in to update claims
+        await SignInManager.RefreshSignInAsync(user);
+        
+        isSuccess = true;
+        isSaving = false;
+        
+        // Update avatar url
+        AvatarUrl = $"https://ui-avatars.com/api/?name={user.FirstName}+{user.LastName}&background=0D8ABC&color=fff";
+    }
+
+    public class ProfileModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string FirstName { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public string LastName { get; set; } = string.Empty;
+
+        public string Email { get; set; } = string.Empty;
+
+        public string? OldPassword { get; set; }
+        
+        public string? NewPassword { get; set; }
+        
+        public string? ConfirmPassword { get; set; }
+    }
+}
