@@ -1,0 +1,121 @@
+@page "/activities"
+@inject DataService DataService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@attribute [Authorize]
+
+<MudText Typo="Typo.h2" Class="mb-6" Style="font-weight: 900; text-transform: uppercase;">MY ACTIVITIES</MudText>
+
+<MudPaper Class="brutalist-card pa-4 mb-6" Elevation="0">
+    <MudText Typo="Typo.h5" Style="font-weight: 900;" Class="mb-4">RECORD NEW ACTIVITY</MudText>
+    <EditForm Model="@_newActivity" OnValidSubmit="SaveActivity">
+        <DataAnnotationsValidator />
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_newActivity.Title" Label="Title" Variant="Variant.Outlined" Class="brutalist-input mb-2" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect @bind-Value="_newActivity.Type" Label="Type" Variant="Variant.Outlined" Class="brutalist-input mb-2" Required="true">
+                    <MudSelectItem Value="@("Run")">Run</MudSelectItem>
+                    <MudSelectItem Value="@("Ride")">Ride</MudSelectItem>
+                    <MudSelectItem Value="@("Walk")">Walk</MudSelectItem>
+                    <MudSelectItem Value="@("Hike")">Hike</MudSelectItem>
+                    <MudSelectItem Value="@("Swim")">Swim</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudNumericField @bind-Value="_newActivity.DistanceKm" Label="Distance (km)" Variant="Variant.Outlined" Class="brutalist-input mb-2" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTimePicker @bind-Time="_selectedTime" Label="Duration" Variant="Variant.Outlined" Class="brutalist-input mb-2" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudNumericField @bind-Value="_newActivity.ElevationGainMeters" Label="Elevation Gain (m)" Variant="Variant.Outlined" Class="brutalist-input mb-2" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_newActivity.Description" Label="How did it feel?" Variant="Variant.Outlined" Lines="2" Class="brutalist-input mb-4" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Class="brutalist-btn">SAVE ACTIVITY</MudButton>
+            </MudItem>
+        </MudGrid>
+    </EditForm>
+</MudPaper>
+
+@if (_activities == null)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="@_activities" Class="brutalist-card" Elevation="0" Hover="true">
+        <HeaderContent>
+            <MudTh><MudText Style="font-weight: 900;">DATE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">TITLE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">TYPE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">DISTANCE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">DURATION</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">ACTIONS</MudText></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="DATE">@context.Date.ToShortDateString()</MudTd>
+            <MudTd DataLabel="TITLE">@context.Title</MudTd>
+            <MudTd DataLabel="TYPE"><MudChip T="string" Color="Color.Secondary" Class="brutalist-card">@context.Type.ToUpper()</MudChip></MudTd>
+            <MudTd DataLabel="DISTANCE">@context.DistanceKm km</MudTd>
+            <MudTd DataLabel="DURATION">@context.Duration.ToString(@"hh\:mm\:ss")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteActivity(context.Id))" Class="brutalist-btn" Size="Size.Small" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<Activity>? _activities;
+    private Activity _newActivity = new() { Type = "Run", Date = DateTime.UtcNow };
+    private TimeSpan? _selectedTime = new TimeSpan(0, 30, 0);
+    private int _currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = ((CustomAuthStateProvider)AuthStateProvider).GetCurrentUser();
+        if (user != null)
+        {
+            _currentUserId = user.Id;
+            await LoadActivities();
+        }
+    }
+
+    private async Task LoadActivities()
+    {
+        _activities = await DataService.GetUserActivitiesAsync(_currentUserId);
+    }
+
+    private async Task SaveActivity()
+    {
+        if (_selectedTime.HasValue)
+        {
+            _newActivity.Duration = _selectedTime.Value;
+            if (_newActivity.DistanceKm > 0)
+            {
+                _newActivity.AveragePaceMinPerKm = _newActivity.Duration.TotalMinutes / _newActivity.DistanceKm;
+            }
+        }
+        
+        _newActivity.UserId = _currentUserId;
+        _newActivity.Date = DateTime.UtcNow;
+
+        await DataService.AddActivityAsync(_newActivity);
+        Snackbar.Add("Activity saved!", Severity.Success);
+        
+        _newActivity = new() { Type = "Run", Date = DateTime.UtcNow };
+        await LoadActivities();
+    }
+
+    private async Task DeleteActivity(int id)
+    {
+        await DataService.DeleteActivityAsync(id);
+        Snackbar.Add("Activity deleted.", Severity.Success);
+        await LoadActivities();
+    }
+}

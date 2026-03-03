@@ -1,0 +1,287 @@
+@page "/"
+@using System.Text.Json
+@inject DataService DataService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IStorageService StorageService
+@inject ISnackbar Snackbar
+@attribute [Authorize]
+
+<MudText Typo="Typo.h2" Class="mb-6" Style="font-weight: 900; text-transform: uppercase; color: var(--mud-palette-primary);">ACTIVITY FEED</MudText>
+
+@if (_activities == null)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else if (!_activities.Any())
+{
+    <MudAlert Severity="Severity.Info" Class="brutalist-card">No activities to show. Start following people or record an activity!</MudAlert>
+}
+else
+{
+    <MudGrid>
+        @foreach (var act in _activities)
+        {
+            var isLiked = act.Likes.Any(l => l.UserId == _currentUser?.Id);
+            <MudItem xs="12" md="8" Class="mb-4">
+                <MudCard Class="brutalist-card" Elevation="0">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Size="Size.Large" Class="brutalist-card">
+                                <MudImage Src="@act.User?.ProfileImageUrl" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6" Style="font-weight: bold;">@act.User?.Username</MudText>
+                            <MudText Typo="Typo.body2">@act.Date.ToString("f")</MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudChip T="string" Color="Color.Secondary" Class="brutalist-card mt-2" Style="color: #000; font-weight: bold;">@act.Type.ToUpper()</MudChip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    
+                    <MudCardContent>
+                        <MudText Typo="Typo.h4" Style="font-weight: 900; text-transform: uppercase;" Class="mb-2">@act.Title</MudText>
+                        <MudText Typo="Typo.body1" Class="mb-4">@act.Description</MudText>
+
+                        <MudGrid>
+                            <MudItem xs="4">
+                                <MudText Typo="Typo.caption" Style="font-weight: bold; text-transform: uppercase;">Distance</MudText>
+                                <MudText Typo="Typo.h5" Style="font-weight: 900;">@act.DistanceKm <small>km</small></MudText>
+                            </MudItem>
+                            <MudItem xs="4">
+                                <MudText Typo="Typo.caption" Style="font-weight: bold; text-transform: uppercase;">Duration</MudText>
+                                <MudText Typo="Typo.h5" Style="font-weight: 900;">@(act.Duration.ToString(@"hh\:mm\:ss"))</MudText>
+                            </MudItem>
+                            <MudItem xs="4">
+                                <MudText Typo="Typo.caption" Style="font-weight: bold; text-transform: uppercase;">Pace</MudText>
+                                <MudText Typo="Typo.h5" Style="font-weight: 900;">@act.AveragePaceMinPerKm.ToString("0.00") <small>/km</small></MudText>
+                            </MudItem>
+                        </MudGrid>
+
+                        @{
+                            var polyline = GenerateSvgPolyline(act.MapRouteData);
+                        }
+                        @if (!string.IsNullOrEmpty(polyline))
+                        {
+                            <div style="height: 200px; background-color: #FAFAFA; border: 3px solid #E0E0E0; border-radius: 8px; display:flex; align-items:center; justify-content:center;" class="mt-4">
+                                <svg width="100%" height="100%" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet">
+                                    <polyline points="@polyline" fill="none" stroke="var(--mud-palette-primary)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" />
+                                </svg>
+                            </div>
+                        }
+                    </MudCardContent>
+
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" StartIcon="@(isLiked ? Icons.Material.Filled.ThumbUp : Icons.Material.Outlined.ThumbUp)" Color="@(isLiked ? Color.Primary : Color.Default)" Style="font-weight: bold;" OnClick="@(() => ToggleLike(act))">@act.Likes.Count Kudos</MudButton>
+                        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Comment" Style="font-weight: bold;" OnClick="@(() => ToggleComments(act.Id))">@act.Comments.Count Comments</MudButton>
+                    </MudCardActions>
+
+                    @if (_expandedComments.Contains(act.Id))
+                    {
+                        <MudCardContent Class="pt-0">
+                            <MudDivider Class="my-2" />
+                            @foreach (var comment in act.Comments.OrderBy(c => c.CreatedAt))
+                            {
+                                <div class="mb-3">
+                                    <MudText Typo="Typo.caption" Style="font-weight: bold;">@comment.User?.Username <span style="font-weight: normal; color: #666;"> - @comment.CreatedAt.ToString("g")</span></MudText>
+                                    <div>
+                                        @RenderCommentContent(comment.Content)
+                                    </div>
+                                </div>
+                            }
+                            <div class="d-flex mt-4 align-center">
+                                <MudMenu Icon="@Icons.Material.Filled.EmojiEmotions" AnchorOrigin="Origin.TopLeft" TransformOrigin="Origin.BottomLeft" Dense="true" Color="Color.Primary">
+                                    <div class="pa-2" style="max-width: 200px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        @foreach(var emoji in new[]{"😀","😂","😍","🔥","👍","💪","🏃","🚴","🏊","🙌"})
+                                        {
+                                            <span style="font-size: 1.5rem; cursor: pointer;" @onclick="@(() => AddEmoji(act.Id, emoji))">@emoji</span>
+                                        }
+                                    </div>
+                                </MudMenu>
+
+                                <InputFile id="@($"fileInput_{act.Id}")" OnChange="@((e) => UploadCommentImage(e, act.Id))" accept=".png, .jpg, .jpeg" style="display: none;" />
+                                <MudIconButton HtmlTag="label" for="@($"fileInput_{act.Id}")" Icon="@Icons.Material.Filled.Image" Color="Color.Primary" />
+
+                                <MudTextField @bind-Value="_newComments[act.Id]" Placeholder="Add a comment..." Variant="Variant.Outlined" Margin="Margin.Dense" Class="brutalist-input mx-2" Style="background-color: #FFF;" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Secondary" Class="brutalist-btn" Style="color: #000;" OnClick="@(() => SubmitComment(act))">POST</MudButton>
+                            </div>
+                        </MudCardContent>
+                    }
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<Activity>? _activities;
+    private User? _currentUser;
+    private HashSet<int> _expandedComments = new();
+    private Dictionary<int, string> _newComments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentUser = ((CustomAuthStateProvider)AuthStateProvider).GetCurrentUser();
+
+        if (_currentUser != null)
+        {
+            await LoadActivities();
+        }
+    }
+
+    private async Task LoadActivities()
+    {
+        if (_currentUser != null)
+        {
+            _activities = await DataService.GetFeedActivitiesAsync(_currentUser.Id);
+            
+            // Initialize comment text dictionary
+            foreach (var act in _activities)
+            {
+                if (!_newComments.ContainsKey(act.Id))
+                {
+                    _newComments[act.Id] = string.Empty;
+                }
+            }
+        }
+    }
+
+    private async Task ToggleLike(Activity act)
+    {
+        if (_currentUser == null) return;
+
+        var existingLike = act.Likes.FirstOrDefault(l => l.UserId == _currentUser.Id);
+        if (existingLike != null)
+        {
+            await DataService.RemoveLikeAsync(act.Id, _currentUser.Id);
+        }
+        else
+        {
+            await DataService.LikeActivityAsync(act.Id, _currentUser.Id);
+        }
+
+        await LoadActivities();
+    }
+
+    private void ToggleComments(int activityId)
+    {
+        if (_expandedComments.Contains(activityId))
+        {
+            _expandedComments.Remove(activityId);
+        }
+        else
+        {
+            _expandedComments.Add(activityId);
+        }
+    }
+
+    private void AddEmoji(int activityId, string emoji)
+    {
+        if (!_newComments.ContainsKey(activityId))
+        {
+            _newComments[activityId] = string.Empty;
+        }
+        _newComments[activityId] += emoji;
+    }
+
+    private async Task UploadCommentImage(InputFileChangeEventArgs e, int activityId)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            try
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024); // max 5MB
+                var url = await StorageService.UploadFileAsync(file.Name, stream);
+                
+                if (!_newComments.ContainsKey(activityId))
+                {
+                    _newComments[activityId] = string.Empty;
+                }
+                    
+                _newComments[activityId] += $" [img]{url}[/img]";
+                Snackbar.Add("Image attached to comment!", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task SubmitComment(Activity act)
+    {
+        if (_currentUser == null) return;
+
+        var content = _newComments.ContainsKey(act.Id) ? _newComments[act.Id] : string.Empty;
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            Snackbar.Add("Comment cannot be empty.", Severity.Warning);
+            return;
+        }
+
+        await DataService.AddCommentAsync(act.Id, _currentUser.Id, content);
+        _newComments[act.Id] = string.Empty;
+        Snackbar.Add("Comment added!", Severity.Success);
+        
+        await LoadActivities();
+    }
+
+    private RenderFragment RenderCommentContent(string content) => builder =>
+    {
+        // Simple parser for [img]url[/img] syntax
+        var parts = content.Split(new[] { "[img]", "[/img]" }, StringSplitOptions.None);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (i % 2 == 1 && parts[i].StartsWith("/uploads/")) // Ensure it's somewhat valid
+            {
+                builder.OpenElement(0, "img");
+                builder.AddAttribute(1, "src", parts[i]);
+                builder.AddAttribute(2, "style", "max-width: 250px; max-height: 250px; display: block; margin-top: 8px; border-radius: 8px; border: 2px solid #E0E0E0;");
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(3, "span");
+                builder.AddContent(4, parts[i]);
+                builder.CloseElement();
+            }
+        }
+    };
+
+    private string GenerateSvgPolyline(string mapRouteData)
+    {
+        if (string.IsNullOrWhiteSpace(mapRouteData)) return string.Empty;
+        try
+        {
+            var coords = JsonSerializer.Deserialize<double[][]>(mapRouteData);
+            if (coords == null || coords.Length == 0) return string.Empty;
+
+            double minLat = coords.Min(c => c[0]);
+            double maxLat = coords.Max(c => c[0]);
+            double minLng = coords.Min(c => c[1]);
+            double maxLng = coords.Max(c => c[1]);
+
+            double latDiff = maxLat - minLat;
+            double lngDiff = maxLng - minLng;
+            
+            if (latDiff == 0) latDiff = 0.0001;
+            if (lngDiff == 0) lngDiff = 0.0001;
+
+            var points = new List<string>();
+            foreach (var c in coords)
+            {
+                // X = long, Y = lat (inverted for SVG)
+                double x = ((c[1] - minLng) / lngDiff) * 180 + 10; 
+                double y = 190 - (((c[0] - minLat) / latDiff) * 180);
+                points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            }
+
+            return string.Join(" ", points);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+}

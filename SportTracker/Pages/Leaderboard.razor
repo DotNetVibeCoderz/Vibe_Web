@@ -1,0 +1,49 @@
+@page "/leaderboard"
+@inject DataService DataService
+@attribute [Authorize]
+
+<MudText Typo="Typo.h2" Class="mb-6" Style="font-weight: 900; text-transform: uppercase; color: #E6FF00; -webkit-text-stroke: 2px black;">GLOBAL RANKINGS</MudText>
+
+@if (_users == null)
+{
+    <MudProgressCircular Color="Color.Secondary" Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="@_users" Class="brutalist-card mb-8" Elevation="0" Hover="true">
+        <HeaderContent>
+            <MudTh><MudText Style="font-weight: 900;">RANK</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">ATHLETE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">TOTAL DISTANCE</MudText></MudTh>
+            <MudTh><MudText Style="font-weight: 900;">TOTAL ACTIVITIES</MudText></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <MudText Typo="Typo.h5" Style="font-weight: 900;">#@(_users.IndexOf(context) + 1)</MudText>
+            </MudTd>
+            <MudTd>
+                <div style="display:flex; align-items:center;">
+                    <MudAvatar Size="Size.Medium" Class="brutalist-card mr-4">
+                        <MudImage Src="@context.ProfileImageUrl" />
+                    </MudAvatar>
+                    <MudText Typo="Typo.h6" Style="font-weight: bold;">@context.Username</MudText>
+                </div>
+            </MudTd>
+            <MudTd>
+                <MudText Typo="Typo.h6" Style="font-weight: 900;">@context.Activities.Sum(a => a.DistanceKm).ToString("0.0") <small>km</small></MudText>
+            </MudTd>
+            <MudTd>
+                <MudText Typo="Typo.h6" Style="font-weight: 900;">@context.Activities.Count</MudText>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<User>? _users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await DataService.GetLeaderboardAsync(10);
+    }
+}

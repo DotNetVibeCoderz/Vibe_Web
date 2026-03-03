@@ -1,0 +1,92 @@
+@page "/clubs"
+@inject DataService DataService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@attribute [Authorize]
+
+<MudText Typo="Typo.h2" Class="mb-6" Style="font-weight: 900; text-transform: uppercase;">CLUBS</MudText>
+
+@if (_clubs == null)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else
+{
+    <MudGrid>
+        @foreach (var club in _clubs)
+        {
+            var isMember = _userClubStatus.ContainsKey(club.Id) && _userClubStatus[club.Id];
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="brutalist-card h-100 d-flex flex-column" Elevation="0">
+                    <MudCardMedia Image="@club.CoverImageUrl" Height="200" Style="border-bottom: 4px solid black;" />
+                    <MudCardContent Class="flex-grow-1">
+                        <MudText Typo="Typo.h5" Style="font-weight: 900; text-transform: uppercase;" Class="mb-2">@club.Name</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-4">@club.Description</MudText>
+                        
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.Group" Class="mr-2" />
+                            <MudText Typo="Typo.subtitle2" Style="font-weight: bold;">@club.Members.Count Members</MudText>
+                        </div>
+                    </MudCardContent>
+                    <MudCardActions>
+                        @if (isMember)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true" Class="brutalist-btn m-2 py-3" Style="font-size: 1.2rem;" OnClick="@(() => LeaveClub(club.Id))">LEAVE CLUB</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true" Class="brutalist-btn m-2 py-3" Style="font-size: 1.2rem;" OnClick="@(() => JoinClub(club.Id))">JOIN CLUB</MudButton>
+                        }
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<Club>? _clubs;
+    private Dictionary<int, bool> _userClubStatus = new();
+    private User? _currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentUser = ((CustomAuthStateProvider)AuthStateProvider).GetCurrentUser();
+        await LoadClubs();
+    }
+
+    private async Task LoadClubs()
+    {
+        _clubs = await DataService.GetClubsAsync();
+        
+        if (_currentUser != null && _clubs != null)
+        {
+            _userClubStatus.Clear();
+            foreach (var club in _clubs)
+            {
+                var isMember = await DataService.IsUserInClubAsync(_currentUser.Id, club.Id);
+                _userClubStatus[club.Id] = isMember;
+            }
+        }
+    }
+
+    private async Task JoinClub(int clubId)
+    {
+        if (_currentUser != null)
+        {
+            await DataService.JoinClubAsync(_currentUser.Id, clubId);
+            Snackbar.Add("You joined the club!", Severity.Success);
+            await LoadClubs();
+        }
+    }
+
+    private async Task LeaveClub(int clubId)
+    {
+        if (_currentUser != null)
+        {
+            await DataService.LeaveClubAsync(_currentUser.Id, clubId);
+            Snackbar.Add("You left the club.", Severity.Info);
+            await LoadClubs();
+        }
+    }
+}

@@ -1,0 +1,131 @@
+@page "/profile"
+@inject AuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IStorageService StorageService
+@inject ISnackbar Snackbar
+@attribute [Authorize]
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudText Typo="Typo.h2" Class="mb-6 text-center" Style="font-weight: 900; text-transform: uppercase;">MY PROFILE</MudText>
+
+    @if (_user == null)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Class="pa-8 brutalist-card" Elevation="0">
+            <div class="d-flex flex-column align-center mb-6">
+                <MudAvatar Style="height:100px; width:100px; border: 4px solid black;" Class="mb-4">
+                    <MudImage Src="@_profileModel.ProfileImageUrl" />
+                </MudAvatar>
+                
+                <InputFile id="fileInput" OnChange="UploadProfileImage" accept=".png, .jpg, .jpeg" style="display: none;" />
+                <MudButton HtmlTag="label" for="fileInput" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CloudUpload" Color="Color.Primary">
+                    Upload New Avatar
+                </MudButton>
+            </div>
+
+            <MudText Typo="Typo.h5" Align="Align.Center" Style="font-weight: 900;" Class="mb-6">@_user.Username</MudText>
+
+            <EditForm Model="@_profileModel" OnValidSubmit="UpdateProfile">
+                <DataAnnotationsValidator />
+                
+                <MudTextField @bind-Value="_profileModel.Email" Label="Email Address" InputType="InputType.Email" Variant="Variant.Outlined" Class="brutalist-input mb-4" Required="true" />
+                <MudTextField @bind-Value="_profileModel.ProfileImageUrl" Label="Profile Image URL" Variant="Variant.Outlined" Class="brutalist-input mb-8" />
+
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true" Class="brutalist-btn py-4">UPDATE PROFILE</MudButton>
+            </EditForm>
+        </MudPaper>
+
+        <MudPaper Class="pa-8 brutalist-card mt-8" Elevation="0">
+            <MudText Typo="Typo.h5" Style="font-weight: 900; text-transform: uppercase;" Class="mb-6">CHANGE PASSWORD</MudText>
+            
+            <EditForm Model="@_passwordModel" OnValidSubmit="ChangePassword">
+                <DataAnnotationsValidator />
+                <MudTextField @bind-Value="_passwordModel.NewPassword" Label="New Password" InputType="InputType.Password" Variant="Variant.Outlined" Class="brutalist-input mb-4" Required="true" />
+                <MudTextField @bind-Value="_passwordModel.ConfirmPassword" Label="Confirm Password" InputType="InputType.Password" Variant="Variant.Outlined" Class="brutalist-input mb-8" Required="true" />
+
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" FullWidth="true" Class="brutalist-btn py-4">UPDATE PASSWORD</MudButton>
+            </EditForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private User? _user;
+    private ProfileModel _profileModel = new();
+    private PasswordModel _passwordModel = new();
+
+    protected override void OnInitialized()
+    {
+        _user = ((CustomAuthStateProvider)AuthStateProvider).GetCurrentUser();
+        if (_user != null)
+        {
+            _profileModel.Email = _user.Email;
+            _profileModel.ProfileImageUrl = _user.ProfileImageUrl;
+        }
+    }
+
+    private async Task UploadProfileImage(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            try
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024); // max 5MB
+                var url = await StorageService.UploadFileAsync(file.Name, stream);
+                _profileModel.ProfileImageUrl = url;
+                Snackbar.Add("Image uploaded successfully!", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task UpdateProfile()
+    {
+        if (_user != null)
+        {
+            var success = await AuthService.UpdateProfileAsync(_user.Id, _profileModel.Email, _profileModel.ProfileImageUrl);
+            if (success)
+            {
+                Snackbar.Add("Profile updated. Please login again to see changes fully applied.", Severity.Success);
+            }
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        if (_passwordModel.NewPassword != _passwordModel.ConfirmPassword)
+        {
+            Snackbar.Add("Passwords do not match.", Severity.Warning);
+            return;
+        }
+
+        if (_user != null)
+        {
+            var success = await AuthService.ResetPasswordAsync(_user.Username, _passwordModel.NewPassword);
+            if (success)
+            {
+                Snackbar.Add("Password updated successfully.", Severity.Success);
+                _passwordModel = new();
+            }
+        }
+    }
+
+    public class ProfileModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string ProfileImageUrl { get; set; } = string.Empty;
+    }
+
+    public class PasswordModel
+    {
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

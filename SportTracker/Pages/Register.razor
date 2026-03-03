@@ -1,0 +1,49 @@
+@page "/register"
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Class="pa-8 brutalist-card" Elevation="0">
+        <MudText Typo="Typo.h3" Align="Align.Center" Class="mb-8" Style="font-weight: 900; text-transform: uppercase;">JOIN THE PACK</MudText>
+
+        <EditForm Model="@_registerModel" OnValidSubmit="HandleRegister">
+            <DataAnnotationsValidator />
+            
+            <MudTextField @bind-Value="_registerModel.Username" Label="Choose Username" Variant="Variant.Outlined" Class="brutalist-input mb-4" Required="true" />
+            <MudTextField @bind-Value="_registerModel.Email" Label="Email Address" InputType="InputType.Email" Variant="Variant.Outlined" Class="brutalist-input mb-4" Required="true" />
+            <MudTextField @bind-Value="_registerModel.Password" Label="Create Password" InputType="InputType.Password" Variant="Variant.Outlined" Class="brutalist-input mb-8" Required="true" />
+
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" FullWidth="true" Class="brutalist-btn py-4">SIGN ME UP</MudButton>
+        </EditForm>
+        
+        <MudText Align="Align.Center" Class="mt-4">
+            Already a member? <MudLink Href="/login" Color="Color.Primary" Style="font-weight: bold;">Log In</MudLink>
+        </MudText>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private RegisterModel _registerModel = new();
+
+    private async Task HandleRegister()
+    {
+        var success = await AuthService.RegisterAsync(_registerModel.Username, _registerModel.Password, _registerModel.Email);
+        if (success)
+        {
+            Snackbar.Add("Account created! Please login.", Severity.Success);
+            NavigationManager.NavigateTo("/login");
+        }
+        else
+        {
+            Snackbar.Add("Username already exists.", Severity.Warning);
+        }
+    }
+
+    public class RegisterModel
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

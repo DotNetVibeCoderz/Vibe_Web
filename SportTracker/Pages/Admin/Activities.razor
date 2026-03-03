@@ -1,0 +1,98 @@
+@page "/admin/activities"
+@using System.IO
+@using CsvHelper
+@using System.Globalization
+@using Microsoft.JSInterop
+@inject DataService DataService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Roles = "admin")]
+
+<MudText Typo="Typo.h2" Class="mb-6" Style="font-weight: 900; text-transform: uppercase;">ACTIVITY MASTER DATA</MudText>
+
+<MudPaper Class="brutalist-card pa-4 mb-4" Elevation="0">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <MudTextField @bind-Value="_searchString" Placeholder="Search by Title or User" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="brutalist-input" Style="width:300px;" Immediate="true" />
+        <MudButton OnClick="ExportToCsv" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" Class="brutalist-btn">EXPORT CSV</MudButton>
+    </div>
+</MudPaper>
+
+<MudTable Items="@FilteredActivities" Hover="true" Class="brutalist-card" Elevation="0" Dense="true" RowsPerPage="10">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.User?.Username ?? string.Empty)">User</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.Title)">Title</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.Type)">Type</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.DistanceKm)">Distance</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortBy="new Func<Activity, object>(x=>x.Date)">Date</MudTableSortLabel></MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="ID">@context.Id</MudTd>
+        <MudTd DataLabel="User">@context.User?.Username</MudTd>
+        <MudTd DataLabel="Title">@context.Title</MudTd>
+        <MudTd DataLabel="Type">@context.Type</MudTd>
+        <MudTd DataLabel="Distance">@context.DistanceKm km</MudTd>
+        <MudTd DataLabel="Date">@context.Date.ToShortDateString()</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteActivity(context.Id))" Class="brutalist-btn" Size="Size.Small" />
+        </MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private List<Activity>? _activities;
+    private string _searchString = string.Empty;
+
+    private IEnumerable<Activity> FilteredActivities => string.IsNullOrWhiteSpace(_searchString) 
+        ? (_activities ?? Enumerable.Empty<Activity>()) 
+        : (_activities ?? Enumerable.Empty<Activity>()).Where(a => a.Title.Contains(_searchString, StringComparison.OrdinalIgnoreCase) || 
+                                                                  (a.User?.Username.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _activities = await DataService.GetAllActivitiesAsync();
+    }
+
+    private async Task DeleteActivity(int id)
+    {
+        await DataService.DeleteActivityAsync(id);
+        await LoadData();
+        Snackbar.Add("Activity deleted.", Severity.Success);
+    }
+
+    private async Task ExportToCsv()
+    {
+        if (_activities == null) return;
+
+        using var memoryStream = new MemoryStream();
+        using var writer = new StreamWriter(memoryStream);
+        using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+
+        var exportData = FilteredActivities.Select(a => new {
+            a.Id,
+            User = a.User?.Username,
+            a.Title,
+            a.Type,
+            Distance = a.DistanceKm,
+            a.Duration,
+            Date = a.Date.ToString("yyyy-MM-dd")
+        });
+
+        csv.WriteRecords(exportData);
+        writer.Flush();
+        var bytes = memoryStream.ToArray();
+        var base64 = Convert.ToBase64String(bytes);
+
+        await JSRuntime.InvokeVoidAsync("downloadFile", "activities_export.csv", "text/csv", base64);
+        Snackbar.Add("Exported successfully.", Severity.Success);
+    }
+}

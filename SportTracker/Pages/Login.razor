@@ -1,0 +1,49 @@
+@page "/login"
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Class="pa-8 brutalist-card" Elevation="0">
+        <MudText Typo="Typo.h3" Align="Align.Center" Class="mb-8" Style="font-weight: 900; text-transform: uppercase;">LOGIN</MudText>
+
+        <EditForm Model="@_loginModel" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+            
+            <MudTextField @bind-Value="_loginModel.Username" Label="Username" Variant="Variant.Outlined" Class="brutalist-input mb-4" Required="true" />
+            <MudTextField @bind-Value="_loginModel.Password" Label="Password" InputType="InputType.Password" Variant="Variant.Outlined" Class="brutalist-input mb-8" Required="true" />
+
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true" Class="brutalist-btn py-4">ENTER THE ZONE</MudButton>
+        </EditForm>
+        
+        <MudText Align="Align.Center" Class="mt-4">
+            Don't have an account? <MudLink Href="/register" Color="Color.Secondary" Style="font-weight: bold;">Join Now</MudLink>
+        </MudText>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private LoginModel _loginModel = new();
+
+    private async Task HandleLogin()
+    {
+        var user = await AuthService.LoginAsync(_loginModel.Username, _loginModel.Password);
+        if (user != null)
+        {
+            ((CustomAuthStateProvider)AuthStateProvider).MarkUserAsAuthenticated(user);
+            NavigationManager.NavigateTo("/");
+            Snackbar.Add($"Welcome back, {user.Username}!", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Invalid username or password", Severity.Error);
+        }
+    }
+
+    public class LoginModel
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

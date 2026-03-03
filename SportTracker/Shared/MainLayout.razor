@@ -1,0 +1,93 @@
+@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
+
+<MudThemeProvider @ref="_themeProvider" @bind-IsDarkMode="_isDarkMode" Theme="_sportTrackerTheme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Class="brutalist-card mb-4 mt-2 mx-4" Style="background-color: var(--mud-palette-primary); color: #FFF; height: 70px;">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Class="brutalist-btn" />
+        <MudText Typo="Typo.h5" Class="ml-3" Style="font-weight: 900; letter-spacing: -1px;">SPORT-TRACKER</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Brightness4" Color="Color.Inherit" OnClick="@ToggleDarkMode" Class="brutalist-btn mr-2" />
+        
+        <AuthorizeView>
+            <Authorized>
+                <MudButton Href="/profile" StartIcon="@Icons.Material.Filled.Person" Variant="Variant.Filled" Color="Color.Secondary" Class="brutalist-btn mr-2" Style="color: #000;">@context.User.Identity?.Name</MudButton>
+                <MudButton OnClick="Logout" Variant="Variant.Filled" Color="Color.Error" Class="brutalist-btn">Logout</MudButton>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Href="/login" Variant="Variant.Filled" Color="Color.Secondary" Class="brutalist-btn mr-2" Style="color: #000;">Login</MudButton>
+                <MudButton Href="/register" Variant="Variant.Filled" Color="Color.Surface" Class="brutalist-btn" Style="color: #000;">Register</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="0" Class="brutalist-card m-4" Style="height: calc(100vh - 32px); top: 90px;">
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="px-4">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4 pt-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = false;
+    private MudThemeProvider? _themeProvider;
+
+    private MudTheme _sportTrackerTheme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#1A73E8",      // Comfort Blue
+            Secondary = "#4CAF50",    // Calming Green
+            Tertiary = "#FBC02D",     // Soft Yellow
+            Background = "#F5F7FA",
+            Surface = "#FFFFFF",
+            AppbarBackground = "#1A73E8",
+            AppbarText = "#FFFFFF",
+            TextPrimary = "#202124",
+            TextSecondary = "#5F6368"
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#8AB4F8",
+            Secondary = "#81C995",
+            Tertiary = "#FDE293",
+            Background = "#202124",
+            Surface = "#303134",
+            AppbarBackground = "#303134",
+            AppbarText = "#E8EAED",
+            TextPrimary = "#E8EAED",
+            TextSecondary = "#9AA0A6"
+        },
+        Typography = new Typography()
+        {
+            Default = new DefaultTypography() { FontFamily = new[] { "Inter", "sans-serif" } }
+        }
+    };
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+    }
+
+    private void Logout()
+    {
+        ((CustomAuthStateProvider)AuthStateProvider).MarkUserAsLoggedOut();
+        NavigationManager.NavigateTo("/login");
+    }
+}

@@ -1,0 +1,18 @@
+<MudNavMenu Class="p-2" Bordered="false">
+    <MudText Typo="Typo.h6" Class="px-4 py-2" Style="font-weight: 900;">MENU</MudText>
+    <MudDivider Class="my-2" Style="border-width: 2px; border-color: black;" />
+    
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" Class="brutalist-btn mb-2">Dashboard</MudNavLink>
+    <MudNavLink Href="/activities" Icon="@Icons.Material.Filled.DirectionsRun" Class="brutalist-btn mb-2">My Activities</MudNavLink>
+    <MudNavLink Href="/leaderboard" Icon="@Icons.Material.Filled.Leaderboard" Class="brutalist-btn mb-2">Leaderboard</MudNavLink>
+    <MudNavLink Href="/clubs" Icon="@Icons.Material.Filled.Groups" Class="brutalist-btn mb-2">Clubs</MudNavLink>
+
+    <AuthorizeView Roles="admin">
+        <Authorized>
+            <MudDivider Class="my-2" Style="border-width: 2px; border-color: black;" />
+            <MudText Typo="Typo.subtitle2" Class="px-4 py-2" Style="font-weight: 900;">ADMIN</MudText>
+            <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.People" Class="brutalist-btn mb-2">Manage Users</MudNavLink>
+            <MudNavLink Href="/admin/activities" Icon="@Icons.Material.Filled.ListAlt" Class="brutalist-btn mb-2">Manage Activities</MudNavLink>
+        </Authorized>
+    </AuthorizeView>
+</MudNavMenu>
