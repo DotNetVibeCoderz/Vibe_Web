@@ -1,5 +1,5 @@
 @page "/people"
-@inject ApplicationDbContext DbContext
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IEncryptionService EncryptionService
 @inject StorageFactory StorageFactory
 
@@ -218,7 +218,9 @@
 
     private async Task LoadPeopleAsync()
     {
-        _people = await DbContext.People
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        _people = await dbContext.People
+            .AsNoTracking()
             .OrderBy(p => p.BirthDate)
             .ToListAsync();
 
@@ -231,22 +233,28 @@
     private async Task OpenTimeline(Person person)
     {
         _selectedPerson = person;
-        _stories = await DbContext.Stories
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+
+        _stories = await dbContext.Stories
+            .AsNoTracking()
             .Where(s => s.PersonId == person.Id)
             .OrderByDescending(s => s.CreatedAt)
             .ToListAsync();
 
-        _media = await DbContext.MediaItems
+        _media = await dbContext.MediaItems
+            .AsNoTracking()
             .Where(m => m.PersonId == person.Id)
             .OrderByDescending(m => m.UploadedAt)
             .ToListAsync();
 
-        _relationships = await DbContext.Relationships
+        _relationships = await dbContext.Relationships
+            .AsNoTracking()
             .Include(r => r.RelatedPerson)
             .Where(r => r.PersonId == person.Id)
             .ToListAsync();
 
-        _timelineEvents = await DbContext.TimelineEvents
+        _timelineEvents = await dbContext.TimelineEvents
+            .AsNoTracking()
             .Where(t => t.FamilyTreeEntityId == person.FamilyTreeEntityId)
             .OrderByDescending(t => t.EventDate)
             .ToListAsync();
@@ -330,16 +338,17 @@
             _editingPerson.PhotoUrl = url;
         }
 
-        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        var treeId = await dbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
         if (_editingPerson.Id == 0)
         {
             _editingPerson.FamilyTreeEntityId = treeId;
             _editingPerson.NotesEncrypted = EncryptionService.Encrypt(_notes);
-            DbContext.People.Add(_editingPerson);
+            dbContext.People.Add(_editingPerson);
         }
         else
         {
-            var entity = await DbContext.People.FirstAsync(p => p.Id == _editingPerson.Id);
+            var entity = await dbContext.People.FirstAsync(p => p.Id == _editingPerson.Id);
             entity.FirstName = _editingPerson.FirstName;
             entity.LastName = _editingPerson.LastName;
             entity.Nickname = _editingPerson.Nickname;
@@ -353,7 +362,7 @@
             entity.NotesEncrypted = EncryptionService.Encrypt(_notes);
         }
 
-        await DbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync();
         await LoadPeopleAsync();
         _formMessage = "Data berhasil disimpan.";
         _showMemberForm = false;
@@ -361,19 +370,25 @@
 
     private async Task DeleteMemberAsync(Person person)
     {
-        var relationships = await DbContext.Relationships
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        var relationships = await dbContext.Relationships
             .Where(r => r.PersonId == person.Id || r.RelatedPersonId == person.Id)
             .ToListAsync();
-        DbContext.Relationships.RemoveRange(relationships);
+        dbContext.Relationships.RemoveRange(relationships);
 
-        var media = await DbContext.MediaItems.Where(m => m.PersonId == person.Id).ToListAsync();
-        DbContext.MediaItems.RemoveRange(media);
+        var media = await dbContext.MediaItems.Where(m => m.PersonId == person.Id).ToListAsync();
+        dbContext.MediaItems.RemoveRange(media);
 
-        var stories = await DbContext.Stories.Where(s => s.PersonId == person.Id).ToListAsync();
-        DbContext.Stories.RemoveRange(stories);
+        var stories = await dbContext.Stories.Where(s => s.PersonId == person.Id).ToListAsync();
+        dbContext.Stories.RemoveRange(stories);
 
-        DbContext.People.Remove(person);
-        await DbContext.SaveChangesAsync();
+        var entity = await dbContext.People.FirstOrDefaultAsync(p => p.Id == person.Id);
+        if (entity != null)
+        {
+            dbContext.People.Remove(entity);
+        }
+
+        await dbContext.SaveChangesAsync();
         await LoadPeopleAsync();
     }
 

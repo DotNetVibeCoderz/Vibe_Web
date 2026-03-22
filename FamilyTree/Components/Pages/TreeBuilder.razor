@@ -426,7 +426,7 @@
 
     private async Task LoadTreeAsync()
     {
-        _people = await DbContext.People.ToListAsync();
+        _people = await DbContext.People.AsNoTracking().ToListAsync();
         _relationships = await DbContext.Relationships.ToListAsync();
         BuildRelationshipMaps();
         _generations = BuildGenerations(_people, _relationships);

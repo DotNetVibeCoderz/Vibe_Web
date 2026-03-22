@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace FamilyTree.Services;
@@ -18,6 +19,24 @@ public class DataProtectionEncryptionService : IEncryptionService
 
     public string Decrypt(string cipherText)
     {
-        return string.IsNullOrWhiteSpace(cipherText) ? string.Empty : _protector.Unprotect(cipherText);
+        if (string.IsNullOrWhiteSpace(cipherText))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return _protector.Unprotect(cipherText);
+        }
+        catch (CryptographicException)
+        {
+            // Jika payload tidak valid (misal karena kunci lama), anggap data sudah plain text.
+            return cipherText;
+        }
+        catch (FormatException)
+        {
+            // Handle data yang formatnya tidak sesuai (bukan hasil protect).
+            return cipherText;
+        }
     }
 }

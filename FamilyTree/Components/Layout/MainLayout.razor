@@ -1,6 +1,5 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Navigation
-@inject SignInManager<ApplicationUser> SignInManager
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JsRuntime
@@ -122,7 +121,8 @@
 
     private async Task LoadUserAsync()
     {
-        var user = await UserManager.GetUserAsync(SignInManager.Context.User);
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
         if (user == null)
         {
             return;

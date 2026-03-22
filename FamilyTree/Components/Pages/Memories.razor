@@ -1,5 +1,5 @@
 @page "/memories"
-@inject ApplicationDbContext DbContext
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject StorageFactory StorageFactory
 
 <div class="card">
@@ -123,9 +123,10 @@
 
     private async Task LoadDataAsync()
     {
-        _people = await DbContext.People.ToListAsync();
-        _media = await DbContext.MediaItems.OrderByDescending(m => m.UploadedAt).ToListAsync();
-        _stories = await DbContext.Stories.OrderByDescending(s => s.CreatedAt).ToListAsync();
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        _people = await dbContext.People.AsNoTracking().ToListAsync();
+        _media = await dbContext.MediaItems.AsNoTracking().OrderByDescending(m => m.UploadedAt).ToListAsync();
+        _stories = await dbContext.Stories.AsNoTracking().OrderByDescending(s => s.CreatedAt).ToListAsync();
     }
 
     private void OnFileSelected(InputFileChangeEventArgs args)
@@ -155,8 +156,9 @@
             Type = _file.ContentType.Contains("video") ? MediaType.Video : MediaType.Photo
         };
 
-        DbContext.MediaItems.Add(media);
-        await DbContext.SaveChangesAsync();
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        dbContext.MediaItems.Add(media);
+        await dbContext.SaveChangesAsync();
 
         _media.Insert(0, media);
         _caption = string.Empty;
@@ -197,6 +199,7 @@
             return;
         }
 
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
         if (_editingStory.Id == 0)
         {
             var story = new Story
@@ -206,32 +209,44 @@
                 Content = _storyContent,
                 CreatedAt = DateTime.UtcNow
             };
-            DbContext.Stories.Add(story);
+            dbContext.Stories.Add(story);
         }
         else
         {
-            var entity = await DbContext.Stories.FirstAsync(s => s.Id == _editingStory.Id);
+            var entity = await dbContext.Stories.FirstAsync(s => s.Id == _editingStory.Id);
             entity.PersonId = _storyPersonId;
             entity.Title = _storyTitle;
             entity.Content = _storyContent;
         }
 
-        await DbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync();
         await LoadDataAsync();
         _showStoryForm = false;
     }
 
     private async Task DeleteStoryAsync(Story story)
     {
-        DbContext.Stories.Remove(story);
-        await DbContext.SaveChangesAsync();
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        var entity = await dbContext.Stories.FirstOrDefaultAsync(s => s.Id == story.Id);
+        if (entity != null)
+        {
+            dbContext.Stories.Remove(entity);
+            await dbContext.SaveChangesAsync();
+        }
+
         await LoadDataAsync();
     }
 
     private async Task DeleteMediaAsync(MediaItem media)
     {
-        DbContext.MediaItems.Remove(media);
-        await DbContext.SaveChangesAsync();
+        await using var dbContext = await DbFactory.CreateDbContextAsync();
+        var entity = await dbContext.MediaItems.FirstOrDefaultAsync(m => m.Id == media.Id);
+        if (entity != null)
+        {
+            dbContext.MediaItems.Remove(entity);
+            await dbContext.SaveChangesAsync();
+        }
+
         await LoadDataAsync();
     }
 }

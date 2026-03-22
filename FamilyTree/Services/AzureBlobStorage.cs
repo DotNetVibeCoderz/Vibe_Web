@@ -34,8 +34,28 @@ public class AzureBlobStorage : IFileStorage
             HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
         };
 
-        stream.Position = 0;
-        await blobClient.UploadAsync(stream, options, cancellationToken);
+        // BrowserFileStream tidak mendukung Position/Seek.
+        // Jadi kita normalisasi stream ke MemoryStream agar aman di-upload.
+        Stream uploadStream = stream;
+        if (!stream.CanSeek)
+        {
+            var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, cancellationToken);
+            buffer.Position = 0;
+            uploadStream = buffer;
+        }
+        else
+        {
+            stream.Position = 0;
+        }
+
+        await blobClient.UploadAsync(uploadStream, options, cancellationToken);
+
+        if (uploadStream is MemoryStream)
+        {
+            await uploadStream.DisposeAsync();
+        }
+
         return blobClient.Uri.ToString();
     }
 }
