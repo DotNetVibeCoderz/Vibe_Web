@@ -1,0 +1,37 @@
+@page "/account/login"
+@attribute [AllowAnonymous]
+@layout FamilyTree.Components.Layout.AuthLayout
+@inject NavigationManager Navigation
+
+<div class="card" style="max-width:500px; margin:auto;">
+    <h3>Login</h3>
+    <form class="form-grid" method="post" action="/account/login/submit">
+        <label>Username</label>
+        <input name="username" />
+
+        <label>Password</label>
+        <input type="password" name="password" />
+
+        <button class="btn" type="submit">Masuk</button>
+        @if (_hasError)
+        {
+            <p class="text-danger">Login gagal. Periksa username/password.</p>
+        }
+        <div class="login-links">
+            <a href="/account/register">Create account</a>
+            <span>|</span>
+            <a href="/account/reset">Reset password</a>
+        </div>
+    </form>
+</div>
+
+@code {
+    private bool _hasError;
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        _hasError = query.ContainsKey("error");
+    }
+}

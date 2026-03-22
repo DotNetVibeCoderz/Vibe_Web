@@ -1,0 +1,13 @@
+.node-inline {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.node-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid var(--border);
+}

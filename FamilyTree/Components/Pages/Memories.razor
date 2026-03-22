@@ -1,0 +1,237 @@
+@page "/memories"
+@inject ApplicationDbContext DbContext
+@inject StorageFactory StorageFactory
+
+<div class="card">
+    <h3>Multimedia & Storytelling</h3>
+    <p>Simpan foto, video, dan cerita keluarga untuk menjaga memori lintas generasi.</p>
+</div>
+
+<div class="card">
+    <h3>Upload Memory</h3>
+    <div class="form-grid">
+        <label>Choose Member</label>
+        <select @bind="_selectedPersonId">
+            <option value="0">-- select --</option>
+            @foreach (var person in _people)
+            {
+                <option value="@person.Id">@person.FirstName @person.LastName</option>
+            }
+        </select>
+
+        <label>Caption</label>
+        <input @bind="_caption" />
+
+        <label>Upload Photo/Video</label>
+        <InputFile OnChange="OnFileSelected" />
+
+        <button class="btn" @onclick="UploadAsync">Save Memory</button>
+        <p>@_message</p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Stories</h3>
+    <div class="node-actions">
+        <button class="btn" @onclick="OpenStoryForm">Add Story</button>
+    </div>
+    <div class="card-grid">
+        @foreach (var story in _stories)
+        {
+            <div class="card">
+                <h4>@story.Title</h4>
+                <p>@story.Content</p>
+                <small>@story.CreatedAt.ToString("dd MMM yyyy")</small>
+                <div class="node-actions">
+                    <button class="btn secondary" @onclick="() => OpenStoryForm(story)">Edit</button>
+                    <button class="btn danger" @onclick="() => DeleteStoryAsync(story)">Delete</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card">
+    <h3>Media Gallery</h3>
+    <div class="card-grid">
+        @foreach (var media in _media)
+        {
+            <div class="card">
+                <img src="@media.Url" alt="media" style="width:100%; border:3px solid var(--border);" />
+                <p>@media.Caption</p>
+                <small>@media.UploadedAt.ToString("dd MMM yyyy")</small>
+                <div class="node-actions">
+                    <button class="btn danger" @onclick="() => DeleteMediaAsync(media)">Delete</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_showStoryForm)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>@(_editingStory?.Id == 0 ? "Add Story" : "Edit Story")</h3>
+                <button class="btn danger" @onclick="CloseStoryForm">Close</button>
+            </div>
+
+            <div class="form-grid">
+                <label>Member</label>
+                <select @bind="_storyPersonId">
+                    <option value="0">-- select --</option>
+                    @foreach (var person in _people)
+                    {
+                        <option value="@person.Id">@person.FirstName @person.LastName</option>
+                    }
+                </select>
+
+                <label>Title</label>
+                <input @bind="_storyTitle" />
+
+                <label>Story</label>
+                <textarea rows="4" @bind="_storyContent"></textarea>
+
+                <button class="btn" @onclick="SaveStoryAsync">Save Story</button>
+                <p>@_storyMessage</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Person> _people = new();
+    private List<MediaItem> _media = new();
+    private List<Story> _stories = new();
+    private IBrowserFile? _file;
+    private int _selectedPersonId;
+    private string _caption = string.Empty;
+    private string _message = string.Empty;
+
+    private bool _showStoryForm;
+    private Story? _editingStory;
+    private int _storyPersonId;
+    private string _storyTitle = string.Empty;
+    private string _storyContent = string.Empty;
+    private string _storyMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _people = await DbContext.People.ToListAsync();
+        _media = await DbContext.MediaItems.OrderByDescending(m => m.UploadedAt).ToListAsync();
+        _stories = await DbContext.Stories.OrderByDescending(s => s.CreatedAt).ToListAsync();
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs args)
+    {
+        _file = args.File;
+    }
+
+    private async Task UploadAsync()
+    {
+        _message = string.Empty;
+
+        if (_selectedPersonId == 0 || _file == null)
+        {
+            _message = "Pilih anggota dan file terlebih dahulu.";
+            return;
+        }
+
+        var storage = StorageFactory.Create();
+        await using var stream = _file.OpenReadStream(10 * 1024 * 1024);
+        var url = await storage.SaveAsync(stream, _file.Name, _file.ContentType);
+
+        var media = new MediaItem
+        {
+            PersonId = _selectedPersonId,
+            Url = url,
+            Caption = _caption,
+            Type = _file.ContentType.Contains("video") ? MediaType.Video : MediaType.Photo
+        };
+
+        DbContext.MediaItems.Add(media);
+        await DbContext.SaveChangesAsync();
+
+        _media.Insert(0, media);
+        _caption = string.Empty;
+        _message = "Upload berhasil!";
+    }
+
+    private void OpenStoryForm()
+    {
+        _editingStory = new Story();
+        _storyPersonId = 0;
+        _storyTitle = string.Empty;
+        _storyContent = string.Empty;
+        _storyMessage = string.Empty;
+        _showStoryForm = true;
+    }
+
+    private void OpenStoryForm(Story story)
+    {
+        _editingStory = story;
+        _storyPersonId = story.PersonId;
+        _storyTitle = story.Title;
+        _storyContent = story.Content;
+        _storyMessage = string.Empty;
+        _showStoryForm = true;
+    }
+
+    private void CloseStoryForm()
+    {
+        _showStoryForm = false;
+    }
+
+    private async Task SaveStoryAsync()
+    {
+        _storyMessage = string.Empty;
+        if (_editingStory == null || _storyPersonId == 0)
+        {
+            _storyMessage = "Lengkapi data story terlebih dahulu.";
+            return;
+        }
+
+        if (_editingStory.Id == 0)
+        {
+            var story = new Story
+            {
+                PersonId = _storyPersonId,
+                Title = _storyTitle,
+                Content = _storyContent,
+                CreatedAt = DateTime.UtcNow
+            };
+            DbContext.Stories.Add(story);
+        }
+        else
+        {
+            var entity = await DbContext.Stories.FirstAsync(s => s.Id == _editingStory.Id);
+            entity.PersonId = _storyPersonId;
+            entity.Title = _storyTitle;
+            entity.Content = _storyContent;
+        }
+
+        await DbContext.SaveChangesAsync();
+        await LoadDataAsync();
+        _showStoryForm = false;
+    }
+
+    private async Task DeleteStoryAsync(Story story)
+    {
+        DbContext.Stories.Remove(story);
+        await DbContext.SaveChangesAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task DeleteMediaAsync(MediaItem media)
+    {
+        DbContext.MediaItems.Remove(media);
+        await DbContext.SaveChangesAsync();
+        await LoadDataAsync();
+    }
+}

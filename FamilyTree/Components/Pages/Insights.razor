@@ -1,0 +1,59 @@
+@page "/insights"
+@inject ApplicationDbContext DbContext
+@inject StatsService StatsService
+
+<div class="card">
+    <h3>Insights & Analytics</h3>
+    <p>Demografi, distribusi geografis, dan tren generasi.</p>
+</div>
+
+<div class="card-grid">
+    <div class="card">
+        <h3>Average Lifespan</h3>
+        <p class="big">@_averageLifespan.ToString("0.0") tahun</p>
+    </div>
+    <div class="card">
+        <h3>Top Locations</h3>
+        <ul>
+            @foreach (var item in _locations)
+            {
+                <li>@item.Key - @item.Value orang</li>
+            }
+        </ul>
+    </div>
+    <div class="card">
+        <h3>Occupation Trends</h3>
+        <ul>
+            @foreach (var item in _occupations)
+            {
+                <li>@item.Key - @item.Value anggota</li>
+            }
+        </ul>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Smart Hints</h3>
+    <p>Gunakan data lokasi dan tanggal lahir untuk menebak hubungan baru.</p>
+    <ul>
+        <li>Periksa arsip kelahiran di @(_locations.FirstOrDefault().Key ?? "kota utama") untuk 1940-1960.</li>
+        <li>Anggota dengan rentang usia berdekatan berpotensi adalah sepupu.</li>
+    </ul>
+</div>
+
+@code {
+    private double _averageLifespan;
+    private Dictionary<string, int> _locations = new();
+    private Dictionary<string, int> _occupations = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        if (treeId > 0)
+        {
+            _averageLifespan = await StatsService.GetAverageLifespanAsync(treeId);
+            _locations = await StatsService.GetGeographicDistributionAsync(treeId);
+            _occupations = await StatsService.GetOccupationTrendsAsync(treeId);
+        }
+    }
+}

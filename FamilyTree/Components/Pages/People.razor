@@ -1,0 +1,386 @@
+@page "/people"
+@inject ApplicationDbContext DbContext
+@inject IEncryptionService EncryptionService
+@inject StorageFactory StorageFactory
+
+<div class="card">
+    <h3>Member Profiles</h3>
+    <p>Data anggota keluarga lengkap dengan catatan pribadi, media, dan storytelling.</p>
+</div>
+
+<div class="card">
+    <div class="form-grid">
+        <label>Search Member</label>
+        <input placeholder="Cari nama, lokasi, atau branch..." @bind="_search" @bind:event="oninput" />
+        <button class="btn" @onclick="() => OpenMemberForm(null)">Add Member</button>
+    </div>
+</div>
+
+<div class="card-grid">
+    @foreach (var person in FilteredPeople)
+    {
+        <div class="card">
+            <div class="node-inline">
+                @if (!string.IsNullOrWhiteSpace(person.PhotoUrl))
+                {
+                    <img class="node-avatar" src="@person.PhotoUrl" alt="@person.FirstName" />
+                }
+                <div>
+                    <h3>@person.FirstName @person.LastName</h3>
+                    <p><strong>Born:</strong> @person.BirthDate.ToString("dd MMM yyyy")</p>
+                </div>
+            </div>
+            <p><strong>Marriage:</strong> @(person.MarriageDate?.ToString("dd MMM yyyy") ?? "-")</p>
+            <p><strong>Gender:</strong> @person.Gender</p>
+            <p><strong>Location:</strong> @person.Location</p>
+            <p><strong>Branch:</strong> @person.BranchTag</p>
+            <p><strong>Notes:</strong> @GetNotes(person)</p>
+            <p><strong>Order:</strong> #@person.OrderNumber</p>
+            <div class="node-actions">
+                <button class="btn ghost" @onclick="() => OpenTimeline(person)">View Timeline</button>
+                <button class="btn secondary" @onclick="() => OpenMemberForm(person)">Edit</button>
+                <button class="btn danger" @onclick="() => DeleteMemberAsync(person)">Delete</button>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_showTimeline && _selectedPerson != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Timeline: @_selectedPerson.FirstName @_selectedPerson.LastName</h3>
+                <button class="btn danger" @onclick="CloseTimeline">Close</button>
+            </div>
+            <p>Ringkasan aktivitas, media, relasi, dan timeline keluarga.</p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <h4>Stories</h4>
+                    @if (_stories.Any())
+                    {
+                        <ul>
+                            @foreach (var story in _stories)
+                            {
+                                <li><strong>@story.Title</strong> - @story.Content</li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p>Belum ada story.</p>
+                    }
+                </div>
+                <div class="card">
+                    <h4>Media</h4>
+                    @if (_media.Any())
+                    {
+                        <ul>
+                            @foreach (var media in _media)
+                            {
+                                <li>@media.Type - @media.Caption</li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p>Belum ada media.</p>
+                    }
+                </div>
+                <div class="card">
+                    <h4>Relationships</h4>
+                    @if (_relationships.Any())
+                    {
+                        <ul>
+                            @foreach (var relation in _relationships)
+                            {
+                                <li>@relation.Type - @relation.RelatedPerson?.FirstName @relation.RelatedPerson?.LastName</li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p>Belum ada relasi tercatat.</p>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <h4>Family Timeline Events</h4>
+                @if (_timelineEvents.Any())
+                {
+                    <div class="timeline">
+                        @foreach (var ev in _timelineEvents)
+                        {
+                            <div class="card">
+                                <strong>@ev.Title</strong>
+                                <p>@ev.Description</p>
+                                <small>@ev.EventDate.ToString("dd MMM yyyy")</small>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p>Tidak ada event timeline untuk tree ini.</p>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showMemberForm)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>@(_editingPerson?.Id == 0 ? "Add Member" : "Edit Member")</h3>
+                <button class="btn danger" @onclick="CloseMemberForm">Close</button>
+            </div>
+
+            <div class="form-grid">
+                <label>First Name</label>
+                <input @bind="_editingPerson!.FirstName" />
+
+                <label>Last Name</label>
+                <input @bind="_editingPerson!.LastName" />
+
+                <label>Nickname</label>
+                <input @bind="_editingPerson!.Nickname" />
+
+                <label>Birth Date</label>
+                <input type="date" @bind="_editingPerson!.BirthDate" />
+
+                <label>Marriage Date</label>
+                <input type="date" @bind="_editingPerson!.MarriageDate" />
+
+                <label>Death Date</label>
+                <input type="date" @bind="_editingPerson!.DeathDate" />
+
+                <label>Gender</label>
+                <select @bind="_editingPerson!.Gender">
+                    <option>Male</option>
+                    <option>Female</option>
+                    <option>Unknown</option>
+                </select>
+
+                <label>Location</label>
+                <input @bind="_editingPerson!.Location" />
+
+                <label>Branch Tag</label>
+                <input @bind="_editingPerson!.BranchTag" />
+
+                <label>Photo Url</label>
+                <input @bind="_editingPerson!.PhotoUrl" />
+
+                <label>Upload Photo</label>
+                <InputFile OnChange="OnPhotoSelected" />
+                @if (!string.IsNullOrWhiteSpace(_photoPreview) || !string.IsNullOrWhiteSpace(_editingPerson?.PhotoUrl))
+                {
+                    <img class="node-avatar" src="@(_photoPreview ?? _editingPerson?.PhotoUrl)" alt="preview" />
+                }
+
+                <label>Notes</label>
+                <textarea rows="3" @bind="_notes"></textarea>
+
+                <button class="btn" @onclick="SaveMemberAsync">Save Member</button>
+                <p>@_formMessage</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Person> _people = new();
+    private Person? _selectedPerson;
+    private List<Story> _stories = new();
+    private List<MediaItem> _media = new();
+    private List<Relationship> _relationships = new();
+    private List<TimelineEvent> _timelineEvents = new();
+    private bool _showTimeline;
+    private bool _showMemberForm;
+    private Person? _editingPerson;
+    private string _notes = string.Empty;
+    private string _formMessage = string.Empty;
+    private string _search = string.Empty;
+    private IBrowserFile? _photoFile;
+    private string? _photoPreview;
+
+    private IEnumerable<Person> FilteredPeople => _people
+        .Where(p => string.IsNullOrWhiteSpace(_search)
+            || ($"{p.FirstName} {p.LastName} {p.Location} {p.BranchTag}".ToLowerInvariant().Contains(_search.ToLowerInvariant())));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPeopleAsync();
+    }
+
+    private async Task LoadPeopleAsync()
+    {
+        _people = await DbContext.People
+            .OrderBy(p => p.BirthDate)
+            .ToListAsync();
+
+        for (var i = 0; i < _people.Count; i++)
+        {
+            _people[i].OrderNumber = i + 1;
+        }
+    }
+
+    private async Task OpenTimeline(Person person)
+    {
+        _selectedPerson = person;
+        _stories = await DbContext.Stories
+            .Where(s => s.PersonId == person.Id)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync();
+
+        _media = await DbContext.MediaItems
+            .Where(m => m.PersonId == person.Id)
+            .OrderByDescending(m => m.UploadedAt)
+            .ToListAsync();
+
+        _relationships = await DbContext.Relationships
+            .Include(r => r.RelatedPerson)
+            .Where(r => r.PersonId == person.Id)
+            .ToListAsync();
+
+        _timelineEvents = await DbContext.TimelineEvents
+            .Where(t => t.FamilyTreeEntityId == person.FamilyTreeEntityId)
+            .OrderByDescending(t => t.EventDate)
+            .ToListAsync();
+
+        _showTimeline = true;
+    }
+
+    private void CloseTimeline()
+    {
+        _showTimeline = false;
+    }
+
+    private void OpenMemberForm(Person? person)
+    {
+        _formMessage = string.Empty;
+        _photoFile = null;
+        _photoPreview = null;
+        if (person == null)
+        {
+            _editingPerson = new Person
+            {
+                BirthDate = DateTime.Today
+            };
+            _notes = string.Empty;
+        }
+        else
+        {
+            _editingPerson = new Person
+            {
+                Id = person.Id,
+                FamilyTreeEntityId = person.FamilyTreeEntityId,
+                FirstName = person.FirstName,
+                LastName = person.LastName,
+                Nickname = person.Nickname,
+                BirthDate = person.BirthDate,
+                MarriageDate = person.MarriageDate,
+                DeathDate = person.DeathDate,
+                Gender = person.Gender,
+                Location = person.Location,
+                PhotoUrl = person.PhotoUrl,
+                BranchTag = person.BranchTag
+            };
+            _notes = GetNotes(person);
+        }
+        _showMemberForm = true;
+    }
+
+    private void CloseMemberForm()
+    {
+        _showMemberForm = false;
+    }
+
+    private async Task OnPhotoSelected(InputFileChangeEventArgs args)
+    {
+        _photoFile = args.File;
+        if (_photoFile == null)
+        {
+            return;
+        }
+
+        var maxSize = 5 * 1024 * 1024;
+        using var stream = _photoFile.OpenReadStream(maxSize);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        var base64 = Convert.ToBase64String(memory.ToArray());
+        _photoPreview = $"data:{_photoFile.ContentType};base64,{base64}";
+    }
+
+    private async Task SaveMemberAsync()
+    {
+        if (_editingPerson == null)
+        {
+            return;
+        }
+
+        if (_photoFile != null)
+        {
+            var storage = StorageFactory.Create();
+            await using var stream = _photoFile.OpenReadStream(5 * 1024 * 1024);
+            var url = await storage.SaveAsync(stream, _photoFile.Name, _photoFile.ContentType);
+            _editingPerson.PhotoUrl = url;
+        }
+
+        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        if (_editingPerson.Id == 0)
+        {
+            _editingPerson.FamilyTreeEntityId = treeId;
+            _editingPerson.NotesEncrypted = EncryptionService.Encrypt(_notes);
+            DbContext.People.Add(_editingPerson);
+        }
+        else
+        {
+            var entity = await DbContext.People.FirstAsync(p => p.Id == _editingPerson.Id);
+            entity.FirstName = _editingPerson.FirstName;
+            entity.LastName = _editingPerson.LastName;
+            entity.Nickname = _editingPerson.Nickname;
+            entity.BirthDate = _editingPerson.BirthDate;
+            entity.MarriageDate = _editingPerson.MarriageDate;
+            entity.DeathDate = _editingPerson.DeathDate;
+            entity.Gender = _editingPerson.Gender;
+            entity.Location = _editingPerson.Location;
+            entity.PhotoUrl = _editingPerson.PhotoUrl;
+            entity.BranchTag = _editingPerson.BranchTag;
+            entity.NotesEncrypted = EncryptionService.Encrypt(_notes);
+        }
+
+        await DbContext.SaveChangesAsync();
+        await LoadPeopleAsync();
+        _formMessage = "Data berhasil disimpan.";
+        _showMemberForm = false;
+    }
+
+    private async Task DeleteMemberAsync(Person person)
+    {
+        var relationships = await DbContext.Relationships
+            .Where(r => r.PersonId == person.Id || r.RelatedPersonId == person.Id)
+            .ToListAsync();
+        DbContext.Relationships.RemoveRange(relationships);
+
+        var media = await DbContext.MediaItems.Where(m => m.PersonId == person.Id).ToListAsync();
+        DbContext.MediaItems.RemoveRange(media);
+
+        var stories = await DbContext.Stories.Where(s => s.PersonId == person.Id).ToListAsync();
+        DbContext.Stories.RemoveRange(stories);
+
+        DbContext.People.Remove(person);
+        await DbContext.SaveChangesAsync();
+        await LoadPeopleAsync();
+    }
+
+    private string GetNotes(Person person)
+    {
+        return string.IsNullOrWhiteSpace(person.NotesEncrypted)
+            ? "-"
+            : EncryptionService.Decrypt(person.NotesEncrypted);
+    }
+}

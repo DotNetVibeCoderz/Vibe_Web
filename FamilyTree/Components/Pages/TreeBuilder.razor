@@ -1,0 +1,1154 @@
+@page "/tree"
+@inject ApplicationDbContext DbContext
+@inject ExportService ExportService
+@inject IJSRuntime JsRuntime
+
+<div class="card">
+    <h3>Tree Builder & Visualization</h3>
+    <p>Bangun pohon keluarga lintas generasi dengan drag-and-drop, jelajahi detail anggota, dan simpan memori keluarga secara terstruktur.</p>
+</div>
+
+<div class="card tree-toolbar">
+    <div class="toolbar-section">
+        <button class="btn" @onclick="OpenAddRoot">Add Root Member</button>
+        <button class="btn secondary" @onclick="ExportTreeAsync">Export JSON</button>
+        <button class="btn ghost" @onclick="ExportPdfAsync">Export PDF</button>
+        <button class="btn ghost" @onclick="ExportChartAsync">Export Chart</button>
+        <button class="btn ghost" @onclick="ExportPrintableAsync">Printable Tree</button>
+    </div>
+
+    <div class="toolbar-section">
+        <label>Drop Mode</label>
+        <select @bind="_dropMode">
+            <option value="Parent">Add as Parent</option>
+            <option value="Child">Add as Child</option>
+            <option value="Sibling">Add as Sibling</option>
+        </select>
+        <label>Zoom</label>
+        <input class="zoom-range" type="range" min="0.6" max="1.6" step="0.1" @bind="_zoom" />
+        <span class="badge">Zoom: @_zoom.ToString("0.0")</span>
+    </div>
+
+    <div class="toolbar-section">
+        <label>Navigate</label>
+        <button class="btn ghost" @onclick="FirstGeneration">First</button>
+        <button class="btn ghost" @onclick="PrevGeneration">Prev</button>
+        <button class="btn ghost" @onclick="NextGeneration">Next</button>
+        <button class="btn ghost" @onclick="LastGeneration">Last</button>
+        <span class="badge">Showing @_generationWindow levels</span>
+    </div>
+
+    <div class="toolbar-section">
+        <button class="btn ghost" @onclick="ToggleFullscreen">@(_isFullscreen ? "Exit Fullscreen" : "Fullscreen")</button>
+        <button class="btn ghost" @onclick="ExpandAll">Expand All</button>
+        <button class="btn ghost" @onclick="CollapseAll">Collapse All</button>
+    </div>
+
+    <div class="toolbar-section">
+        <span class="badge">@_message</span>
+    </div>
+</div>
+
+<div class="tree-board">
+    <div class="card">
+        <h3>Member Library</h3>
+        <p>Seret anggota ke node untuk membuat hubungan sesuai mode drop, atau seret ke Focus Board untuk edit cepat.</p>
+        <div class="form-grid">
+            <label>Search</label>
+            <input placeholder="Cari nama anggota..." @bind="_memberSearch" />
+        </div>
+
+        <div class="member-list">
+            @foreach (var person in FilteredPeople)
+            {
+                <div class="tree-node member-card" draggable="true" @ondragstart="() => StartDrag(person)">
+                    <div class="member-header">
+                        @if (!string.IsNullOrWhiteSpace(person.PhotoUrl))
+                        {
+                            <img src="@person.PhotoUrl" alt="@person.FirstName" />
+                        }
+                        else
+                        {
+                            <div class="avatar">@GetInitials(person)</div>
+                        }
+                        <div>
+                            <strong>@person.FirstName @person.LastName</strong>
+                            <div class="node-meta">@person.BirthDate.ToString("dd MMM yyyy")</div>
+                            <span class="badge">@person.BranchTag</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="tree-canvas @(_isFullscreen ? "fullscreen" : string.Empty)" style="transform: scale(@_zoom); transform-origin: top left;" @ondragover:preventDefault>
+        @if (_isFullscreen)
+        {
+            <button class="btn danger fullscreen-exit" @onclick="ToggleFullscreen">Exit Fullscreen</button>
+        }
+
+        <h3>Interactive Tree</h3>
+        <p>Gunakan tombol detail untuk profil lengkap. Drag anggota dari library lalu drop ke node untuk membuat relasi (@_dropMode).</p>
+
+        @if (!_treeRoots.Any())
+        {
+            <p>Belum ada data tree.</p>
+        }
+        else
+        {
+            <div class="tree-view">
+                @foreach (var root in _treeRoots)
+                {
+                    @RenderTreeNode(root)
+                }
+            </div>
+        }
+
+        <div class="generation-layout">
+            <h4>Generation Layout</h4>
+            @if (!_generations.Any())
+            {
+                <p>Belum ada data tree.</p>
+            }
+            else
+            {
+                @foreach (var generation in VisibleGenerations)
+                {
+                    <div class="tree-generation">
+                        <div class="generation-header">
+                            <span class="badge">@generation.Title</span>
+                            <small>@generation.People.Count member</small>
+                        </div>
+                        <div class="tree-level">
+                            @foreach (var node in generation.People)
+                            {
+                                <div class="tree-node" style="@GetLevelStyle(node.Id)">
+                                    <div class="node-inline">
+                                        @if (!string.IsNullOrWhiteSpace(node.PhotoUrl))
+                                        {
+                                            <img class="node-avatar" src="@node.PhotoUrl" alt="@node.FirstName" />
+                                        }
+                                        else
+                                        {
+                                            <div class="avatar">@GetInitials(node)</div>
+                                        }
+                                        <div>
+                                            <div class="node-title">@node.FirstName @node.LastName</div>
+                                            <div class="node-meta">Born: @node.BirthDate.ToString("dd MMM yyyy")</div>
+                                        </div>
+                                    </div>
+                                    <span class="badge">@node.BranchTag</span>
+                                    <div class="node-actions">
+                                        <button class="btn ghost" @onclick="() => OpenDetail(node)">Detail</button>
+                                        <button class="btn secondary" @onclick="() => OpenAddRelative(node, RelationshipType.Parent)">Add Parent</button>
+                                        <button class="btn secondary" @onclick="() => OpenAddRelative(node, RelationshipType.Child)">Add Child</button>
+                                        <button class="btn secondary" @onclick="() => OpenAddRelative(node, RelationshipType.Sibling)">Add Sibling</button>
+                                        <button class="btn secondary" @onclick="() => OpenAddRelative(node, RelationshipType.Spouse)">Add Husband/Wife</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="focus-board" @ondragover:preventDefault @ondrop="OnDropToFocus">
+            <h4>Focus Board (Drag & Drop)</h4>
+            <p>Drop anggota di sini untuk fokus edit/compare.</p>
+            @if (_focusNodes.Any())
+            {
+                <div class="focus-grid">
+                    @foreach (var focus in _focusNodes)
+                    {
+                        <div class="tree-node">
+                            <strong>@focus.FirstName @focus.LastName</strong>
+                            <div class="node-meta">@focus.BirthDate.ToString("dd MMM yyyy")</div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="node-meta">Belum ada anggota yang difokuskan.</div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Timeline View</h3>
+    @if (_timeline.Any())
+    {
+        <div class="timeline">
+            @foreach (var ev in _timeline)
+            {
+                <div class="card timeline-event">
+                    <strong>@ev.Title</strong>
+                    <p>@ev.Description</p>
+                    <small>@ev.EventDate.ToString("dd MMM yyyy")</small>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p>Belum ada event timeline.</p>
+    }
+</div>
+
+@if (_showDetail && _detailPerson != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Detail: @_detailPerson.FirstName @_detailPerson.LastName</h3>
+                <button class="btn danger" @onclick="CloseDetail">Close</button>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <h4>Profile</h4>
+                    <p><strong>Birth:</strong> @FormatDate(_detailPerson.BirthDate)</p>
+                    <p><strong>Marriage:</strong> @FormatDate(_detailPerson.MarriageDate)</p>
+                    <p><strong>Death:</strong> @FormatDate(_detailPerson.DeathDate)</p>
+                    <p><strong>Gender:</strong> @_detailPerson.Gender</p>
+                    <p><strong>Location:</strong> @_detailPerson.Location</p>
+                    <p><strong>Branch:</strong> @_detailPerson.BranchTag</p>
+                </div>
+                <div class="card">
+                    <h4>Fact Summary</h4>
+                    <p>Siblings: @_factSummary.Siblings</p>
+                    <p>Children: @_factSummary.Children</p>
+                    <p>Grandchildren: @_factSummary.Grandchildren</p>
+                    <p>Great-Grandchildren: @_factSummary.GreatGrandchildren</p>
+                </div>
+                <div class="card">
+                    <h4>Relationships</h4>
+                    <div class="relationship-list">
+                        <div>
+                            <strong>Parents</strong>
+                            <div>@FormatPeople(_detailParents)</div>
+                        </div>
+                        <div>
+                            <strong>Spouse</strong>
+                            <div>@FormatPeople(_detailSpouses)</div>
+                        </div>
+                        <div>
+                            <strong>Children</strong>
+                            <div>@FormatPeople(_detailChildren)</div>
+                        </div>
+                        <div>
+                            <strong>Siblings</strong>
+                            <div>@FormatPeople(_detailSiblings)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h4>Media</h4>
+                    @if (_detailMedia.Any())
+                    {
+                        <div class="media-grid">
+                            @foreach (var media in _detailMedia)
+                            {
+                                <div class="media-card">
+                                    @if (media.Type == MediaType.Photo)
+                                    {
+                                        <img src="@media.Url" alt="@media.Caption" />
+                                    }
+                                    else
+                                    {
+                                        <div class="media-icon">@media.Type</div>
+                                    }
+                                    <div class="media-caption">@media.Caption</div>
+                                    <a href="@media.Url" target="_blank">Open</a>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p>No media yet.</p>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <h4>Branch Tools</h4>
+                <label>Branch Tag</label>
+                <input @bind="_branchTag" />
+                <div class="node-actions">
+                    <button class="btn" @onclick="UpdateBranchAsync">Merge/Split Branch</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showAddRelative && _relativeTarget != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add @_relativeType for @_relativeTarget.FirstName @_relativeTarget.LastName</h3>
+                <button class="btn danger" @onclick="CloseAddRelative">Close</button>
+            </div>
+            <div class="form-grid">
+                <label>Pilih anggota keluarga (selain diri sendiri)</label>
+                <select @bind="_selectedRelativeId">
+                    <option value="">-- pilih anggota --</option>
+                    @foreach (var person in AvailableRelatives)
+                    {
+                        <option value="@person.Id">@person.FirstName @person.LastName (@person.BirthDate.ToString("yyyy"))</option>
+                    }
+                </select>
+
+                @if (!string.IsNullOrWhiteSpace(_relationMessage))
+                {
+                    <p class="text-danger">@_relationMessage</p>
+                }
+
+                <button class="btn" @onclick="SaveRelativeAsync">Simpan Relasi</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showAddRoot)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add Root Member</h3>
+                <button class="btn danger" @onclick="CloseAddRoot">Close</button>
+            </div>
+            <div class="form-grid">
+                <label>First Name</label>
+                <input @bind="_newRoot.FirstName" />
+
+                <label>Last Name</label>
+                <input @bind="_newRoot.LastName" />
+
+                <label>Birth Date</label>
+                <input type="date" @bind="_newRoot.BirthDate" />
+
+                <label>Gender</label>
+                <select @bind="_newRoot.Gender">
+                    <option>Male</option>
+                    <option>Female</option>
+                    <option>Unknown</option>
+                </select>
+
+                <label>Location</label>
+                <input @bind="_newRoot.Location" />
+
+                <label>Branch Tag</label>
+                <input @bind="_newRoot.BranchTag" />
+
+                <button class="btn" @onclick="SaveRootAsync">Save Root</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<string> _levelPalette = new()
+    {
+        "#8ecae6", "#ffb703", "#fb8500", "#219ebc", "#ffafcc", "#cdb4db", "#90be6d", "#f9c74f"
+    };
+
+    private List<Person> _people = new();
+    private List<Relationship> _relationships = new();
+    private Dictionary<int, List<int>> _parentMap = new();
+    private Dictionary<int, List<int>> _childMap = new();
+    private List<GenerationView> _generations = new();
+    private Dictionary<int, int> _generationByPersonId = new();
+    private List<TreeNode> _treeRoots = new();
+    private List<Person> _focusNodes = new();
+    private List<TimelineEvent> _timeline = new();
+    private Person? _dragging;
+    private double _zoom = 1.0;
+    private string _message = "Ready";
+    private string _memberSearch = string.Empty;
+    private RelationshipType _dropMode = RelationshipType.Child;
+    private int _activeGeneration;
+    private readonly int _generationWindow = 3;
+    private bool _isFullscreen;
+    private HashSet<int> _expandedNodes = new();
+
+    private bool _showDetail;
+    private Person? _detailPerson;
+    private List<MediaItem> _detailMedia = new();
+    private FactSummary _factSummary = new();
+    private string _branchTag = string.Empty;
+    private List<Person> _detailParents = new();
+    private List<Person> _detailChildren = new();
+    private List<Person> _detailSiblings = new();
+    private List<Person> _detailSpouses = new();
+
+    private bool _showAddRelative;
+    private Person? _relativeTarget;
+    private RelationshipType _relativeType;
+    private int? _selectedRelativeId;
+    private string _relationMessage = string.Empty;
+
+    private bool _showAddRoot;
+    private Person _newRoot = new() { BirthDate = DateTime.Today };
+
+    private IEnumerable<Person> FilteredPeople => string.IsNullOrWhiteSpace(_memberSearch)
+        ? _people
+        : _people.Where(p => ($"{p.FirstName} {p.LastName}").Contains(_memberSearch, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<Person> AvailableRelatives => _relativeTarget == null
+        ? Enumerable.Empty<Person>()
+        : _people.Where(p => p.Id != _relativeTarget.Id).OrderBy(p => p.FirstName);
+
+    private IEnumerable<GenerationView> VisibleGenerations
+    {
+        get
+        {
+            if (!_generations.Any())
+            {
+                return Enumerable.Empty<GenerationView>();
+            }
+
+            var maxStart = Math.Max(0, _generations.Count - _generationWindow);
+            var start = Math.Clamp(_activeGeneration, 0, maxStart);
+            return _generations.Skip(start).Take(_generationWindow);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTreeAsync();
+    }
+
+    private async Task LoadTreeAsync()
+    {
+        _people = await DbContext.People.ToListAsync();
+        _relationships = await DbContext.Relationships.ToListAsync();
+        BuildRelationshipMaps();
+        _generations = BuildGenerations(_people, _relationships);
+        _generationByPersonId = _generations
+            .SelectMany(g => g.People.Select(p => (p.Id, g.Index)))
+            .ToDictionary(x => x.Id, x => x.Index);
+        _treeRoots = BuildTreeNodes();
+        _timeline = await DbContext.TimelineEvents.OrderBy(t => t.EventDate).ToListAsync();
+        _activeGeneration = 0;
+        ExpandAll();
+    }
+
+    private void BuildRelationshipMaps()
+    {
+        _parentMap = _relationships
+            .Where(r => r.Type == RelationshipType.Parent)
+            .GroupBy(r => r.PersonId)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.RelatedPersonId).Distinct().ToList());
+
+        _childMap = _relationships
+            .Where(r => r.Type == RelationshipType.Parent)
+            .GroupBy(r => r.RelatedPersonId)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.PersonId).Distinct().ToList());
+    }
+
+    private List<TreeNode> BuildTreeNodes()
+    {
+        var roots = _people.Where(p => !_childMap.ContainsKey(p.Id)).ToList();
+        if (!roots.Any())
+        {
+            roots = _people.ToList();
+        }
+
+        var nodes = new List<TreeNode>();
+        foreach (var root in SortPeople(roots))
+        {
+            nodes.Add(BuildTreeNode(root, 0, new HashSet<int>()));
+        }
+
+        return nodes;
+    }
+
+    private TreeNode BuildTreeNode(Person person, int depth, HashSet<int> path)
+    {
+        var node = new TreeNode { Person = person, Depth = depth };
+        if (path.Contains(person.Id))
+        {
+            return node;
+        }
+
+        path.Add(person.Id);
+        if (_parentMap.TryGetValue(person.Id, out var children))
+        {
+            foreach (var childId in children)
+            {
+                var child = _people.FirstOrDefault(p => p.Id == childId);
+                if (child != null)
+                {
+                    node.Children.Add(BuildTreeNode(child, depth + 1, new HashSet<int>(path)));
+                }
+            }
+        }
+        return node;
+    }
+
+    private List<GenerationView> BuildGenerations(List<Person> people, List<Relationship> relationships)
+    {
+        var parentRelations = relationships.Where(r => r.Type == RelationshipType.Parent).ToList();
+        var parentMap = parentRelations
+            .GroupBy(r => r.PersonId)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.RelatedPersonId).Distinct().ToList());
+
+        var childMap = parentRelations
+            .GroupBy(r => r.RelatedPersonId)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.PersonId).Distinct().ToList());
+
+        var roots = people.Where(p => !childMap.ContainsKey(p.Id)).ToList();
+        if (!roots.Any())
+        {
+            roots = people.ToList();
+        }
+
+        var generations = new List<List<Person>>();
+        var visited = new HashSet<int>();
+        var current = SortPeople(roots);
+
+        if (current.Any())
+        {
+            generations.Add(current);
+            foreach (var member in current)
+            {
+                visited.Add(member.Id);
+            }
+        }
+
+        while (current.Any())
+        {
+            var next = new List<Person>();
+            foreach (var person in current)
+            {
+                if (!parentMap.TryGetValue(person.Id, out var children))
+                {
+                    continue;
+                }
+
+                foreach (var childId in children)
+                {
+                    var child = people.FirstOrDefault(p => p.Id == childId);
+                    if (child != null && visited.Add(child.Id))
+                    {
+                        next.Add(child);
+                    }
+                }
+            }
+
+            if (!next.Any())
+            {
+                break;
+            }
+
+            current = SortPeople(next);
+            generations.Add(current);
+        }
+
+        var views = generations.Select((level, index) => new GenerationView
+        {
+            Index = index,
+            Title = $"Generation {index + 1}",
+            People = level
+        }).ToList();
+
+        var remaining = people.Where(p => !visited.Contains(p.Id)).ToList();
+        if (remaining.Any())
+        {
+            views.Add(new GenerationView
+            {
+                Index = views.Count,
+                Title = "Unlinked Members",
+                People = SortPeople(remaining)
+            });
+        }
+
+        return views;
+    }
+
+    private static List<Person> SortPeople(IEnumerable<Person> people)
+    {
+        return people.OrderBy(p => p.OrderNumber)
+            .ThenBy(p => p.BirthDate)
+            .ThenBy(p => p.LastName)
+            .ToList();
+    }
+
+    private void StartDrag(Person person)
+    {
+        _dragging = person;
+    }
+
+    private void OnDropToFocus()
+    {
+        if (_dragging == null)
+        {
+            return;
+        }
+
+        if (_focusNodes.All(p => p.Id != _dragging.Id))
+        {
+            _focusNodes.Add(_dragging);
+        }
+
+        _dragging = null;
+    }
+
+    private async Task OnDropOnNode(Person target)
+    {
+        if (_dragging == null || _dragging.Id == target.Id)
+        {
+            return;
+        }
+
+        await LinkExistingAsync(_dragging, target, _dropMode);
+        _dragging = null;
+    }
+
+    private async Task LinkExistingAsync(Person source, Person target, RelationshipType mode)
+    {
+        if (!ValidateRelation(source.Id, target.Id, mode, out var validationMessage))
+        {
+            SetMessage(validationMessage);
+            return;
+        }
+
+        if (mode == RelationshipType.Parent)
+        {
+            await AddRelationIfMissingAsync(source.Id, target.Id, RelationshipType.Parent);
+        }
+        else if (mode == RelationshipType.Child)
+        {
+            await AddRelationIfMissingAsync(target.Id, source.Id, RelationshipType.Parent);
+        }
+        else if (mode == RelationshipType.Sibling)
+        {
+            await AddRelationIfMissingAsync(source.Id, target.Id, RelationshipType.Sibling);
+            await AddRelationIfMissingAsync(target.Id, source.Id, RelationshipType.Sibling);
+        }
+        else if (mode == RelationshipType.Spouse)
+        {
+            await AddRelationIfMissingAsync(source.Id, target.Id, RelationshipType.Spouse);
+            await AddRelationIfMissingAsync(target.Id, source.Id, RelationshipType.Spouse);
+            await ApplyMarriageDateAsync(source.Id, target.Id);
+        }
+
+        await DbContext.SaveChangesAsync();
+        await LoadTreeAsync();
+        SetMessage($"Linked {source.FirstName} with {target.FirstName} as {mode}");
+    }
+
+    private async Task ApplyMarriageDateAsync(int sourceId, int targetId)
+    {
+        var today = DateTime.Today;
+        var source = await DbContext.People.FirstAsync(p => p.Id == sourceId);
+        var target = await DbContext.People.FirstAsync(p => p.Id == targetId);
+
+        if (!source.MarriageDate.HasValue)
+        {
+            source.MarriageDate = today;
+        }
+
+        if (!target.MarriageDate.HasValue)
+        {
+            target.MarriageDate = today;
+        }
+    }
+
+    private bool ValidateRelation(int sourceId, int targetId, RelationshipType mode, out string message)
+    {
+        message = string.Empty;
+
+        if (sourceId == targetId)
+        {
+            message = "Tidak bisa menghubungkan anggota dengan dirinya sendiri.";
+            return false;
+        }
+
+        if (mode == RelationshipType.Parent)
+        {
+            if (HasPath(targetId, sourceId))
+            {
+                message = "Relasi parent ini akan membuat loop (parent adalah keturunan).";
+                return false;
+            }
+
+            if (RelationExists(sourceId, targetId, RelationshipType.Parent))
+            {
+                message = "Relasi parent sudah ada.";
+                return false;
+            }
+        }
+        else if (mode == RelationshipType.Child)
+        {
+            if (HasPath(sourceId, targetId))
+            {
+                message = "Relasi child ini akan membuat loop (child adalah leluhur).";
+                return false;
+            }
+
+            if (RelationExists(targetId, sourceId, RelationshipType.Parent))
+            {
+                message = "Relasi child sudah ada.";
+                return false;
+            }
+        }
+        else if (mode == RelationshipType.Sibling)
+        {
+            if (HasPath(sourceId, targetId) || HasPath(targetId, sourceId))
+            {
+                message = "Tidak bisa menjadikan sibling dengan relasi leluhur/keturunan.";
+                return false;
+            }
+
+            if (RelationExists(sourceId, targetId, RelationshipType.Sibling))
+            {
+                message = "Relasi sibling sudah ada.";
+                return false;
+            }
+        }
+        else if (mode == RelationshipType.Spouse)
+        {
+            if (RelationExists(sourceId, targetId, RelationshipType.Spouse))
+            {
+                message = "Relasi spouse sudah ada.";
+                return false;
+            }
+
+            if (HasSpouse(sourceId) || HasSpouse(targetId))
+            {
+                message = "Salah satu anggota sudah memiliki pasangan aktif.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool RelationExists(int personId, int relatedId, RelationshipType type)
+    {
+        return _relationships.Any(r => r.PersonId == personId && r.RelatedPersonId == relatedId && r.Type == type);
+    }
+
+    private bool HasSpouse(int personId)
+    {
+        return _relationships.Any(r => r.PersonId == personId && r.Type == RelationshipType.Spouse);
+    }
+
+    private bool HasPath(int ancestorId, int descendantId)
+    {
+        var stack = new Stack<int>();
+        var visited = new HashSet<int>();
+        stack.Push(ancestorId);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            if (current == descendantId)
+            {
+                return true;
+            }
+
+            if (_parentMap.TryGetValue(current, out var children))
+            {
+                foreach (var childId in children)
+                {
+                    stack.Push(childId);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private async Task AddRelationIfMissingAsync(int personId, int relatedPersonId, RelationshipType type)
+    {
+        var exists = await DbContext.Relationships.AnyAsync(r => r.PersonId == personId && r.RelatedPersonId == relatedPersonId && r.Type == type);
+        if (!exists)
+        {
+            DbContext.Relationships.Add(new Relationship
+            {
+                PersonId = personId,
+                RelatedPersonId = relatedPersonId,
+                Type = type
+            });
+        }
+    }
+
+    private void OpenDetail(Person person)
+    {
+        _detailPerson = person;
+        _detailMedia = DbContext.MediaItems.Where(m => m.PersonId == person.Id).ToList();
+        var relationships = DbContext.Relationships.ToList();
+
+        var parentIds = relationships
+            .Where(r => r.Type == RelationshipType.Parent && r.RelatedPersonId == person.Id)
+            .Select(r => r.PersonId)
+            .Distinct()
+            .ToList();
+        var childIds = relationships
+            .Where(r => r.Type == RelationshipType.Parent && r.PersonId == person.Id)
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToList();
+        var siblingIds = relationships
+            .Where(r => r.Type == RelationshipType.Sibling && r.PersonId == person.Id)
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToList();
+        var spouseIds = relationships
+            .Where(r => r.Type == RelationshipType.Spouse && r.PersonId == person.Id)
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToList();
+
+        _detailParents = DbContext.People.Where(p => parentIds.Contains(p.Id)).ToList();
+        _detailChildren = DbContext.People.Where(p => childIds.Contains(p.Id)).ToList();
+        _detailSiblings = DbContext.People.Where(p => siblingIds.Contains(p.Id)).ToList();
+        _detailSpouses = DbContext.People.Where(p => spouseIds.Contains(p.Id)).ToList();
+
+        _factSummary = BuildFactSummary(childIds, siblingIds, relationships);
+        _branchTag = person.BranchTag ?? string.Empty;
+        _showDetail = true;
+    }
+
+    private FactSummary BuildFactSummary(List<int> childIds, List<int> siblingIds, List<Relationship> relationships)
+    {
+        var grandchildren = relationships
+            .Where(r => r.Type == RelationshipType.Parent && childIds.Contains(r.PersonId))
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToList();
+        var greatGrandchildren = relationships
+            .Where(r => r.Type == RelationshipType.Parent && grandchildren.Contains(r.PersonId))
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToList();
+
+        return new FactSummary
+        {
+            Siblings = siblingIds.Count,
+            Children = childIds.Count,
+            Grandchildren = grandchildren.Count,
+            GreatGrandchildren = greatGrandchildren.Count
+        };
+    }
+
+    private void CloseDetail()
+    {
+        _showDetail = false;
+    }
+
+    private async Task UpdateBranchAsync()
+    {
+        if (_detailPerson == null)
+        {
+            return;
+        }
+
+        var entity = await DbContext.People.FirstAsync(p => p.Id == _detailPerson.Id);
+        entity.BranchTag = _branchTag;
+        await DbContext.SaveChangesAsync();
+        await LoadTreeAsync();
+        _showDetail = false;
+    }
+
+    private void OpenAddRelative(Person person, RelationshipType type)
+    {
+        _relativeTarget = person;
+        _relativeType = type;
+        _selectedRelativeId = null;
+        _relationMessage = string.Empty;
+        _showAddRelative = true;
+    }
+
+    private void CloseAddRelative()
+    {
+        _showAddRelative = false;
+    }
+
+    private async Task SaveRelativeAsync()
+    {
+        if (_relativeTarget == null)
+        {
+            return;
+        }
+
+        if (!_selectedRelativeId.HasValue)
+        {
+            _relationMessage = "Silakan pilih anggota terlebih dahulu.";
+            return;
+        }
+
+        var selected = _people.FirstOrDefault(p => p.Id == _selectedRelativeId.Value);
+        if (selected == null)
+        {
+            _relationMessage = "Anggota tidak ditemukan.";
+            return;
+        }
+
+        if (!ValidateRelation(selected.Id, _relativeTarget.Id, _relativeType, out var validationMessage))
+        {
+            _relationMessage = validationMessage;
+            return;
+        }
+
+        await LinkExistingAsync(selected, _relativeTarget, _relativeType);
+        _showAddRelative = false;
+    }
+
+    private void OpenAddRoot()
+    {
+        _newRoot = new Person { BirthDate = DateTime.Today };
+        _showAddRoot = true;
+    }
+
+    private void CloseAddRoot()
+    {
+        _showAddRoot = false;
+    }
+
+    private async Task SaveRootAsync()
+    {
+        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        _newRoot.FamilyTreeEntityId = treeId;
+        DbContext.People.Add(_newRoot);
+        await DbContext.SaveChangesAsync();
+        await LoadTreeAsync();
+        _showAddRoot = false;
+    }
+
+    private async Task ExportTreeAsync()
+    {
+        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        var json = await ExportService.ExportTreeAsync(treeId);
+        await JsRuntime.InvokeVoidAsync("familyTreeDownload", $"familytree-{DateTime.UtcNow:yyyyMMdd}.json", json);
+        _message = "JSON tree exported.";
+    }
+
+    private async Task ExportPdfAsync()
+    {
+        var html = BuildPrintableHtml("Family Tree (PDF Export)");
+        await JsRuntime.InvokeVoidAsync("familyTreeExport.printHtml", "Family Tree PDF", html);
+        _message = "PDF export siap. Gunakan Save as PDF di dialog print.";
+    }
+
+    private async Task ExportPrintableAsync()
+    {
+        var html = BuildPrintableHtml("Family Tree (Printable)");
+        await JsRuntime.InvokeVoidAsync("familyTreeExport.printHtml", "Family Tree Printable", html);
+        _message = "Printable view opened.";
+    }
+
+    private async Task ExportChartAsync()
+    {
+        var csv = BuildChartCsv();
+        await JsRuntime.InvokeVoidAsync("familyTreeExport.downloadText", $"familytree-chart-{DateTime.UtcNow:yyyyMMdd}.csv", csv, "text/csv");
+        _message = "Chart CSV exported.";
+    }
+
+    private string BuildChartCsv()
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine("ParentId,ParentName,ChildId,ChildName");
+        foreach (var relation in _relationships.Where(r => r.Type == RelationshipType.Parent))
+        {
+            var parent = _people.FirstOrDefault(p => p.Id == relation.PersonId);
+            var child = _people.FirstOrDefault(p => p.Id == relation.RelatedPersonId);
+            if (parent == null || child == null)
+            {
+                continue;
+            }
+            builder.AppendLine($"{parent.Id},\"{parent.FirstName} {parent.LastName}\",{child.Id},\"{child.FirstName} {child.LastName}\"");
+        }
+        return builder.ToString();
+    }
+
+    private string BuildPrintableHtml(string title)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine("<html><head><style>body{font-family:Arial;} .node{border:1px solid #000;padding:8px;margin:6px;} .child{margin-left:20px;} </style></head><body>");
+        builder.AppendLine($"<h2>{title}</h2>");
+        foreach (var root in _treeRoots)
+        {
+            AppendNodeHtml(builder, root);
+        }
+        builder.AppendLine("</body></html>");
+        return builder.ToString();
+    }
+
+    private void AppendNodeHtml(System.Text.StringBuilder builder, TreeNode node)
+    {
+        builder.AppendLine($"<div class='node'>{node.Person.FirstName} {node.Person.LastName} ({node.Person.BirthDate:yyyy})</div>");
+        if (node.Children.Any())
+        {
+            builder.AppendLine("<div class='child'>");
+            foreach (var child in node.Children)
+            {
+                AppendNodeHtml(builder, child);
+            }
+            builder.AppendLine("</div>");
+        }
+    }
+
+    private void FirstGeneration() => _activeGeneration = 0;
+
+    private void LastGeneration()
+    {
+        _activeGeneration = Math.Max(0, _generations.Count - _generationWindow);
+    }
+
+    private void NextGeneration()
+    {
+        if (_activeGeneration + _generationWindow < _generations.Count)
+        {
+            _activeGeneration++;
+        }
+    }
+
+    private void PrevGeneration()
+    {
+        if (_activeGeneration > 0)
+        {
+            _activeGeneration--;
+        }
+    }
+
+    private void ToggleFullscreen()
+    {
+        _isFullscreen = !_isFullscreen;
+    }
+
+    private void ExpandAll()
+    {
+        _expandedNodes = _people.Select(p => p.Id).ToHashSet();
+    }
+
+    private void CollapseAll()
+    {
+        _expandedNodes.Clear();
+    }
+
+    private bool IsExpanded(int personId) => _expandedNodes.Contains(personId);
+
+    private void ToggleExpand(int personId)
+    {
+        if (_expandedNodes.Contains(personId))
+        {
+            _expandedNodes.Remove(personId);
+        }
+        else
+        {
+            _expandedNodes.Add(personId);
+        }
+    }
+
+    private void SetMessage(string message)
+    {
+        _message = message;
+    }
+
+    private string GetLevelStyle(int personId)
+    {
+        if (_generationByPersonId.TryGetValue(personId, out var level))
+        {
+            var color = _levelPalette[level % _levelPalette.Count];
+            return $"background-color: {color};";
+        }
+
+        return string.Empty;
+    }
+
+    private string GetTreeNodeStyle(int depth)
+    {
+        var color = _levelPalette[depth % _levelPalette.Count];
+        return $"background-color: {color};";
+    }
+
+    private RenderFragment RenderTreeNode(TreeNode node) => @<div class="tree-branch">
+        <div class="tree-node tree-node-branch" style="@GetTreeNodeStyle(node.Depth)" draggable="true" @ondragstart="() => StartDrag(node.Person)" @ondragover:preventDefault @ondrop="() => OnDropOnNode(node.Person)">
+            <div class="node-inline">
+                <button class="btn ghost small" @onclick="() => ToggleExpand(node.Person.Id)">@(IsExpanded(node.Person.Id) ? "-" : "+")</button>
+                @if (!string.IsNullOrWhiteSpace(node.Person.PhotoUrl))
+                {
+                    <img class="node-avatar" src="@node.Person.PhotoUrl" alt="@node.Person.FirstName" />
+                }
+                else
+                {
+                    <div class="avatar">@GetInitials(node.Person)</div>
+                }
+                <div>
+                    <div class="node-title">@node.Person.FirstName @node.Person.LastName</div>
+                    <div class="node-meta">@node.Person.BirthDate.ToString("dd MMM yyyy")</div>
+                </div>
+            </div>
+            <div class="node-actions">
+                <button class="btn ghost" @onclick="() => OpenDetail(node.Person)">Detail</button>
+                <button class="btn secondary" @onclick="() => OpenAddRelative(node.Person, RelationshipType.Parent)">Add Parent</button>
+                <button class="btn secondary" @onclick="() => OpenAddRelative(node.Person, RelationshipType.Child)">Add Child</button>
+                <button class="btn secondary" @onclick="() => OpenAddRelative(node.Person, RelationshipType.Sibling)">Add Sibling</button>
+                <button class="btn secondary" @onclick="() => OpenAddRelative(node.Person, RelationshipType.Spouse)">Add Husband/Wife</button>
+            </div>
+        </div>
+        @if (IsExpanded(node.Person.Id) && node.Children.Any())
+        {
+            <div class="tree-children">
+                @foreach (var child in node.Children)
+                {
+                    @RenderTreeNode(child)
+                }
+            </div>
+        }
+    </div>;
+
+    private static string GetInitials(Person person)
+    {
+        var first = string.IsNullOrWhiteSpace(person.FirstName) ? string.Empty : person.FirstName[0].ToString();
+        var last = string.IsNullOrWhiteSpace(person.LastName) ? string.Empty : person.LastName[0].ToString();
+        return (first + last).ToUpperInvariant();
+    }
+
+    private static string FormatDate(DateTime? date)
+    {
+        return date?.ToString("dd MMM yyyy") ?? "-";
+    }
+
+    private static string FormatPeople(IEnumerable<Person> people)
+    {
+        var list = people.Select(p => $"{p.FirstName} {p.LastName}").ToList();
+        return list.Any() ? string.Join(", ", list) : "-";
+    }
+
+    private class FactSummary
+    {
+        public int Siblings { get; set; }
+        public int Children { get; set; }
+        public int Grandchildren { get; set; }
+        public int GreatGrandchildren { get; set; }
+    }
+
+    private class GenerationView
+    {
+        public int Index { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public List<Person> People { get; set; } = new();
+    }
+
+    private class TreeNode
+    {
+        public Person Person { get; set; } = new();
+        public int Depth { get; set; }
+        public List<TreeNode> Children { get; set; } = new();
+    }
+}

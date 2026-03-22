@@ -1,0 +1,58 @@
+@page "/account/register"
+@attribute [AllowAnonymous]
+@layout FamilyTree.Components.Layout.AuthLayout
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<div class="card" style="max-width:480px; margin:auto;">
+    <h3>Register</h3>
+    <div class="form-grid">
+        <label>Username</label>
+        <input @bind="_username" />
+
+        <label>Email</label>
+        <input type="email" @bind="_email" />
+
+        <label>Password</label>
+        <input type="password" @bind="_password" />
+
+        <label>Display Name</label>
+        <input @bind="_displayName" />
+
+        <button class="btn" @onclick="RegisterAsync">Daftar</button>
+        <p>@_message</p>
+        <a href="/account/login">Sudah punya akun?</a>
+    </div>
+</div>
+
+@code {
+    private string _username = string.Empty;
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string _displayName = string.Empty;
+    private string _message = string.Empty;
+
+    private async Task RegisterAsync()
+    {
+        _message = string.Empty;
+        var user = new ApplicationUser
+        {
+            UserName = _username,
+            Email = _email,
+            DisplayName = _displayName,
+            EmailConfirmed = true
+        };
+
+        var result = await UserManager.CreateAsync(user, _password);
+        if (result.Succeeded)
+        {
+            await UserManager.AddToRoleAsync(user, "user");
+            _message = "Registrasi berhasil. Silakan login.";
+            Navigation.NavigateTo("/account/login");
+        }
+        else
+        {
+            _message = string.Join("; ", result.Errors.Select(e => e.Description));
+        }
+    }
+}

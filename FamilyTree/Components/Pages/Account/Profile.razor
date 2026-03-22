@@ -1,0 +1,64 @@
+@page "/account/profile"
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+
+<div class="card" style="max-width:520px; margin:auto;">
+    <h3>Edit Profile</h3>
+    <div class="form-grid">
+        <label>Display Name</label>
+        <input @bind="_displayName" />
+
+        <label>Location</label>
+        <input @bind="_location" />
+
+        <label>Bio</label>
+        <textarea rows="3" @bind="_bio"></textarea>
+
+        <label>Birth Date</label>
+        <input type="date" @bind="_birthDate" />
+
+        <button class="btn" @onclick="SaveAsync">Save</button>
+        <p>@_message</p>
+    </div>
+</div>
+
+@code {
+    private string _displayName = string.Empty;
+    private string _location = string.Empty;
+    private string _bio = string.Empty;
+    private DateTime? _birthDate;
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserManager.GetUserAsync(SignInManager.Context.User);
+        if (user == null)
+        {
+            _message = "User tidak ditemukan.";
+            return;
+        }
+
+        _displayName = user.DisplayName;
+        _location = user.Location ?? string.Empty;
+        _bio = user.Bio ?? string.Empty;
+        _birthDate = user.BirthDate;
+    }
+
+    private async Task SaveAsync()
+    {
+        var user = await UserManager.GetUserAsync(SignInManager.Context.User);
+        if (user == null)
+        {
+            _message = "User tidak ditemukan.";
+            return;
+        }
+
+        user.DisplayName = _displayName;
+        user.Location = _location;
+        user.Bio = _bio;
+        user.BirthDate = _birthDate;
+
+        await UserManager.UpdateAsync(user);
+        _message = "Profile updated.";
+    }
+}

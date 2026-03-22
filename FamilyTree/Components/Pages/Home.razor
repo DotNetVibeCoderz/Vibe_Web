@@ -1,0 +1,75 @@
+@page "/"
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject StatsService StatsService
+
+<div class="card-grid">
+    <div class="card">
+        <h3>Total Members</h3>
+        <p class="big">@_totalMembers</p>
+    </div>
+    <div class="card">
+        <h3>Total Trees</h3>
+        <p class="big">@_totalTrees</p>
+    </div>
+    <div class="card">
+        <h3>Average Lifespan</h3>
+        <p class="big">@_avgLifespan.ToString("0.0") tahun</p>
+    </div>
+    <div class="card">
+        <h3>Active Locations</h3>
+        <p class="big">@_locationsCount</p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Quick Actions</h3>
+    <div class="card-grid">
+        <a class="btn" href="/tree">Build Tree</a>
+        <a class="btn secondary" href="/people">Manage Profiles</a>
+        <a class="btn ghost" href="/backup">Export Backup</a>
+        <a class="btn ghost" href="/insights">View Insights</a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Latest Timeline</h3>
+    <div class="timeline">
+        @foreach (var item in _timeline)
+        {
+            <div class="card">
+                <strong>@item.Title</strong>
+                <p>@item.Description</p>
+                <small>@item.EventDate.ToString("dd MMM yyyy")</small>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int _totalMembers;
+    private int _totalTrees;
+    private double _avgLifespan;
+    private int _locationsCount;
+    private List<TimelineEvent> _timeline = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+
+        _totalMembers = await context.People.CountAsync();
+        _totalTrees = await context.FamilyTrees.CountAsync();
+
+        var treeId = await context.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        if (treeId > 0)
+        {
+            _avgLifespan = await StatsService.GetAverageLifespanAsync(treeId);
+            var distribution = await StatsService.GetGeographicDistributionAsync(treeId);
+            _locationsCount = distribution.Keys.Count;
+            _timeline = await context.TimelineEvents
+                .Where(t => t.FamilyTreeEntityId == treeId)
+                .OrderByDescending(t => t.EventDate)
+                .Take(4)
+                .ToListAsync();
+        }
+    }
+}

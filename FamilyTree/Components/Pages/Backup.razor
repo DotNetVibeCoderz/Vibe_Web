@@ -1,0 +1,75 @@
+@page "/backup"
+@inject ApplicationDbContext DbContext
+@inject ExportService ExportService
+@inject IJSRuntime JsRuntime
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+
+<div class="card">
+    <h3>Backup & Restore</h3>
+    <p>Export dan import data dalam format JSON untuk keamanan data.</p>
+</div>
+
+<div class="card">
+    <h3>Export Data</h3>
+    <button class="btn" @onclick="ExportAsync">Download JSON</button>
+    <p>@_exportMessage</p>
+</div>
+
+<div class="card">
+    <h3>Import Data</h3>
+    <InputFile OnChange="OnImportSelected" />
+    <button class="btn secondary" @onclick="ImportAsync">Import JSON</button>
+    <p>@_importMessage</p>
+</div>
+
+@code {
+    private IBrowserFile? _importFile;
+    private string _exportMessage = string.Empty;
+    private string _importMessage = string.Empty;
+
+    private void OnImportSelected(InputFileChangeEventArgs args)
+    {
+        _importFile = args.File;
+    }
+
+    private async Task ExportAsync()
+    {
+        _exportMessage = string.Empty;
+        var treeId = await DbContext.FamilyTrees.Select(t => t.Id).FirstOrDefaultAsync();
+        if (treeId == 0)
+        {
+            _exportMessage = "Tidak ada tree untuk diexport.";
+            return;
+        }
+
+        var json = await ExportService.ExportTreeAsync(treeId);
+        await JsRuntime.InvokeVoidAsync("familyTreeDownload", $"familytree-{DateTime.UtcNow:yyyyMMdd}.json", json);
+        _exportMessage = "File JSON berhasil dibuat.";
+    }
+
+    private async Task ImportAsync()
+    {
+        _importMessage = string.Empty;
+
+        if (_importFile == null)
+        {
+            _importMessage = "Pilih file JSON terlebih dahulu.";
+            return;
+        }
+
+        var user = await UserManager.GetUserAsync(SignInManager.Context.User);
+        if (user == null)
+        {
+            _importMessage = "Silakan login ulang.";
+            return;
+        }
+
+        await using var stream = _importFile.OpenReadStream(10 * 1024 * 1024);
+        using var reader = new StreamReader(stream);
+        var json = await reader.ReadToEndAsync();
+
+        await ExportService.ImportTreeAsync(json, user.Id);
+        _importMessage = "Import berhasil. Refresh halaman untuk melihat data baru.";
+    }
+}

@@ -1,0 +1,145 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JsRuntime
+
+<div class="app-shell" data-theme="@_theme">
+    <aside class="sidebar">
+        <div class="brand">
+            <span class="brand-badge">FT</span>
+            <div>
+                <h2>Family Tree</h2>
+                <p>Family Hub</p>
+            </div>
+        </div>
+
+        <nav class="nav-links">
+            <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+            <NavLink href="/tree">Tree Builder</NavLink>
+            <NavLink href="/people">Profiles</NavLink>
+            <NavLink href="/memories">Memories</NavLink>
+            <NavLink href="/insights">Insights</NavLink>
+            <NavLink href="/backup">Backup</NavLink>
+            <NavLink href="/account/profile">Edit Profile</NavLink>
+        </nav>
+
+        <div class="sidebar-footer">
+            <button class="btn secondary" @onclick="ToggleTheme">Toggle Theme</button>
+            <AuthorizeView>
+                <Authorized>
+                    <button class="btn danger" @onclick="Logout">Logout</button>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="topbar">
+            <div class="topbar-left">
+                <h1>@_pageTitle</h1>
+                <p>@_pageSubtitle</p>
+            </div>
+            <AuthorizeView>
+                <Authorized>
+                    <div class="user-chip">
+                        <span class="user-avatar">@_initials</span>
+                        <div>
+                            <strong>@_displayName</strong>
+                            <small>@_email</small>
+                        </div>
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+        </header>
+
+        <section class="content-area">
+            @Body
+        </section>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private string _theme = "light";
+    private string _displayName = "";
+    private string _email = "";
+    private string _initials = "";
+    private string _pageTitle = "";
+    private string _pageSubtitle = "";
+    private bool _themeInitialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += (_, _) => UpdateTitle();
+        UpdateTitle();
+        await EnsureAuthenticatedAsync();
+        await LoadUserAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_themeInitialized)
+        {
+            _theme = await JsRuntime.InvokeAsync<string>("familyTreeTheme.getTheme");
+            _themeInitialized = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task EnsureAuthenticatedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated != true)
+        {
+            Navigation.NavigateTo("/account/login", true);
+        }
+    }
+
+    private void UpdateTitle()
+    {
+        var uri = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+        _pageTitle = uri switch
+        {
+            "" => "Dashboard",
+            "tree" => "Tree Builder",
+            "people" => "Profiles",
+            "memories" => "Memories",
+            "insights" => "Insights",
+            "backup" => "Backup",
+            "account/profile" => "Edit Profile",
+            _ => "FamilyTree"
+        };
+        _pageSubtitle = "Koneksi lintas generasi dengan tampilan brutalism.";
+        StateHasChanged();
+    }
+
+    private async Task LoadUserAsync()
+    {
+        var user = await UserManager.GetUserAsync(SignInManager.Context.User);
+        if (user == null)
+        {
+            return;
+        }
+
+        _displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? "User" : user.DisplayName;
+        _email = user.Email ?? "-";
+        _initials = _displayName.Length >= 2 ? _displayName.Substring(0, 2).ToUpperInvariant() : _displayName.ToUpperInvariant();
+    }
+
+    private async Task ToggleTheme()
+    {
+        _theme = await JsRuntime.InvokeAsync<string>("familyTreeTheme.toggleTheme");
+    }
+
+    private void Logout()
+    {
+        Navigation.NavigateTo("/account/logout", true);
+    }
+}

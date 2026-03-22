@@ -1,0 +1,183 @@
+.tree-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.toolbar-section {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.toolbar-section select {
+    padding: 8px 12px;
+    border: 3px solid var(--border);
+    background: var(--surface);
+}
+
+.member-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.member-card {
+    background: var(--surface);
+}
+
+.member-header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.member-header img,
+.media-card img,
+.node-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid var(--border);
+}
+
+.avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    background: var(--accent);
+}
+
+.tree-generation {
+    margin-bottom: 20px;
+}
+
+.generation-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.node-title {
+    font-weight: 700;
+}
+
+.node-meta {
+    font-size: 0.85rem;
+}
+
+.node-inline {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.focus-board {
+    margin-top: 24px;
+    border: 3px dashed var(--border);
+    padding: 16px;
+    background: var(--surface);
+}
+
+.focus-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.timeline-event {
+    display: grid;
+    gap: 6px;
+}
+
+.relationship-list {
+    display: grid;
+    gap: 8px;
+}
+
+.media-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.media-card {
+    border: 2px solid var(--border);
+    padding: 8px;
+    display: grid;
+    gap: 6px;
+    background: var(--surface);
+}
+
+.media-icon {
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-2);
+    font-weight: 700;
+}
+
+.media-caption {
+    font-size: 0.85rem;
+}
+
+.tree-view {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.tree-branch {
+    display: grid;
+    gap: 8px;
+}
+
+.tree-children {
+    margin-left: 28px;
+    padding-left: 16px;
+    border-left: 2px dashed var(--border);
+    display: grid;
+    gap: 8px;
+}
+
+.tree-node-branch {
+    background: var(--accent-2);
+}
+
+.generation-layout {
+    margin-top: 24px;
+}
+
+.btn.small {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+}
+
+.tree-canvas.fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--surface);
+    padding: 24px;
+    overflow: auto;
+    z-index: 1200;
+}
+
+.tree-canvas.fullscreen .fullscreen-exit {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 1300;
+}
