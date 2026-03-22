@@ -2,6 +2,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IEncryptionService EncryptionService
 @inject StorageFactory StorageFactory
+@inject IJSRuntime JsRuntime
 
 <div class="card">
     <h3>Member Profiles</h3>
@@ -370,6 +371,17 @@
 
     private async Task DeleteMemberAsync(Person person)
     {
+        // Konfirmasi sebelum menghapus data member
+        var confirmed = await JsRuntime.InvokeAsync<bool>(
+            "confirm",
+            $"Yakin ingin menghapus member {person.FirstName} {person.LastName}?"
+        );
+
+        if (!confirmed)
+        {
+            return;
+        }
+
         await using var dbContext = await DbFactory.CreateDbContextAsync();
         var relationships = await dbContext.Relationships
             .Where(r => r.PersonId == person.Id || r.RelatedPersonId == person.Id)
