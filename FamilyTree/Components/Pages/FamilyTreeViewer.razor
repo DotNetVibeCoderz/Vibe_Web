@@ -4,6 +4,8 @@
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JSRuntime
+@inject IEncryptionService EncryptionService
+
 
 <div class="tree-container @(_isFullscreen ? "fullscreen-active" : "")">
     <!-- Header with controls -->
@@ -80,7 +82,7 @@
                     {
                         <div class="bio-content">
                             <h5>Tentang @_selectedPerson.FirstName</h5>
-                            <p>@(_selectedPerson.NotesEncrypted ?? "Tidak ada catatan tambahan.")</p>
+                            <p>@(GetNotes(_selectedPerson) ?? "Tidak ada catatan tambahan.")</p>
                         </div>
                     }
                     else if (ActiveTab == "Media")
@@ -466,5 +468,12 @@
         var first = string.IsNullOrWhiteSpace(person.FirstName) ? "X" : person.FirstName[0].ToString();
         var last = string.IsNullOrWhiteSpace(person.LastName) ? "" : person.LastName[0].ToString();
         return (first + last).ToUpper();
+    }
+        
+    private string GetNotes(Person person)
+    {
+        return string.IsNullOrWhiteSpace(person.NotesEncrypted)
+            ? "-"
+            : EncryptionService.Decrypt(person.NotesEncrypted);
     }
 }
