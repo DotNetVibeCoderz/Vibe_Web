@@ -16,6 +16,7 @@
 
         <nav class="nav-links">
             <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+            <NavLink href="/family-tree-viewer">Interactive Tree</NavLink>
             <NavLink href="/tree">Tree Builder</NavLink>
             <NavLink href="/people">Profiles</NavLink>
             <NavLink href="/memories">Memories</NavLink>
@@ -107,6 +108,7 @@
         _pageTitle = uri switch
         {
             "" => "Dashboard",
+            "family-tree-viewer" => "Interactive Tree",
             "tree" => "Tree Builder",
             "people" => "Profiles",
             "memories" => "Memories",
@@ -115,7 +117,7 @@
             "account/profile" => "Edit Profile",
             _ => "FamilyTree"
         };
-        _pageSubtitle = "Koneksi lintas generasi dengan tampilan brutalism.";
+        _pageSubtitle = "Koneksi lintas generasi dengan tampilan interaktif.";
         StateHasChanged();
     }
 

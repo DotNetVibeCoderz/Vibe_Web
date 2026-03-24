@@ -1,0 +1,470 @@
+@page "/family-tree-viewer"
+@using FamilyTree.Models
+@using FamilyTree.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JSRuntime
+
+<div class="tree-container @(_isFullscreen ? "fullscreen-active" : "")">
+    <!-- Header with controls -->
+    <div class="tree-header card">
+        <div class="header-left">
+            <h3>Pohon Keluarga Ramly</h3>
+            <span class="badge">Interactive Viewer</span>
+        </div>
+        <div class="header-right">
+             <div class="control-group">
+                <button class="btn ghost small" @onclick="ZoomIn" title="Zoom In"> + </button>
+                <button class="btn ghost small" @onclick="ZoomOut" title="Zoom Out"> - </button>
+                <button class="btn ghost small" @onclick="ResetZoom" title="Reset"> Reset </button>
+            </div>
+            <button class="btn primary small" @onclick="ToggleFullscreen">
+                @(_isFullscreen ? "Exit Fullscreen" : "Full Screen")
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Canvas Area -->
+    <div id="tree-canvas-wrapper" class="canvas-wrapper">
+        <svg id="family-tree-svg" width="100%" height="100%"></svg>
+        
+        <!-- Minimap Overlay -->
+        <div class="minimap-overlay card">
+            <div class="minimap-header">MINIMAP</div>
+            <svg id="minimap-svg"></svg>
+        </div>
+    </div>
+
+    <!-- Right Sidebar for Person Details -->
+    @if (_selectedPerson != null)
+    {
+        <div class="details-sidebar card">
+            <div class="sidebar-header">
+                <div class="person-title">
+                    <h4>@_selectedPerson.FirstName @_selectedPerson.LastName</h4>
+                    <span class="badge small">@_selectedPerson.BranchTag</span>
+                </div>
+                <button class="btn danger small circle" @onclick="CloseDetail">×</button>
+            </div>
+            
+            <div class="sidebar-body">
+                <div class="profile-section">
+                    @if (!string.IsNullOrEmpty(_selectedPerson.PhotoUrl))
+                    {
+                        <img class="profile-img" src="@_selectedPerson.PhotoUrl" alt="Photo" />
+                    }
+                    else
+                    {
+                        <div class="profile-placeholder">@GetInitials(_selectedPerson)</div>
+                    }
+                    <div class="quick-facts">
+                        <div class="fact"><strong>Lahir:</strong> @_selectedPerson.BirthDate.ToString("dd MMM yyyy")</div>
+                        @if (_selectedPerson.DeathDate.HasValue)
+                        {
+                            <div class="fact text-danger"><strong>Wafat:</strong> @_selectedPerson.DeathDate.Value.ToString("dd MMM yyyy")</div>
+                        }
+                        <div class="fact"><strong>Gender:</strong> @_selectedPerson.Gender</div>
+                        <div class="fact"><strong>Lokasi:</strong> @(_selectedPerson.Location ?? "Tidak diketahui")</div>
+                    </div>
+                </div>
+
+                <div class="tabs-brutal">
+                    <button class="tab-btn @(ActiveTab == "Bio" ? "active" : "")" @onclick='() => ActiveTab = "Bio"'>Bio</button>
+                    <button class="tab-btn @(ActiveTab == "Media" ? "active" : "")" @onclick='() => ActiveTab = "Media"'>Media</button>
+                    <button class="tab-btn @(ActiveTab == "Story" ? "active" : "")" @onclick='() => ActiveTab = "Story"'>Story</button>
+                    <button class="tab-btn @(ActiveTab == "Rel" ? "active" : "")" @onclick='() => ActiveTab = "Rel"'>Rel</button>
+                </div>
+
+                <div class="tab-content">
+                    @if (ActiveTab == "Bio")
+                    {
+                        <div class="bio-content">
+                            <h5>Tentang @_selectedPerson.FirstName</h5>
+                            <p>@(_selectedPerson.NotesEncrypted ?? "Tidak ada catatan tambahan.")</p>
+                        </div>
+                    }
+                    else if (ActiveTab == "Media")
+                    {
+                        <div class="media-grid">
+                            @if (_selectedPerson.MediaItems.Any())
+                            {
+                                @foreach (var media in _selectedPerson.MediaItems)
+                                {
+                                    <div class="media-card card small">
+                                        <img src="@media.Url" alt="@media.Caption" />
+                                        <div class="caption">@media.Caption</div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="muted">Tidak ada media.</p>
+                            }
+                        </div>
+                    }
+                    else if (ActiveTab == "Story")
+                    {
+                        <div class="stories-list">
+                            @if (_selectedPerson.Stories.Any())
+                            {
+                                @foreach (var story in _selectedPerson.Stories)
+                                {
+                                    <div class="story-item card small">
+                                        <h6>@story.Title</h6>
+                                        <p>@story.Content</p>
+                                        <span class="badge small">@story.CreatedAt.Year</span>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="muted">Tidak ada cerita tersimpan.</p>
+                            }
+                        </div>
+                    }
+                    else if (ActiveTab == "Rel")
+                    {
+                        <div class="rel-list">
+                             <h6>Keluarga Terkait</h6>
+                             @foreach (var r in _selectedPerson.Relationships)
+                             {
+                                 <div class="rel-item card small" @onclick="() => SelectPerson(r.RelatedPersonId)" style="cursor:pointer">
+                                     <strong>@r.Type:</strong> @(r.RelatedPerson?.FirstName) @(r.RelatedPerson?.LastName)
+                                 </div>
+                             }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .tree-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 120px);
+        position: relative;
+        background: #fdfdfd;
+        border: 4px solid #000;
+        box-shadow: 12px 12px 0px #000;
+        overflow: hidden;
+        margin: 20px;
+    }
+
+    .tree-container.fullscreen-active {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        z-index: 1000;
+        border: none;
+    }
+
+    .tree-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 30px;
+        background: #fff;
+        border-bottom: 4px solid #000;
+        z-index: 20;
+    }
+
+    .header-right {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .control-group {
+        display: flex;
+        border: 3px solid #000;
+        background: #fff;
+    }
+
+    .control-group button {
+        border: none;
+        border-right: 3px solid #000;
+        margin: 0;
+        padding: 5px 15px;
+        border-radius: 0;
+        font-weight: 900;
+    }
+
+    .control-group button:last-child {
+        border-right: none;
+    }
+
+    .canvas-wrapper {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        background-image: 
+            radial-gradient(#ccc 1px, transparent 1px);
+        background-size: 30px 30px;
+    }
+
+    .minimap-overlay {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 240px;
+        height: 160px;
+        background: #fff;
+        z-index: 15;
+        display: flex;
+        flex-direction: column;
+        padding: 5px;
+        pointer-events: none;
+    }
+
+    .minimap-header {
+        font-size: 10px;
+        font-weight: 800;
+        padding: 2px 5px;
+        border-bottom: 2px solid #000;
+        margin-bottom: 5px;
+    }
+
+    #minimap-svg {
+        flex: 1;
+        width: 100%;
+        background: #fafafa;
+    }
+
+    .details-sidebar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 400px;
+        height: 100%;
+        background: #fff;
+        z-index: 30;
+        margin: 0;
+        border-left: 4px solid #000;
+        display: flex;
+        flex-direction: column;
+        animation: slideLeft 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @@keyframes slideLeft {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: var(--accent);
+        color: #000;
+        border-bottom: 4px solid #000;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .person-title h4 { margin: 0; }
+
+    .sidebar-body {
+        padding: 20px;
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .profile-section {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+
+    .profile-img, .profile-placeholder {
+        width: 120px;
+        height: 120px;
+        border: 4px solid #000;
+        box-shadow: 6px 6px 0px #000;
+        object-fit: cover;
+    }
+
+    .profile-placeholder {
+        background: var(--accent-2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        font-weight: 900;
+    }
+
+    .quick-facts {
+        font-size: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .tabs-brutal {
+        display: flex;
+        border: 3px solid #000;
+        margin-bottom: 20px;
+    }
+
+    .tab-btn {
+        flex: 1;
+        border: none;
+        border-right: 3px solid #000;
+        background: #fff;
+        font-weight: 800;
+        padding: 8px;
+        cursor: pointer;
+        font-size: 11px;
+    }
+
+    .tab-btn:last-child { border-right: none; }
+    .tab-btn.active {
+        background: var(--accent);
+    }
+
+    .media-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .media-card img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        border-bottom: 3px solid #000;
+    }
+
+    .muted { color: #666; font-style: italic; }
+
+    .rel-item {
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 2px solid #000;
+        box-shadow: 4px 4px 0px #000;
+    }
+</style>
+
+@code {
+    private List<Person> _allPeople = new();
+    private Person? _selectedPerson;
+    private string ActiveTab = "Bio";
+    private bool _isFullscreen = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+    }
+
+    private async Task LoadData()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        _allPeople = await db.People
+            .Include(p => p.MediaItems)
+            .Include(p => p.Stories)
+            .Include(p => p.Relationships)
+                .ThenInclude(r => r.RelatedPerson)
+            .ToListAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadData();
+
+            await InitializeTree();
+        }
+    }
+
+    private async Task InitializeTree()
+    {
+        var treeData = BuildTreeData();
+        await JSRuntime.InvokeVoidAsync("familyTreeViewer.init", "family-tree-svg", "minimap-svg", treeData, DotNetObjectReference.Create(this));
+    }
+
+    private object BuildTreeData()
+    {
+        using var db = DbFactory.CreateDbContext();
+        // Find roots (those without a parent)
+        var childrenIds = db.Relationships
+            .Where(r => r.Type == RelationshipType.Parent)
+            .Select(r => r.RelatedPersonId)
+            .Distinct()
+            .ToHashSet();
+        var childrenNames = db.Relationships
+            .Where(r => r.Type == RelationshipType.Parent)
+            .Select(r => r.RelatedPerson.FirstName)
+            .Distinct()
+            .ToHashSet();
+
+        var roots = _allPeople.Where(p => !childrenIds.Contains(p.Id)).ToList();
+        
+        return roots.Select(r => MapPersonToNode(r, new HashSet<int>())).ToList();
+    }
+
+    private object MapPersonToNode(Person p, HashSet<int> visited)
+    {
+        if (visited.Contains(p.Id)) return new { id = p.Id, name = p.FirstName + "..." };
+        visited.Add(p.Id);
+
+        // Get children
+        var childrenIds = p.Relationships
+            .Where(r => r.Type == RelationshipType.Parent)
+            .Select(r => r.RelatedPersonId)
+            .ToList();
+
+        var children = _allPeople
+            .Where(pc => childrenIds.Contains(pc.Id))
+            .OrderBy(pc => pc.OrderNumber)
+            .Select(pc => MapPersonToNode(pc, new HashSet<int>(visited)))
+            .ToList();
+
+        // Get spouses
+        var spouseRelationships = p.Relationships
+            .Where(r => r.Type == RelationshipType.Spouse)
+            .ToList();
+
+        var spouses = spouseRelationships.Select(sr => new {
+            id = sr.RelatedPersonId,
+            name = (sr.RelatedPerson?.FirstName + " " + sr.RelatedPerson?.LastName) ?? "Unknown",
+            photo = sr.RelatedPerson?.PhotoUrl,
+            gender = sr.RelatedPerson?.Gender ?? "Unknown"
+        }).ToList();
+
+        return new
+        {
+            id = p.Id,
+            name = $"{p.FirstName} {p.LastName}",
+            photo = p.PhotoUrl,
+            gender = p.Gender,
+            spouses = spouses,
+            children = children
+        };
+    }
+
+    [JSInvokable]
+    public void SelectPerson(int id)
+    {
+        _selectedPerson = _allPeople.FirstOrDefault(p => p.Id == id);
+        ActiveTab = "Bio";
+        StateHasChanged();
+    }
+
+    private void CloseDetail() => _selectedPerson = null;
+
+    private async Task ZoomIn() => await JSRuntime.InvokeVoidAsync("familyTreeViewer.zoomIn");
+    private async Task ZoomOut() => await JSRuntime.InvokeVoidAsync("familyTreeViewer.zoomOut");
+    private async Task ResetZoom() => await JSRuntime.InvokeVoidAsync("familyTreeViewer.resetZoom");
+    private void ToggleFullscreen() => _isFullscreen = !_isFullscreen;
+
+    private string GetInitials(Person person)
+    {
+        var first = string.IsNullOrWhiteSpace(person.FirstName) ? "X" : person.FirstName[0].ToString();
+        var last = string.IsNullOrWhiteSpace(person.LastName) ? "" : person.LastName[0].ToString();
+        return (first + last).ToUpper();
+    }
+}
