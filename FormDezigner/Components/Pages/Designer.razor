@@ -1,0 +1,601 @@
+@page "/designer/{Id:guid}"
+@page "/designer"
+@using FormDezigner.Data
+@using FormDezigner.Models
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@using BlazorMonaco.Editor
+@using BlazorMonaco
+@inject AppDbContext DbContext
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<style>
+#backend-editor { /* applies to a specific editor instance */
+    height: 100%;
+}
+</style>
+
+<PageTitle>Form Designer</PageTitle>
+
+@if (Id.HasValue && form == null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (!Id.HasValue || form == null)
+{
+    <MudAlert Severity="Severity.Info" Class="mt-4">
+        Tidak ada form yang dipilih. Silakan pilih atau buat form baru dari <MudLink Href="/">Dashboard</MudLink>.
+    </MudAlert>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(publishedLink))
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-4" CloseIconClicked="@(() => publishedLink = string.Empty)" ShowCloseIcon="true">
+            Form Published! You can view it here: <strong><MudLink Href="@publishedLink" Target="_blank" Color="Color.Inherit">@publishedLink</MudLink></strong>
+        </MudAlert>
+    }
+
+    <MudToolBar>
+        @if (isEditingName)
+        {
+            <MudTextField @bind-Value="form.Name" Variant="Variant.Text" Margin="Margin.Dense" AutoFocus="true" OnBlur="FinishEditName" />
+            <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success" OnClick="FinishEditName" />
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Class="mr-2">@form.Name</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="StartEditName" />
+        }
+        
+        <MudSpacer />
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" @bind-ActivePanelIndex="activeMode">
+            <MudTabPanel Text="Designer Mode" Icon="@Icons.Material.Filled.DesignServices" />
+            <MudTabPanel Text="Code Mode" Icon="@Icons.Material.Filled.Code" />
+        </MudTabs>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveForm" Class="mr-2">Save</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="PublishForm" Class="mr-2">Publish</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="RunForm" Class="mr-2">Run</MudButton>
+        
+        <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="ExportJson">Export JSON</MudButton>
+        
+        <MudFileUpload T="IBrowserFile" Accept=".json" FilesChanged="ImportJson" Class="ml-2" Style="margin-top: 0;">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Text" Color="Color.Warning">Import JSON</MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+    </MudToolBar>
+
+    <MudDivider Class="my-2" />
+
+    @if (activeMode == 0)
+    {
+        <!-- Designer Mode -->
+        <MudGrid>
+            <!-- Toolbox -->
+            <MudItem xs="3">
+                <MudPaper Class="pa-4" Elevation="1" Style="max-height: 700px; overflow-y: auto;">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Toolbox</strong></MudText>
+                    
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Typography</MudText>
+                    <MudList T="string" Dense="true" Class="mb-2">
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Header"))" Icon="@Icons.Material.Filled.Title">Header / Title</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Paragraph"))" Icon="@Icons.Material.Filled.FormatAlignLeft">Paragraph / Text</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Divider"))" Icon="@Icons.Material.Filled.HorizontalRule">Divider</MudListItem>
+                    </MudList>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Inputs</MudText>
+                    <MudList T="string" Dense="true" Class="mb-2">
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Text"))" Icon="@Icons.Material.Filled.TextFields">Text Input</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Number"))" Icon="@Icons.Material.Filled.Numbers">Number Input</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Email"))" Icon="@Icons.Material.Filled.Email">Email Input</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Password"))" Icon="@Icons.Material.Filled.Password">Password Input</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Textarea"))" Icon="@Icons.Material.Filled.Notes">Multiline Text</MudListItem>
+                    </MudList>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Selections</MudText>
+                    <MudList T="string" Dense="true" Class="mb-2">
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Dropdown"))" Icon="@Icons.Material.Filled.ArrowDropDownCircle">Dropdown</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Checkbox"))" Icon="@Icons.Material.Filled.CheckBox">Checkbox</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Radio"))" Icon="@Icons.Material.Filled.RadioButtonChecked">Radio Button</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Switch"))" Icon="@Icons.Material.Filled.ToggleOn">Switch / Toggle</MudListItem>
+                    </MudList>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Advanced</MudText>
+                    <MudList T="string" Dense="true">
+                        <MudListItem T="string" OnClick="@(() => AddComponent("DatePicker"))" Icon="@Icons.Material.Filled.DateRange">Date Picker</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("TimePicker"))" Icon="@Icons.Material.Filled.AccessTime">Time Picker</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("ColorPicker"))" Icon="@Icons.Material.Filled.ColorLens">Color Picker</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Slider"))" Icon="@Icons.Material.Filled.LinearScale">Slider</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("FileUpload"))" Icon="@Icons.Material.Filled.FileUpload">File Upload</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => AddComponent("Button"))" Icon="@Icons.Material.Filled.SmartButton">Action Button</MudListItem>
+                    </MudList>
+                </MudPaper>
+            </MudItem>
+
+            <!-- Canvas -->
+            <MudItem xs="6">
+                <MudPaper Class="pa-4" Elevation="1" Style="min-height: 500px; background-color: #f9f9f9;">
+                    <MudText Typo="Typo.h6" Align="Align.Center">Form Canvas</MudText>
+                    <MudDivider Class="mb-4" />
+                    
+                    @if (!design.Components.Any())
+                    {
+                        <MudText Align="Align.Center" Color="Color.Surface">Drag components or click from Toolbox</MudText>
+                    }
+                    else
+                    {
+                        <div class="drop-zone">
+                            @{ int index = 0; }
+                            @foreach (var comp in design.Components)
+                            {
+                                int currentIndex = index;
+                                <MudPaper Class="pa-3 mb-3 d-flex align-center" Elevation="2" @onclick="@(() => SelectComponent(comp))" Style="@(selectedComponent == comp ? "border: 2px solid var(--mud-palette-primary);" : "")">
+                                    <div class="d-flex flex-column mr-3">
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" OnClick="@(() => MoveComponentUp(currentIndex))" Disabled="@(currentIndex == 0)" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" OnClick="@(() => MoveComponentDown(currentIndex))" Disabled="@(currentIndex == design.Components.Count - 1)" />
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        @if (comp.Type == "Header")
+                                        {
+                                            <MudText Typo="Typo.h5">@comp.Label</MudText>
+                                        }
+                                        else if (comp.Type == "Paragraph")
+                                        {
+                                            <MudText Typo="Typo.body1">@comp.Label</MudText>
+                                        }
+                                        else if (comp.Type == "Divider")
+                                        {
+                                            <MudDivider />
+                                        }
+                                        else if (comp.Type == "Text")
+                                        {
+                                            <MudTextField T="string" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Number")
+                                        {
+                                            <MudNumericField T="int" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Email")
+                                        {
+                                            <MudTextField T="string" InputType="InputType.Email" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Password")
+                                        {
+                                            <MudTextField T="string" InputType="InputType.Password" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Textarea")
+                                        {
+                                            <MudTextField T="string" Lines="3" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Dropdown")
+                                        {
+                                            <MudSelect T="string" Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true">
+                                                @foreach(var opt in comp.Options.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                                {
+                                                    <MudSelectItem Value="@opt">@opt</MudSelectItem>
+                                                }
+                                            </MudSelect>
+                                        }
+                                        else if (comp.Type == "Checkbox")
+                                        {
+                                            <MudCheckBox T="bool" Label="@comp.Label" Required="@comp.IsRequired" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Switch")
+                                        {
+                                            <MudSwitch T="bool" Label="@comp.Label" Required="@comp.IsRequired" ReadOnly="true" Color="Color.Primary" />
+                                        }
+                                        else if (comp.Type == "Radio")
+                                        {
+                                            <MudRadioGroup T="string">
+                                                @foreach(var opt in comp.Options.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                                {
+                                                    <MudRadio Value="@opt">@opt</MudRadio>
+                                                }
+                                            </MudRadioGroup>
+                                        }
+                                        else if (comp.Type == "DatePicker")
+                                        {
+                                            <MudDatePicker Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "TimePicker")
+                                        {
+                                            <MudTimePicker Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "ColorPicker")
+                                        {
+                                            <MudColorPicker Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" ReadOnly="true" />
+                                        }
+                                        else if (comp.Type == "Slider")
+                                        {
+                                            <MudText Typo="Typo.caption">@comp.Label</MudText>
+                                            <MudSlider T="int" Value="50" Min="0" Max="100" Color="Color.Primary" />
+                                        }
+                                        else if (comp.Type == "FileUpload")
+                                        {
+                                            <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                                                @comp.Label
+                                            </MudButton>
+                                        }
+                                        else if (comp.Type == "Button")
+                                        {
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary">@comp.Label</MudButton>
+                                        }
+                                    </div>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => RemoveComponent(comp))" />
+                                </MudPaper>
+                                index++;
+                            }
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <!-- Properties -->
+            <MudItem xs="3">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle1">Properties</MudText>
+                    <MudDivider Class="mb-2" />
+                    @if (selectedComponent != null)
+                    {
+                        if (selectedComponent.Type == "Header" || selectedComponent.Type == "Paragraph" || selectedComponent.Type == "Button")
+                        {
+                            <MudTextField @bind-Value="selectedComponent.Label" Label="Text / Content" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudTextField @bind-Value="selectedComponent.Name" Label="Component Name / ID" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                        }
+                        else if (selectedComponent.Type != "Divider")
+                        {
+                            <MudTextField @bind-Value="selectedComponent.Label" Label="Label" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudTextField @bind-Value="selectedComponent.Name" Label="Field Name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudCheckBox @bind-Value="selectedComponent.IsRequired" Label="Required" Class="mb-2" />
+                            
+                            @if (selectedComponent.Type == "Text" || selectedComponent.Type == "Email" || selectedComponent.Type == "Password" || selectedComponent.Type == "Number" || selectedComponent.Type == "Textarea")
+                            {
+                                <MudTextField @bind-Value="selectedComponent.Placeholder" Label="Placeholder" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            }
+                            @if (selectedComponent.Type == "Dropdown" || selectedComponent.Type == "Radio")
+                            {
+                                <MudTextField @bind-Value="selectedComponent.Options" Label="Options (comma separated)" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" Class="mb-2" />
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">No properties available for this component.</MudText>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Select a component to edit its properties.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+    else
+    {
+        <!-- Code Mode -->
+        <MudGrid>
+            <MudItem xs="3">
+                <MudPaper Class="pa-4" Elevation="1" Style="max-height: 600px; overflow-y: auto;">
+                    <MudText Typo="Typo.subtitle1">Backend Logic</MudText>
+                    <MudSelect T="string" @bind-Value="form.BackendLanguage" Label="Language" Variant="Variant.Outlined" Class="mb-4">
+                        <MudSelectItem Value="@("CSharp")">C# (.NET)</MudSelectItem>
+                        <MudSelectItem Value="@("JS")">JavaScript (Node)</MudSelectItem>
+                        <MudSelectItem Value="@("Python")">Python</MudSelectItem>
+                    </MudSelect>
+                    <MudText Typo="Typo.subtitle2">Snippets</MudText>
+                    <MudList T="string" Dense="true">
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("Validation"))">Require Validation</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("GetFormData"))">Get Form Data</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("ApiCall"))">Fetch/API Call</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("DatabaseSave"))">Save to Database</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("SendEmail"))">Send Email</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("CalculateSum"))">Calculate Sum</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("FileProcessing"))">Process Uploaded File</MudListItem>
+                        <MudListItem T="string" OnClick="@(() => InsertSnippet("ClearForm"))">Clear Form</MudListItem>
+                    </MudList>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="9">
+                <div style="height: 600px; border: 1px solid #ccc;">
+                    <StandaloneCodeEditor @ref="codeEditor" Id="backend-editor" ConstructionOptions="EditorConstructionOptions" />
+                </div>
+            </MudItem>
+        </MudGrid>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private FormEntity? form;
+    private FormDesign design = new FormDesign();
+    private FormComponent? selectedComponent;
+    private FormVersion? currentVersion;
+    
+    private int activeMode = 0;
+    private StandaloneCodeEditor? codeEditor;
+    private string backendCode = "// Write your backend logic here\n";
+    private string publishedLink = string.Empty;
+    private bool isEditingName = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            form = await DbContext.Forms.Include(f => f.Versions).FirstOrDefaultAsync(f => f.Id == Id.Value);
+            if (form != null)
+            {
+                currentVersion = form.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+                if (currentVersion != null)
+                {
+                    if (!string.IsNullOrEmpty(currentVersion.FormStructureJson))
+                    {
+                        design = JsonConvert.DeserializeObject<FormDesign>(currentVersion.FormStructureJson) ?? new FormDesign();
+                    }
+                    backendCode = currentVersion.BackendCode;
+                }
+            }
+        }
+    }
+
+    private void StartEditName()
+    {
+        isEditingName = true;
+    }
+    
+    private async Task FinishEditName()
+    {
+        isEditingName = false;
+        if (string.IsNullOrWhiteSpace(form?.Name))
+        {
+            form!.Name = "Untitled Form";
+        }
+        await SaveForm();
+    }
+
+    private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+        {
+            Language = form?.BackendLanguage.ToLower() == "csharp" ? "csharp" : form?.BackendLanguage.ToLower() == "python" ? "python" : "javascript",
+            GlyphMargin = true,
+            Value = backendCode,
+            Theme = "vs-dark"
+        };
+    }
+
+    private void AddComponent(string type)
+    {
+        var newComp = new FormComponent { Type = type };
+        
+        // Setup initial default values
+        if (type == "Dropdown" || type == "Radio")
+        {
+            newComp.Options = "Option 1,Option 2";
+        }
+        else if (type == "Header")
+        {
+            newComp.Label = "New Header";
+        }
+        else if (type == "Paragraph")
+        {
+            newComp.Label = "Add your descriptive text here.";
+        }
+        else if (type == "Button")
+        {
+            newComp.Label = "Submit";
+            newComp.Name = "submitBtn";
+        }
+
+        design.Components.Add(newComp);
+        selectedComponent = newComp;
+        StateHasChanged();
+    }
+
+    private void SelectComponent(FormComponent comp)
+    {
+        selectedComponent = comp;
+    }
+
+    private void RemoveComponent(FormComponent comp)
+    {
+        design.Components.Remove(comp);
+        if (selectedComponent == comp) selectedComponent = null;
+    }
+    
+    private void MoveComponentUp(int index)
+    {
+        if (index > 0)
+        {
+            var item = design.Components[index];
+            design.Components.RemoveAt(index);
+            design.Components.Insert(index - 1, item);
+            StateHasChanged();
+        }
+    }
+    
+    private void MoveComponentDown(int index)
+    {
+        if (index < design.Components.Count - 1)
+        {
+            var item = design.Components[index];
+            design.Components.RemoveAt(index);
+            design.Components.Insert(index + 1, item);
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveForm()
+    {
+        if (form == null) return;
+
+        if (activeMode == 1 && codeEditor != null)
+        {
+            backendCode = await codeEditor.GetValue();
+        }
+
+        form.UpdatedAt = DateTime.UtcNow;
+
+        var version = new FormVersion
+        {
+            Id = Guid.NewGuid(),
+            FormEntityId = form.Id,
+            VersionNumber = (form.Versions.Count > 0 ? form.Versions.Max(v => v.VersionNumber) : 0) + 1,
+            FormStructureJson = JsonConvert.SerializeObject(design),
+            BackendCode = backendCode,
+            PublishedAt = DateTime.UtcNow,
+            IsActive = false
+        };
+
+        DbContext.FormVersions.Add(version);
+        await DbContext.SaveChangesAsync();
+        Snackbar.Add("Form saved successfully", Severity.Success);
+    }
+
+    private async Task PublishForm()
+    {
+        await SaveForm();
+        var versions = await DbContext.FormVersions.Where(v => v.FormEntityId == form!.Id).ToListAsync();
+        foreach (var v in versions)
+        {
+            v.IsActive = false;
+        }
+        var latest = versions.OrderByDescending(v => v.VersionNumber).First();
+        latest.IsActive = true;
+        await DbContext.SaveChangesAsync();
+        
+        var baseUri = NavigationManager.BaseUri;
+        publishedLink = $"{baseUri}run/{form.Id}";
+        
+        Snackbar.Add("Form published successfully! Version: " + latest.VersionNumber, Severity.Success);
+    }
+
+    private async Task RunForm()
+    {
+        if (form != null)
+        {
+            // Pastikan form di-save dulu
+            await SaveForm();
+            
+            // Generate link and open in new tab
+            var baseUri = NavigationManager.BaseUri;
+            var runLink = $"{baseUri}run/{form.Id}";
+            await JSRuntime.InvokeVoidAsync("open", runLink, "_blank");
+        }
+    }
+
+    private async Task ExportJson()
+    {
+        if (activeMode == 1 && codeEditor != null)
+        {
+            backendCode = await codeEditor.GetValue();
+        }
+
+        var exportData = new FormExportModel
+        {
+            FormName = form?.Name ?? "Exported Form",
+            Design = design,
+            BackendCode = backendCode,
+            BackendLanguage = form?.BackendLanguage ?? "JS"
+        };
+
+        var json = JsonConvert.SerializeObject(exportData, Formatting.Indented);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        var base64 = Convert.ToBase64String(bytes);
+        var url = $"data:application/json;base64,{base64}";
+        
+        var fileName = $"{(form?.Name ?? "Form").Replace(" ", "_")}_Export.json";
+        
+        var script = $@"
+            var a = document.createElement('a');
+            a.href = '{url}';
+            a.download = '{fileName}';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        ";
+        
+        await JSRuntime.InvokeVoidAsync("eval", script);
+        Snackbar.Add("Form & Logic exported successfully", Severity.Success);
+    }
+    
+    private async Task ImportJson(IBrowserFile file)
+    {
+        if (file != null && form != null)
+        {
+            try
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 5); // 5MB max
+                using var reader = new System.IO.StreamReader(stream);
+                var json = await reader.ReadToEndAsync();
+                
+                var importedData = JsonConvert.DeserializeObject<FormExportModel>(json);
+                if (importedData != null && importedData.Design != null)
+                {
+                    form.Name = importedData.FormName;
+                    form.BackendLanguage = importedData.BackendLanguage;
+                    design = importedData.Design;
+                    backendCode = importedData.BackendCode;
+                    
+                    if (codeEditor != null)
+                    {
+                        await codeEditor.SetValue(backendCode);
+                    }
+                    
+                    selectedComponent = null;
+                    StateHasChanged();
+                    Snackbar.Add("Form & Logic imported successfully. Don't forget to save!", Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add("Invalid Form JSON format. Ensure you import a valid FormDezigner file.", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error importing file: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task InsertSnippet(string type)
+    {
+        if (codeEditor == null) return;
+        
+        string snippet = "";
+        switch (type)
+        {
+            case "Validation":
+                snippet = "\n// Validate input\nif (!data.name) {\n    alert('Name is required!');\n    return;\n}\n";
+                break;
+            case "GetFormData":
+                snippet = "\n// Get form data value\nvar nameValue = data.name;\n";
+                break;
+            case "ApiCall":
+                snippet = "\n// Call external API (example)\n// fetch('https://api.example.com/data').then(res => res.json()).then(result => alert(result));\n";
+                break;
+            case "DatabaseSave":
+                snippet = "\n// Simulate Database Save\nalert('Data saved to database successfully!');\n";
+                break;
+            case "SendEmail":
+                snippet = "\n// Send Notification Email\nalert('Email notification sent to admin.');\n";
+                break;
+            case "CalculateSum":
+                snippet = "\n// Calculate Total\ndata.total = parseFloat(data.price || 0) * parseFloat(data.qty || 0);\n";
+                break;
+            case "FileProcessing":
+                snippet = "\n// File Processing Warning\nalert('File processing simulation complete.');\n";
+                break;
+            case "ClearForm":
+                snippet = "\n// Reset form fields\ndata.name = '';\ndata.qty = 0;\n";
+                break;
+        }
+
+        var currentValue = await codeEditor.GetValue();
+        await codeEditor.SetValue(currentValue + snippet);
+    }
+}

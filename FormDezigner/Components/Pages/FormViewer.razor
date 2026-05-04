@@ -1,0 +1,268 @@
+@page "/run/{Id:guid}"
+@layout Layout.EmptyLayout
+@using FormDezigner.Data
+@using FormDezigner.Models
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@inject AppDbContext DbContext
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@formTitle</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8 mb-8">
+    @if (form == null)
+    {
+        <MudAlert Severity="Severity.Error">Form not found.</MudAlert>
+    }
+    else if (design == null || !design.Components.Any())
+    {
+        <MudAlert Severity="Severity.Warning">This form has no active published version or the form is empty.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-8" Elevation="3">
+            <MudText Typo="Typo.h4" Class="mb-6">@form.Name</MudText>
+            
+            <EditForm Model="dummyModel" OnValidSubmit="HandleSubmit">
+                @foreach (var comp in design.Components)
+                {
+                    <div class="mb-4">
+                        @if (comp.Type == "Header")
+                        {
+                            <MudText Typo="Typo.h5">@(GetFormData(comp.Name, comp.Label))</MudText>
+                        }
+                        else if (comp.Type == "Paragraph")
+                        {
+                            <MudText Typo="Typo.body1">@(GetFormData(comp.Name, comp.Label))</MudText>
+                        }
+                        else if (comp.Type == "Divider")
+                        {
+                            <MudDivider />
+                        }
+                        else if (comp.Type == "Text")
+                        {
+                            <MudTextField T="string" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Number")
+                        {
+                            <MudNumericField T="int" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetInt(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Email")
+                        {
+                            <MudTextField T="string" InputType="InputType.Email" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Password")
+                        {
+                            <MudTextField T="string" InputType="InputType.Password" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Textarea")
+                        {
+                            <MudTextField T="string" Lines="3" Label="@comp.Label" Placeholder="@comp.Placeholder" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Dropdown")
+                        {
+                            <MudSelect T="string" Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))">
+                                @foreach(var opt in comp.Options.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                {
+                                    <MudSelectItem Value="@opt">@opt</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else if (comp.Type == "Checkbox")
+                        {
+                            <MudCheckBox T="bool" Label="@comp.Label" Required="@comp.IsRequired" Value="@GetBool(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Switch")
+                        {
+                            <MudSwitch T="bool" Label="@comp.Label" Required="@comp.IsRequired" Color="Color.Primary" Value="@GetBool(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Radio")
+                        {
+                            <MudRadioGroup T="string" Value="@GetString(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))">
+                                @foreach(var opt in comp.Options.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                {
+                                    <MudRadio Value="@opt">@opt</MudRadio>
+                                }
+                            </MudRadioGroup>
+                        }
+                        else if (comp.Type == "DatePicker")
+                        {
+                            <MudDatePicker Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" Date="@GetDate(comp.Name)" DateChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "TimePicker")
+                        {
+                            <MudTimePicker Label="@comp.Label" Required="@comp.IsRequired" Variant="Variant.Outlined" Time="@GetTime(comp.Name)" TimeChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "Slider")
+                        {
+                            <MudText Typo="Typo.caption">@comp.Label</MudText>
+                            <MudSlider T="int" Min="0" Max="100" Color="Color.Primary" Value="@GetInt(comp.Name)" ValueChanged="@(v => SetData(comp.Name, v))" />
+                        }
+                        else if (comp.Type == "FileUpload")
+                        {
+                            <MudFileUpload T="IBrowserFile">
+                                <ActivatorContent>
+                                    <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                                        @comp.Label
+                                    </MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+                        }
+                        else if (comp.Type == "Button")
+                        {
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4">@comp.Label</MudButton>
+                        }
+                    </div>
+                }
+            </EditForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private FormEntity? form;
+    private FormDesign? design;
+    private FormVersion? activeVersion;
+    private string formTitle = "Loading...";
+
+    private Dictionary<string, object> formData = new();
+    private object dummyModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        form = await DbContext.Forms
+            .Include(f => f.Versions)
+            .FirstOrDefaultAsync(f => f.Id == Id);
+
+        if (form != null)
+        {
+            formTitle = form.Name;
+            activeVersion = form.Versions.FirstOrDefault(v => v.IsActive);
+            if (activeVersion != null && !string.IsNullOrEmpty(activeVersion.FormStructureJson))
+            {
+                design = JsonConvert.DeserializeObject<FormDesign>(activeVersion.FormStructureJson);
+                InitializeDictionaries();
+            }
+        }
+        else
+        {
+            formTitle = "Form Not Found";
+        }
+    }
+
+    private void InitializeDictionaries()
+    {
+        if (design == null) return;
+        formData.Clear();
+        foreach (var comp in design.Components)
+        {
+            if (string.IsNullOrEmpty(comp.Name)) continue;
+
+            if (comp.Type == "Text" || comp.Type == "Email" || comp.Type == "Password" || comp.Type == "Textarea" || comp.Type == "Dropdown" || comp.Type == "Radio")
+            {
+                formData[comp.Name] = string.Empty;
+            }
+            else if (comp.Type == "Number")
+            {
+                formData[comp.Name] = 0;
+            }
+            else if (comp.Type == "Slider")
+            {
+                formData[comp.Name] = 50;
+            }
+            else if (comp.Type == "Checkbox" || comp.Type == "Switch")
+            {
+                formData[comp.Name] = false;
+            }
+            else if (comp.Type == "DatePicker" || comp.Type == "TimePicker")
+            {
+                formData[comp.Name] = string.Empty;
+            }
+            else if (comp.Type == "Header" || comp.Type == "Paragraph") 
+            {
+                formData[comp.Name] = comp.Label;
+            }
+        }
+    }
+
+    private string GetFormData(string name, string fallback) {
+        if (!string.IsNullOrEmpty(name) && formData.ContainsKey(name)) {
+            var val = formData[name];
+            if (val != null) return val.ToString() ?? fallback;
+        }
+        return fallback;
+    }
+
+    private string GetString(string name) => formData.ContainsKey(name) && formData[name] != null ? formData[name].ToString() ?? string.Empty : string.Empty;
+    
+    private int GetInt(string name) {
+        if (formData.ContainsKey(name) && formData[name] != null) {
+            var valStr = formData[name].ToString();
+            if (valStr != null && int.TryParse(valStr, out int res)) return res;
+        }
+        return 0;
+    }
+    
+    private bool GetBool(string name) {
+        if (formData.ContainsKey(name) && formData[name] != null) {
+            var valStr = formData[name].ToString();
+            if (valStr != null && bool.TryParse(valStr, out bool res)) return res;
+        }
+        return false;
+    }
+    
+    private DateTime? GetDate(string name) => formData.ContainsKey(name) ? formData[name] as DateTime? : null;
+    private TimeSpan? GetTime(string name) => formData.ContainsKey(name) ? formData[name] as TimeSpan? : null;
+
+    private void SetData(string name, object? value) {
+        if (!string.IsNullOrEmpty(name) && value != null) {
+            formData[name] = value;
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (activeVersion != null && !string.IsNullOrWhiteSpace(activeVersion.BackendCode))
+        {
+            if (form?.BackendLanguage == "JS" || form?.BackendLanguage == "JavaScript (Node)")
+            {
+                try
+                {
+                    // Escape backticks if code has them, though our templates are fairly safe.
+                    var script = @"
+                        window.runFormLogic = function(data) {
+                            " + activeVersion.BackendCode + @"
+                            return data;
+                        };
+                    ";
+                    await JSRuntime.InvokeVoidAsync("eval", script);
+                    
+                    var newFormData = await JSRuntime.InvokeAsync<Dictionary<string, object>>("window.runFormLogic", formData);
+                    if (newFormData != null)
+                    {
+                        foreach(var kv in newFormData)
+                        {
+                            formData[kv.Key] = kv.Value;
+                        }
+                        StateHasChanged();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Logic Error: {ex.Message}", Severity.Error);
+                }
+            }
+            else
+            {
+                Snackbar.Add("Form submitted successfully! (Backend simulation only supported for JS mode currently)", Severity.Info);
+            }
+        }
+        else
+        {
+            Snackbar.Add("Form submitted successfully!", Severity.Success);
+        }
+    }
+}

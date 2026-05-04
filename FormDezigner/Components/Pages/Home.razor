@@ -1,0 +1,267 @@
+@page "/"
+@using FormDezigner.Data
+@using FormDezigner.Models
+@using Microsoft.EntityFrameworkCore
+@using Newtonsoft.Json
+@inject AppDbContext DbContext
+@inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h3" GutterBottom="true">Dashboard</MudText>
+<MudText Typo="Typo.subtitle1" GutterBottom="true">Manage your forms here.</MudText>
+
+<MudGrid>
+    <MudItem xs="12" Class="d-flex align-center">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateNewForm" StartIcon="@Icons.Material.Filled.Add">Create Blank Form</MudButton>
+        <MudMenu Label="Use Template" Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AutoAwesomeMosaic" Class="ml-2">
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Leave Request"))">Leave Request</MudMenuItem>
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Reimbursement"))">Reimbursement</MudMenuItem>
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Check Weather"))">Check Weather</MudMenuItem>
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Dadu Game"))">Dadu Game</MudMenuItem>
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Business Trip"))">Business Trip</MudMenuItem>
+            <MudMenuItem OnClick="@(() => CreateFromTemplate("Calculator"))">Calculator</MudMenuItem>
+        </MudMenu>
+    </MudItem>
+
+    <MudItem xs="12">
+        @if (forms == null)
+        {
+            <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+        }
+        else if (!forms.Any())
+        {
+            <MudAlert Severity="Severity.Info">No forms found. Create one to get started.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@forms" Hover="true" Elevation="1">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Published Link</MudTh>
+                    <MudTh>Created At</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Name">@context.Name</MudTd>
+                    <MudTd DataLabel="Published Link">
+                        @if (context.Versions.Any(v => v.IsActive))
+                        {
+                            <MudLink Href="@($"/run/{context.Id}")" Target="_blank" Color="Color.Info">/run/@context.Id.ToString().Substring(0, 8)...</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Color="Color.Secondary" Typo="Typo.body2">Not published</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Created At">@context.CreatedAt.ToShortDateString()</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => EditForm(context.Id))">Edit</MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => ConfirmDeleteForm(context))">Delete</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<FormEntity>? forms;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadForms();
+    }
+
+    private async Task LoadForms()
+    {
+        forms = await DbContext.Forms.Include(f => f.Versions).ToListAsync();
+    }
+
+    private async Task CreateNewForm()
+    {
+        var newForm = new FormEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "New Untitled Form",
+            BackendLanguage = "JS",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        DbContext.Forms.Add(newForm);
+        await DbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo($"/designer/{newForm.Id}");
+    }
+    
+    private async Task CreateFromTemplate(string templateName)
+    {
+        var newForm = new FormEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = templateName,
+            BackendLanguage = "JS",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        
+        DbContext.Forms.Add(newForm);
+        
+        var design = new FormDesign();
+        string code = "";
+        
+        switch (templateName)
+        {
+            case "Leave Request":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Leave Request Form" });
+                design.Components.Add(new FormComponent { Type = "Text", Label = "Employee Name", Name = "empName", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Dropdown", Label = "Leave Type", Name = "leaveType", Options = "Annual,Sick,Maternity,Unpaid" });
+                design.Components.Add(new FormComponent { Type = "DatePicker", Label = "Start Date", Name = "startDate", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "DatePicker", Label = "End Date", Name = "endDate", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Textarea", Label = "Reason", Name = "reason", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Submit Request", Name = "submit" });
+                code = @"
+if (!data.empName) {
+    alert('Please fill your name!');
+    return;
+}
+if (!data.startDate || !data.endDate) {
+    alert('Please pick dates!');
+    return;
+}
+alert('Leave request for ' + data.empName + ' has been submitted successfully!\nType: ' + data.leaveType + '\nReason: ' + data.reason);
+// Reset the form
+data.empName = '';
+data.reason = '';
+";
+                break;
+            case "Reimbursement":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Reimbursement Claim" });
+                design.Components.Add(new FormComponent { Type = "Text", Label = "Employee Name", Name = "empName", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Dropdown", Label = "Expense Type", Name = "expenseType", Options = "Travel,Meals,Supplies,Other" });
+                design.Components.Add(new FormComponent { Type = "Number", Label = "Amount", Name = "amount", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "FileUpload", Label = "Upload Receipt", Name = "receipt" });
+                design.Components.Add(new FormComponent { Type = "Textarea", Label = "Description", Name = "description" });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Submit Claim", Name = "submit" });
+                code = @"
+var amount = parseInt(data.amount) || 0;
+if (amount <= 0) {
+    alert('Amount must be greater than 0');
+    return;
+}
+alert('Reimbursement claim of $' + amount + ' for ' + data.expenseType + ' has been submitted by ' + data.empName + '!');
+data.amount = 0;
+data.description = '';
+";
+                break;
+            case "Check Weather":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Weather Forecast Tool" });
+                design.Components.Add(new FormComponent { Type = "Text", Label = "City Name", Name = "city", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Dropdown", Label = "Country", Name = "country", Options = "Indonesia,Singapore,Malaysia,USA,UK,Japan" });
+                design.Components.Add(new FormComponent { Type = "Paragraph", Name = "result", Label = "Waiting for input..." });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Get Weather", Name = "submit" });
+                code = @"
+if(!data.city) {
+    alert('Please enter a city name');
+    return;
+}
+var temp = Math.floor(Math.random() * 15) + 20; // 20 to 35
+var conditions = ['Sunny', 'Cloudy', 'Rainy', 'Stormy', 'Clear'];
+var cond = conditions[Math.floor(Math.random() * conditions.length)];
+data.result = 'Current weather in ' + data.city + ', ' + data.country + ': ' + temp + '°C and ' + cond;
+alert(data.result);
+";
+                break;
+            case "Dadu Game":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Kocok Dadu" });
+                design.Components.Add(new FormComponent { Type = "Text", Label = "Nama Pemain", Name = "player1", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Header", Name = "result", Label = "Tekan Kocok untuk bermain!" });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Kocok Dadu!", Name = "submit" });
+                code = @"
+var dice1 = Math.floor(Math.random() * 6) + 1;
+var dice2 = Math.floor(Math.random() * 6) + 1;
+var total = dice1 + dice2;
+var player = data.player1 || 'Pemain';
+data.result = player + ' mengocok: ' + dice1 + ' dan ' + dice2 + ' (Total: ' + total + ')';
+if (total === 12) {
+    data.result += ' - JACKPOT! 🎉';
+    alert('MANTAP! JACKPOT 12! 🎉');
+}
+";
+                break;
+            case "Business Trip":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Business Trip Planner" });
+                design.Components.Add(new FormComponent { Type = "Text", Label = "Destination", Name = "destination", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "DatePicker", Label = "Departure Date", Name = "departure", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "DatePicker", Label = "Return Date", Name = "returnDate", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Textarea", Label = "Purpose", Name = "purpose", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Paragraph", Name = "status", Label = "Status: Not Submitted" });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Create Plan", Name = "submit" });
+                code = @"
+if(!data.destination) {
+    alert('Where are you going?');
+    return;
+}
+data.status = 'Status: Your trip to ' + data.destination + ' is pending approval from HR.';
+alert('Trip saved successfully! Awaiting HR approval.');
+";
+                break;
+            case "Calculator":
+                design.Components.Add(new FormComponent { Type = "Header", Label = "Simple Calculator" });
+                design.Components.Add(new FormComponent { Type = "Number", Label = "Value 1", Name = "val1", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Dropdown", Label = "Operation", Name = "op", Options = "Add,Subtract,Multiply,Divide" });
+                design.Components.Add(new FormComponent { Type = "Number", Label = "Value 2", Name = "val2", IsRequired = true });
+                design.Components.Add(new FormComponent { Type = "Header", Name = "calcResult", Label = "Result: 0" });
+                design.Components.Add(new FormComponent { Type = "Button", Label = "Hitung", Name = "submit" });
+                code = @"
+var v1 = parseFloat(data.val1) || 0;
+var v2 = parseFloat(data.val2) || 0;
+var op = data.op || 'Add';
+var res = 0;
+
+if (op === 'Add') res = v1 + v2;
+else if (op === 'Subtract') res = v1 - v2;
+else if (op === 'Multiply') res = v1 * v2;
+else if (op === 'Divide') res = v2 !== 0 ? v1 / v2 : 'Error (Div by 0)';
+
+data.calcResult = 'Hasil Hitungan: ' + res;
+";
+                break;
+        }
+
+        var initialVersion = new FormVersion
+        {
+            Id = Guid.NewGuid(),
+            FormEntityId = newForm.Id,
+            VersionNumber = 1,
+            FormStructureJson = JsonConvert.SerializeObject(design),
+            BackendCode = code,
+            PublishedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        DbContext.FormVersions.Add(initialVersion);
+        
+        await DbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo($"/designer/{newForm.Id}");
+    }
+
+    private void EditForm(Guid id)
+    {
+        NavigationManager.NavigateTo($"/designer/{id}");
+    }
+
+    private async Task ConfirmDeleteForm(FormEntity form)
+    {
+        bool? result = await DialogService.ShowMessageBox(
+            "Delete Form", 
+            $"Are you sure you want to delete '{form.Name}'?", 
+            yesText: "Delete", cancelText: "Cancel");
+        
+        if (result == true)
+        {
+            DbContext.Forms.Remove(form);
+            await DbContext.SaveChangesAsync();
+            await LoadForms();
+        }
+    }
+}
