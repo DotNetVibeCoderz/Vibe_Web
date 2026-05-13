@@ -1,0 +1,146 @@
+@page "/admin"
+@attribute [Authorize(Roles = "Admin, Editor")]
+@using MudBlazor
+@inject BlogService BlogService
+@inject ApplicationDbContext DbContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<PageTitle>Admin Dashboard - SimpleBlog</PageTitle>
+
+<div class="brutal-card" style="background: var(--primary); color: white;">
+    <h1 style="font-weight: 900; color: white;">Admin Dashboard 🛡️</h1>
+    <p>Welcome back! You can manage posts, categories, and users here.</p>
+    <div class="mt-2">
+        <a href="/admin/stats" class="brutal-btn" style="background: white; color: black;">📊 View Detailed Stats</a>
+    </div>
+</div>
+
+@if (isEditing)
+{
+    <PostEditor BlogPost="selectedPost" Categories="categories" OnSaved="SavePost" OnCancel="() => isEditing = false" isNew="isNewPost" />
+}
+else
+{
+    <div class="mt-4">
+        <div style="display:flex; justify-content: space-between; align-items:center;" class="mb-3">
+            <h2 style="font-weight: bold; color: black;">Manage Posts</h2>
+            <button class="brutal-btn" @onclick="CreateNew">Create New Post ➕</button>
+        </div>
+
+        <div class="brutal-card" style="background: white; padding: 0; overflow-x: auto;">
+            <table class="table" style="margin-bottom:0; width: 100%;">
+                <thead style="background: var(--bg-light);">
+                    <tr>
+                        <th style="padding: 15px;">Title</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var post in posts)
+                    {
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 15px;"><strong>@post.Title</strong></td>
+                            <td>@post.Category?.Name</td>
+                            <td>
+                                <span class="tag-badge" style="background: @(post.IsPublished ? "var(--secondary)" : "#ccc")">
+                                    @(post.IsPublished ? "Published" : "Draft")
+                                </span>
+                            </td>
+                            <td>@post.CreatedAt.ToShortDateString()</td>
+                            <td>
+                                <button class="brutal-btn" style="padding: 5px 12px; font-size: 0.8rem; background: var(--secondary);" @onclick="() => EditPost(post)">Edit</button>
+                                <button class="brutal-btn" style="padding: 5px 12px; font-size: 0.8rem; background: #ff6b6b;" @onclick="() => ConfirmDelete(post)">Del</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<BlogPost> posts = new();
+    private List<Category> categories = new();
+    private bool isEditing = false;
+    private bool isNewPost = false;
+    private BlogPost selectedPost = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        posts = await DbContext.BlogPosts.Include(b => b.Category).OrderByDescending(b => b.CreatedAt).ToListAsync();
+        categories = await BlogService.GetCategoriesAsync();
+    }
+
+    private void CreateNew()
+    {
+        selectedPost = new BlogPost { CreatedAt = DateTime.UtcNow, IsPublished = true };
+        isNewPost = true;
+        isEditing = true;
+    }
+
+    private void EditPost(BlogPost post)
+    {
+        selectedPost = post;
+        isNewPost = false;
+        isEditing = true;
+    }
+
+    private async Task ConfirmDelete(BlogPost post)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this post?");
+
+        if (confirmed)
+        {
+            await DeletePost(post);
+        }
+    }
+
+    private async Task SavePost()
+    {
+        try 
+        {
+            if (isNewPost)
+            {
+                DbContext.BlogPosts.Add(selectedPost);
+            }
+            else
+            {
+                // Ensure state is updated if already tracked
+                var tracked = DbContext.BlogPosts.Local.FirstOrDefault(p => p.Id == selectedPost.Id);
+                if (tracked != null)
+                {
+                    DbContext.Entry(tracked).State = EntityState.Detached;
+                }
+                DbContext.BlogPosts.Update(selectedPost);
+            }
+
+            await DbContext.SaveChangesAsync();
+            Snackbar.Add("Post saved successfully! 🎉", Severity.Success);
+            isEditing = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeletePost(BlogPost post)
+    {
+        DbContext.BlogPosts.Remove(post);
+        await DbContext.SaveChangesAsync();
+        Snackbar.Add("Post deleted.", Severity.Info);
+        await LoadData();
+    }
+}

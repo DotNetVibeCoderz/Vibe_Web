@@ -1,0 +1,78 @@
+@page "/search"
+@inject BlogService BlogService
+
+<PageTitle>Search - SimpleBlog</PageTitle>
+
+<div class="brutal-card" style="background: var(--accent);">
+    <h1 style="font-weight: 900; margin-bottom: 20px; color: black;">🔍 Advanced Search</h1>
+    
+    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <input type="text" class="brutal-input" @bind="searchTerm" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search articles, topics, or keywords..." style="flex-grow: 1; background: white;" />
+        <button class="brutal-btn" @onclick="ExecuteSearch" style="background: var(--primary); color: white !important;">Search 🚀</button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <label class="brutal-btn" style="background: @(useSemantic ? "var(--secondary)" : "white"); font-size: 0.8rem; padding: 5px 15px; display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" @bind="useSemantic" style="margin-right: 10px; width: 20px; height: 20px;" />
+            <strong>Use Semantic Search 🤖</strong>
+        </label>
+        <small style="color: black; font-weight: bold;">(Finds relevant topics even if keywords don't match exactly)</small>
+    </div>
+</div>
+
+@if (isSearching)
+{
+    <div class="brutal-card" style="background: white; text-align: center;">
+        <p style="font-size: 1.5rem;">🕵️‍♂️ Searching the archives...</p>
+    </div>
+}
+else if (results != null)
+{
+    <div class="mt-4">
+        <h3 style="font-weight: 900; text-transform: uppercase;">
+            Found @results.Count results for "@searchTerm" 
+            <small style="font-size: 0.9rem; text-transform: none; color: var(--text-muted);">
+                (@(useSemantic ? "Semantic" : "Standard") mode)
+            </small>
+        </h3>
+        
+        @if (results.Count == 0)
+        {
+            <div class="brutal-card mt-3" style="background: var(--secondary);">
+                <p>No matches found. Try different keywords or toggle Semantic Search! 🕵️‍♂️</p>
+            </div>
+        }
+        else
+        {
+            <div class="row mt-4">
+                @foreach (var post in results)
+                {
+                    <div class="col-12">
+                        <BlogCard Post="post" />
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string searchTerm = "";
+    private bool useSemantic = false;
+    private List<BlogPost>? results;
+    private bool isSearching = false;
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ExecuteSearch();
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm)) return;
+
+        isSearching = true;
+        results = await BlogService.SearchPostsAsync(searchTerm, useSemantic);
+        isSearching = false;
+    }
+}

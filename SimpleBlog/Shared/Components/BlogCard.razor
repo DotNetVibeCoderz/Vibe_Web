@@ -1,0 +1,41 @@
+@using SimpleBlog.Models
+
+<div class="brutal-card blog-card">
+    @if (!string.IsNullOrEmpty(Post.FeaturedImage))
+    {
+        <img src="@Post.FeaturedImage" alt="@Post.Title" style="width: 100%; border: 3px solid var(--border-color); margin-bottom: 15px;" />
+    }
+    <div class="category-label">@Post.Category?.Icon @Post.Category?.Name</div>
+    <h2 style="font-weight: 900; margin-bottom: 10px;">@Post.Title</h2>
+    <p style="color: var(--text-muted); margin-bottom: 15px;">@Post.Summary</p>
+    
+    <div style="display: flex; flex-wrap: wrap; margin-bottom: 15px;">
+        @foreach (var tag in Post.BlogPostTags)
+        {
+            <span class="tag-badge">#@tag.Tag.Name</span>
+        }
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 3px solid var(--border-color); padding-top: 15px;">
+        <div>
+            <span style="margin-right: 15px; font-weight: bold;">📅 @Post.CreatedAt.ToString("MMM dd, yyyy")</span>
+            <span style="cursor: pointer; font-weight: bold;" @onclick:stopPropagation="true" @onclick="HandleLike">
+                @(hasLiked ? "❤️" : "🤍") @Post.Likes
+            </span>
+        </div>
+        <a href="/blog/@Post.Slug" class="brutal-btn" style="padding: 5px 15px; font-size: 0.9rem;">Read More ➜</a>
+    </div>
+</div>
+
+@code {
+    [Parameter] public BlogPost Post { get; set; } = new();
+    [Parameter] public EventCallback<Guid> OnLike { get; set; }
+    private bool hasLiked = false;
+
+    private async Task HandleLike()
+    {
+        if (hasLiked) return;
+        hasLiked = true;
+        await OnLike.InvokeAsync(Post.Id);
+    }
+}

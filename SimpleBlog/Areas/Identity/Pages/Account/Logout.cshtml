@@ -1,0 +1,32 @@
+@page
+@using Microsoft.AspNetCore.Identity
+@attribute [IgnoreAntiforgeryToken]
+@inject SignInManager<IdentityUser> SignInManager
+@inject ILogger<LogoutModel> Logger
+@functions {
+    public class LogoutModel : Microsoft.AspNetCore.Mvc.RazorPages.PageModel
+    {
+        private readonly SignInManager<IdentityUser> _signInManager;
+        private readonly ILogger<LogoutModel> _logger;
+
+        public LogoutModel(SignInManager<IdentityUser> signInManager, ILogger<LogoutModel> logger)
+        {
+            _signInManager = signInManager;
+            _logger = logger;
+        }
+
+        public async Task<Microsoft.AspNetCore.Mvc.IActionResult> OnGet()
+        {
+            await _signInManager.SignOutAsync();
+            _logger.LogInformation("User logged out.");
+            return LocalRedirect("/");
+        }
+
+        public async Task<Microsoft.AspNetCore.Mvc.IActionResult> OnPost()
+        {
+            await _signInManager.SignOutAsync();
+            _logger.LogInformation("User logged out.");
+            return LocalRedirect("/");
+        }
+    }
+}

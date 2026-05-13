@@ -1,0 +1,14 @@
+<AuthorizeView>
+    <Authorized>
+        <div style="display:flex; align-items:center; flex-wrap: wrap; gap: 5px;">
+            <a href="/admin" class="brutal-btn" style="background: white; color: black; font-size: 0.8rem; border-width: 2px; padding: 8px 12px;">Dashboard 🛡️</a>
+            <div class="brutal-btn" style="background: white; color: black; padding: 8px 12px; font-size: 0.8rem; border-width: 2px; box-shadow: 3px 3px 0px black; display: flex; align-items: center; gap: 10px;">
+                <strong style="max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@context.User.Identity?.Name</strong>
+                <a href="Identity/Account/Logout" style="font-weight:bold; text-decoration:none; color: var(--primary);">Logout</a>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <a href="Identity/Account/Login" class="brutal-btn" style="background: white; color: black; font-size: 0.8rem; border-width: 2px; padding: 8px 12px;">Login 🔑</a>
+    </NotAuthorized>
+</AuthorizeView>

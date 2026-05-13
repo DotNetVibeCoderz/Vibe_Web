@@ -1,0 +1,158 @@
+@page "/blog/{slug}"
+@inject BlogService BlogService
+@inject IStorageService StorageService
+@using Markdig
+
+<PageTitle>@(post?.Title ?? "Loading...") - Gravicode Blog</PageTitle>
+
+@if (post == null)
+{
+    <p>Loading post... ⏳</p>
+}
+else
+{
+    <article>
+        <div class="category-label">@post.Category?.Icon @post.Category?.Name</div>
+        <h1 style="font-weight: 900; font-size: clamp(2rem, 8vw, 3.5rem); margin-bottom: 20px;">@post.Title</h1>
+        
+        <div style="display: flex; align-items: center; margin-bottom: 30px; font-weight: bold; flex-wrap: wrap; gap: 15px;">
+            <span>📅 @post.CreatedAt.ToString("MMMM dd, yyyy")</span>
+            <span>👤 Author: Jacky</span>
+            <span class="brutal-btn" style="padding: 5px 15px; background: var(--bg-card); cursor: pointer;" @onclick="HandleLike">
+                @(hasLiked ? "❤️" : "🤍") @post.Likes Likes
+            </span>
+        </div>
+
+        @if (!string.IsNullOrEmpty(post.FeaturedImage))
+        {
+            <img src="@post.FeaturedImage" class="brutal-card" style="width: 100%; padding: 0; margin-bottom: 30px;" />
+        }
+
+        <div class="brutal-card blog-content" style="line-height: 1.8; font-size: 1.15rem; border-width: 5px;">
+            @((MarkupString)Markdown.ToHtml(post.Content))
+        </div>
+
+        <div class="mt-5">
+            <h3 style="font-weight: 900; text-transform: uppercase; font-size: 2rem;">💬 Comments (@post.Comments.Count)</h3>
+            <div class="mt-4">
+                @foreach (var comment in post.Comments.OrderByDescending(c => c.CreatedAt))
+                {
+                    <div class="brutal-card mb-3" style="border-width: 3px;">
+                        <div style="display: flex; justify-content: space-between; border-bottom: 2px solid var(--border-color); margin-bottom: 10px; padding-bottom: 5px;">
+                            <strong style="color: var(--primary);">👤 @comment.AuthorName</strong>
+                            <small>@comment.CreatedAt.ToString("MMM dd, yyyy HH:mm")</small>
+                        </div>
+                        <p class="mt-2" style="font-size: 1.1rem;">@comment.Content</p>
+                        @if (!string.IsNullOrEmpty(comment.ImageUrl))
+                        {
+                            <img src="@comment.ImageUrl" style="max-width: 300px; border: 2px solid var(--border-color); margin-top: 10px;" />
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="brutal-card mt-5" style="background: var(--secondary); border-width: 4px;">
+                <h4 style="font-weight: 900; color: var(--text-main);">Leave a Comment 💭</h4>
+                <div class="mb-3">
+                    <label style="font-weight: bold; color: var(--text-main);">Name</label>
+                    <input type="text" @bind="newCommentName" class="brutal-input" placeholder="Your name..." />
+                </div>
+                <div class="mb-3">
+                    <label style="font-weight: bold; color: var(--text-main);">Message</label>
+                    <div style="display: flex; gap: 5px; margin-bottom: 5px; flex-wrap: wrap;">
+                        @foreach (var emoji in new[] { "🔥", "🚀", "💡", "😎", "💯", "🙌", "🛠️" })
+                        {
+                            <button type="button" class="brutal-btn" style="padding: 5px 10px; background: var(--bg-card);" @onclick="() => AddEmoji(emoji)">@emoji</button>
+                        }
+                    </div>
+                    <textarea @bind="newCommentText" class="brutal-input" rows="4" placeholder="Share your thoughts..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label style="font-weight: bold; color: var(--text-main);">Upload Image (Optional)</label>
+                    <InputFile OnChange="HandleFileSelected" class="brutal-input" style="background: var(--bg-card);" />
+                </div>
+                <button type="button" class="brutal-btn w-100" style="background: var(--accent);" @onclick="SubmitComment" disabled="@isSubmitting">
+                    @(isSubmitting ? "Posting..." : "Post Comment 🚀")
+                </button>
+            </div>
+        </div>
+    </article>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+    private BlogPost? post;
+    private string newCommentName = "";
+    private string newCommentText = "";
+    private string? uploadedImageUrl;
+    private bool isSubmitting = false;
+    private bool hasLiked = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        post = await BlogService.GetPostBySlugAsync(Slug);
+        hasLiked = false; 
+    }
+
+    private void AddEmoji(string emoji) => newCommentText += emoji;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 5);
+            uploadedImageUrl = await StorageService.UploadFileAsync(stream, file.Name, file.ContentType);
+        }
+    }
+
+    private async Task HandleLike()
+    {
+        if (hasLiked || post == null) return;
+        
+        hasLiked = true;
+        // The service updates the entity in the tracking context.
+        // Since 'post' is tracked, its 'Likes' property will be updated by the service.
+        await BlogService.LikePostAsync(post.Id);
+        
+        // Removed post.Likes++ because it's already incremented in the service 
+        // and they share the same object reference.
+    }
+
+    private async Task SubmitComment()
+    {
+        if (isSubmitting) return;
+        if (string.IsNullOrWhiteSpace(newCommentName) || string.IsNullOrWhiteSpace(newCommentText)) return;
+
+        isSubmitting = true;
+        try
+        {
+            var comment = new Comment
+            {
+                BlogPostId = post!.Id,
+                AuthorName = newCommentName,
+                Content = newCommentText,
+                ImageUrl = uploadedImageUrl,
+                CreatedAt = DateTime.UtcNow,
+                IsApproved = true
+            };
+
+            await BlogService.AddCommentAsync(comment);
+            
+            // Re-fetch or rely on the collection if tracked. 
+            // To be safe and avoid double-adding if EF automatically adds it to the navigation property:
+            if (!post.Comments.Any(c => c.Id == comment.Id))
+            {
+                post.Comments.Add(comment);
+            }
+            
+            newCommentName = "";
+            newCommentText = "";
+            uploadedImageUrl = null;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

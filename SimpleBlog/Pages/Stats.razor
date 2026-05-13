@@ -1,0 +1,109 @@
+@page "/admin/stats"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Statistics - SimpleBlog</PageTitle>
+
+<div class="brutal-card" style="background: var(--accent);">
+    <h1 style="font-weight: 900;">📊 Blog Statistics</h1>
+    <p>Real-time insights into your blog performance.</p>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="brutal-card" style="background: white; text-align: center;">
+            <h4 style="font-weight: bold;">Total Posts</h4>
+            <h1 style="font-weight: 900; font-size: 3rem;">@totalPosts</h1>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="brutal-card" style="background: white; text-align: center;">
+            <h4 style="font-weight: bold;">Total Likes</h4>
+            <h1 style="font-weight: 900; font-size: 3rem; color: #ff6b6b;">@totalLikes</h1>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="brutal-card" style="background: white; text-align: center;">
+            <h4 style="font-weight: bold;">Total Comments</h4>
+            <h1 style="font-weight: 900; font-size: 3rem; color: var(--primary);">@totalComments</h1>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="brutal-card" style="background: white; text-align: center;">
+            <h4 style="font-weight: bold;">Total Visitors</h4>
+            <h1 style="font-weight: 900; font-size: 3rem; color: #4ecdc4;">@totalVisitors</h1>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="brutal-card" style="background: white;">
+            <h3 style="font-weight: bold; margin-bottom: 20px;">📈 Engagement Overview</h3>
+            <MudChart T="double" ChartType="ChartType.Bar" ChartSeries="@Series" XAxisLabels="@Labels" Width="100%" Height="350px" />
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="brutal-card" style="background: white;">
+            <h3 style="font-weight: bold; margin-bottom: 20px;">📁 Posts by Category</h3>
+            <MudChart T="double" ChartType="ChartType.Donut" InputData="@donutData" InputLabels="@donutLabels" Width="100%" Height="300px" />
+        </div>
+    </div>
+</div>
+
+<div class="brutal-card mt-4" style="background: var(--secondary);">
+    <h3 style="font-weight: bold;">Top Performing Posts</h3>
+    <table class="table mt-3">
+        <thead>
+            <tr>
+                <th>Post Title</th>
+                <th>Likes</th>
+                <th>Comments</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var post in topPosts)
+            {
+                <tr>
+                    <td>@post.Title</td>
+                    <td>❤️ @post.Likes</td>
+                    <td>💬 @post.Comments.Count</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private int totalPosts;
+    private int totalLikes;
+    private int totalComments;
+    private int totalVisitors;
+    private List<BlogPost> topPosts = new();
+
+    public List<ChartSeries<double>> Series = new();
+    public string[] Labels = { "Likes", "Comments", "Visitors" };
+
+    private double[] donutData = { };
+    private string[] donutLabels = { };
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalPosts = await DbContext.BlogPosts.CountAsync();
+        totalLikes = await DbContext.BlogPosts.SumAsync(p => p.Likes);
+        totalComments = await DbContext.Comments.CountAsync();
+        totalVisitors = await DbContext.VisitorLogs.CountAsync();
+
+        topPosts = await DbContext.BlogPosts
+            .Include(p => p.Comments)
+            .OrderByDescending(p => p.Likes)
+            .Take(5)
+            .ToListAsync();
+
+        Series.Add(new ChartSeries<double> { Name = "Current Stats", Data = new double[] { totalLikes, totalComments, totalVisitors } });
+
+        var categories = await DbContext.Categories.Include(c => c.Posts).ToListAsync();
+        donutData = categories.Select(c => (double)c.Posts.Count).ToArray();
+        donutLabels = categories.Select(c => c.Name).ToArray();
+    }
+}

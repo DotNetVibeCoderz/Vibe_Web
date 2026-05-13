@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - SimpleBlog</title>
+    <link rel="stylesheet" href="~/css/brutalism.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;700;900&display=swap" />
+    <style>
+        .container { max-width: 800px; margin: 50px auto; }
+        .form-control { border: 3px solid black; padding: 10px; width: 100%; margin-bottom: 10px; }
+        .btn-primary { background: var(--accent); border: 3px solid black; box-shadow: 4px 4px 0px black; padding: 10px 20px; font-weight: bold; color: black; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="brutal-card">
+            <header>
+                <nav>
+                    <a href="/" class="brutal-btn" style="background: white;">🏠 Back to Blog</a>
+                </nav>
+            </header>
+            <main role="main" class="pb-3 mt-4">
+                @RenderBody()
+            </main>
+        </div>
+    </div>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
