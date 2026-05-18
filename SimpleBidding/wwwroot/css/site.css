@@ -1,0 +1,141 @@
+:root {
+    --bg-color: #f8f9fa;
+    --card-bg: #ffffff;
+    --text-color: #212529;
+    --border-color: #dee2e6;
+    --input-bg: #ffffff;
+    --input-text: #212529;
+    --navbar-bg: #212529;
+}
+
+[data-theme='dark'] {
+    --bg-color: #121416;
+    --card-bg: #1d2125;
+    --text-color: #e9ecef;
+    --border-color: #373b3e;
+    --input-bg: #2b3035;
+    --input-text: #f8f9fa;
+    --navbar-bg: #000000;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+}
+
+/* Global Dark Mode Overrides */
+[data-theme='dark'] .card {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+
+[data-theme='dark'] .card-title, 
+[data-theme='dark'] .card-text,
+[data-theme='dark'] .h1, 
+[data-theme='dark'] .h2, 
+[data-theme='dark'] .h3, 
+[data-theme='dark'] .h4, 
+[data-theme='dark'] .h5, 
+[data-theme='dark'] .h6,
+[data-theme='dark'] h1, 
+[data-theme='dark'] h2, 
+[data-theme='dark'] h3, 
+[data-theme='dark'] h4, 
+[data-theme='dark'] h5, 
+[data-theme='dark'] h6 {
+    color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .card-header, 
+[data-theme='dark'] .card-footer,
+[data-theme='dark'] .bg-light,
+[data-theme='dark'] .bg-white {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .text-dark {
+    color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .text-muted {
+    color: #adb5bd !important;
+}
+
+[data-theme='dark'] .list-group-item {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+[data-theme='dark'] .table {
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+[data-theme='dark'] .table th, 
+[data-theme='dark'] .table td {
+    border-color: var(--border-color);
+}
+
+[data-theme='dark'] .form-control, 
+[data-theme='dark'] .form-select {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--border-color);
+}
+
+[data-theme='dark'] .modal-content {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+[data-theme='dark'] .dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+
+[data-theme='dark'] .dropdown-item {
+    color: var(--text-color);
+}
+
+[data-theme='dark'] .dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* Custom Styles */
+.navbar {
+    background-color: var(--navbar-bg) !important;
+    border-bottom: 2px solid #ffc107;
+}
+
+.auction-card img {
+    height: 220px;
+    object-fit: cover;
+}
+
+.btn-warning {
+    color: #212529;
+    font-weight: 600;
+}
+
+#blazor-error-ui {
+    background: #fff3cd;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    color: #856404;
+}

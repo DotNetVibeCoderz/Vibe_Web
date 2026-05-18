@@ -1,0 +1,119 @@
+@page "/dashboard"
+@attribute [Authorize]
+@inject ReportService ReportService
+@inject AuctionService AuctionService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<h3 class="fw-bold mb-4">📊 Dashboard</h3>
+
+<AuthorizeView Roles="Admin">
+    <div class="row g-4 mb-5">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title text-uppercase opacity-75">Total Items</h6>
+                    <h2 class="fw-bold">@stats?.TotalItems</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title text-uppercase opacity-75">Active Auctions</h6>
+                    <h2 class="fw-bold">@stats?.ActiveAuctions</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title text-uppercase opacity-75">Total Bids</h6>
+                    <h2 class="fw-bold">@stats?.TotalBids</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title text-uppercase opacity-75">Users</h6>
+                    <h2 class="fw-bold">@stats?.TotalUsers</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+</AuthorizeView>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold">Recent Auctions</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Current Price</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (recentItems != null)
+                            {
+                                @foreach (var item in recentItems.Take(5))
+                                {
+                                    <tr>
+                                        <td>@item.Title</td>
+                                        <td><span class="badge bg-light text-dark">@item.Category</span></td>
+                                        <td class="text-success fw-bold">@Currency.Format(item.CurrentPrice)</td>
+                                        <td>
+                                            @if (item.EndTime > DateTime.UtcNow)
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Closed</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <AuthorizeView Roles="Admin,Seller">
+                        <a href="/admin/items" class="btn btn-warning fw-bold">Manage Items</a>
+                    </AuthorizeView>
+                    <a href="/profile" class="btn btn-outline-dark">My Profile</a>
+                    <a href="/" class="btn btn-outline-primary">Browse Auctions</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private DashboardStats? stats;
+    private List<AuctionItem>? recentItems;
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await ReportService.GetDashboardStatsAsync();
+        recentItems = await AuctionService.GetAllItemsAsync();
+    }
+}

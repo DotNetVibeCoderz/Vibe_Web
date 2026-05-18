@@ -1,0 +1,228 @@
+@page "/profile"
+@attribute [Authorize]
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject BidService BidService
+@inject IStorageService StorageService
+@using System.Security.Claims
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-4 overflow-hidden">
+            <div class="card-body text-center p-4">
+                <div class="position-relative d-inline-block mb-3">
+                    @if (currentUser != null)
+                    {
+                        <img src="@(string.IsNullOrEmpty(currentUser.ProfilePictureUrl) ? "https://via.placeholder.com/150" : currentUser.ProfilePictureUrl)" 
+                             class="rounded-circle border shadow-sm" 
+                             style="width: 150px; height: 150px; object-fit: cover;" 
+                             onerror="this.src='https://via.placeholder.com/150'" />
+                        
+                        <label class="btn btn-sm btn-warning position-absolute bottom-0 end-0 rounded-circle shadow-sm" 
+                               style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;" 
+                               title="Ganti Foto Profil">
+                            <i class="bi bi-camera-fill"></i>
+                            <InputFile OnChange="HandleProfilePicUpload" class="d-none" accept="image/*" />
+                        </label>
+                    }
+                    else
+                    {
+                        <div class="rounded-circle border bg-light d-flex align-items-center justify-content-center" style="width: 150px; height: 150px;">
+                            <div class="spinner-border text-warning" role="status"></div>
+                        </div>
+                    }
+                </div>
+
+                @if (isUploading)
+                {
+                    <div class="mb-3">
+                        <div class="spinner-border spinner-border-sm text-warning" role="status"></div>
+                        <small class="text-muted ms-2">Mengunggah...</small>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger small py-1">@errorMessage</div>
+                }
+
+                <h4 class="fw-bold mb-1">@(currentUser?.FullName ?? "Memuat...")</h4>
+                <p class="text-muted small">@(currentUser?.Email ?? "")</p>
+                
+                <div class="bg-light rounded-pill px-4 py-2 d-inline-block mb-3">
+                    <span class="text-muted small d-block">Saldo Akun</span>
+                    <span class="fw-bold text-success h5 mb-0">@Currency.Format(currentUser?.Balance ?? 0)</span>
+                </div>
+                
+                <hr />
+                <div class="d-grid gap-2">
+                    <a href="/Account/ChangePassword" class="btn btn-outline-dark btn-sm fw-bold">
+                        <i class="bi bi-shield-lock me-2"></i>Ganti Password
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-warning"></i>Riwayat Penawaran Saya</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Barang</th>
+                                <th>Bid Saya</th>
+                                <th>Status Saat Ini</th>
+                                <th>Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (userBids == null)
+                            {
+                                <tr><td colspan="4" class="text-center py-4">Memuat data...</td></tr>
+                            }
+                            else if (!userBids.Any())
+                            {
+                                <tr>
+                                    <td colspan="4" class="text-center py-5">
+                                        <i class="bi bi-emoji-frown fs-2 text-muted d-block mb-2"></i>
+                                        <p class="text-muted">Belum ada penawaran yang kamu buat.</p>
+                                        <a href="/" class="btn btn-sm btn-warning fw-bold">Cari Barang Lelang</a>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var bid in userBids)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-bold text-truncate" style="max-width: 200px;">@bid.AuctionItem?.Title</div>
+                                            <small class="text-muted">@bid.AuctionItem?.Category</small>
+                                        </td>
+                                        <td class="fw-bold text-success">@Currency.Format(bid.Amount)</td>
+                                        <td>
+                                            @if (bid.AuctionItem?.CurrentPrice == bid.Amount)
+                                            {
+                                                <span class="badge bg-success shadow-sm px-3">Leading (Unggul)</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary shadow-sm px-3">Outbid (Tersalip)</span>
+                                            }
+                                        </td>
+                                        <td class="small text-muted">@bid.BidTime.ToLocalTime().ToString("g")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ApplicationUser? currentUser;
+    private List<Bid>? userBids;
+    private bool isUploading = false;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserData();
+    }
+
+    private async Task LoadUserData()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                // Cara 1: GetUserAsync (Standar Identity)
+                currentUser = await UserManager.GetUserAsync(user);
+
+                // Cara 2: Jika Cara 1 gagal, gunakan FindById lewat Claim NameIdentifier
+                if (currentUser == null)
+                {
+                    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        currentUser = await UserManager.FindByIdAsync(userId);
+                    }
+                }
+
+                if (currentUser != null)
+                {
+                    userBids = await BidService.GetBidsByUserAsync(currentUser.Id);
+                }
+                else
+                {
+                    errorMessage = "Gagal memuat data profil. Silahkan login ulang.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Terjadi kesalahan: " + ex.Message;
+        }
+    }
+
+    private async Task HandleProfilePicUpload(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        
+        // Cek lagi jika currentUser masih null, coba muat ulang
+        if (currentUser == null)
+        {
+            await LoadUserData();
+        }
+
+        if (currentUser == null)
+        {
+            errorMessage = "Data user tidak ditemukan. Gagal upload.";
+            return;
+        }
+        
+        isUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            // 1. Upload ke storage
+            var newUrl = await StorageService.UploadFileAsync(e.File);
+            
+            // 2. Hapus foto lama jika ada
+            if (!string.IsNullOrEmpty(currentUser.ProfilePictureUrl) && currentUser.ProfilePictureUrl.StartsWith("/uploads/"))
+            {
+                await StorageService.DeleteFileAsync(currentUser.ProfilePictureUrl);
+            }
+
+            // 3. Update database user
+            currentUser.ProfilePictureUrl = newUrl;
+            var result = await UserManager.UpdateAsync(currentUser);
+            
+            if (!result.Succeeded)
+            {
+                errorMessage = "Gagal update database: " + string.Join(", ", result.Errors.Select(x => x.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Gagal mengunggah gambar: " + ex.Message;
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+}
