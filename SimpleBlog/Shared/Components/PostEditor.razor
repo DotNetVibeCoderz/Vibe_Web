@@ -1,0 +1,95 @@
+@using SimpleBlog.Models
+@inject BlogService BlogService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<div class="brutal-card" style="background: white;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <h2 style="font-weight: 900; margin:0; color: black;">📝 @(isNew ? "Create New Post" : "Edit Post")</h2>
+        <button class="brutal-btn" style="background: var(--bg-light);" @onclick="OnCancel">Cancel</button>
+    </div>
+
+    <EditForm Model="@BlogPost" OnValidSubmit="HandleSubmit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <label style="color: black; font-weight: bold;">Title</label>
+                    <InputText @bind-Value="BlogPost.Title" class="brutal-input" placeholder="Post Title" />
+                </div>
+                <div class="mb-3">
+                    <label style="color: black; font-weight: bold;">Content</label>
+                    <RichTextEditor @ref="richEditor" Content="@BlogPost.Content" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="brutal-card" style="background: var(--secondary); padding: 15px;">
+                    <div class="mb-3">
+                        <label style="color: black; font-weight: bold;">Slug</label>
+                        <InputText @bind-Value="BlogPost.Slug" class="brutal-input" placeholder="url-slug" />
+                    </div>
+                    <div class="mb-3">
+                        <label style="color: black; font-weight: bold;">Summary</label>
+                        <InputTextArea @bind-Value="BlogPost.Summary" class="brutal-input" rows="3" placeholder="Brief summary..." />
+                    </div>
+                    <div class="mb-3">
+                        <label style="color: black; font-weight: bold;">Category</label>
+                        <select @bind="BlogPost.CategoryId" class="brutal-input">
+                            <option value="">Select Category</option>
+                            @foreach (var cat in Categories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label style="color: black;">
+                            <InputCheckbox @bind-Value="BlogPost.IsPublished" /> Publish immediately
+                        </label>
+                    </div>
+                    <button type="submit" class="brutal-btn w-100" style="background: var(--accent);">Save Post 💾</button>
+                </div>
+            </div>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] public BlogPost BlogPost { get; set; } = new();
+    [Parameter] public List<Category> Categories { get; set; } = new();
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool isNew { get; set; }
+
+    private RichTextEditor? richEditor;
+
+    private async Task HandleSubmit()
+    {
+        if (BlogPost.CategoryId == Guid.Empty)
+        {
+            Snackbar.Add("Pilih kategori dulu, Bos!", Severity.Warning);
+            return;
+        }
+
+        if (richEditor != null)
+        {
+            BlogPost.Content = await richEditor.GetContent();
+        }
+
+        if (string.IsNullOrWhiteSpace(BlogPost.Content) || BlogPost.Content == "<p><br></p>")
+        {
+            Snackbar.Add("Isi konten blognya dong, jangan kosong! ✍️", Severity.Warning);
+            return;
+        }
+
+        // Auto slug if empty
+        if (string.IsNullOrWhiteSpace(BlogPost.Slug))
+        {
+            BlogPost.Slug = BlogPost.Title.ToLower().Replace(" ", "-").Replace("?", "");
+        }
+
+        await OnSaved.InvokeAsync();
+    }
+}

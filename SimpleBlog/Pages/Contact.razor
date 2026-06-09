@@ -1,0 +1,43 @@
+@page "/contact"
+@inject ApplicationDbContext DbContext
+@inject ISnackbar Snackbar
+
+<div class="brutal-card" style="background: var(--accent);">
+    <h1 style="font-weight: 900;">Get In Touch 📞</h1>
+    <p>Ada ide proyek keren atau sekedar mau menyapa? Kirim pesan di bawah ini!</p>
+</div>
+
+<div class="brutal-card mt-4">
+    <EditForm Model="@message" OnValidSubmit="HandleSubmit">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label>Name</label>
+            <InputText @bind-Value="message.Name" class="brutal-input" placeholder="Siapa nama kamu?" />
+        </div>
+        <div class="mb-3">
+            <label>Email</label>
+            <InputText @bind-Value="message.Email" class="brutal-input" placeholder="email@contoh.com" />
+        </div>
+        <div class="mb-3">
+            <label>Subject</label>
+            <InputText @bind-Value="message.Subject" class="brutal-input" placeholder="Topik pesan..." />
+        </div>
+        <div class="mb-3">
+            <label>Message</label>
+            <InputTextArea @bind-Value="message.Message" class="brutal-input" rows="5" placeholder="Tuliskan pesanmu di sini..." />
+        </div>
+        <button type="submit" class="brutal-btn w-100">Send Message 🚀</button>
+    </EditForm>
+</div>
+
+@code {
+    private ContactMessage message = new();
+
+    private async Task HandleSubmit()
+    {
+        DbContext.ContactMessages.Add(message);
+        await DbContext.SaveChangesAsync();
+        Snackbar.Add("Pesan terkirim! Terima kasih ya.", Severity.Success);
+        message = new();
+    }
+}

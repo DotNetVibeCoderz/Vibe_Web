@@ -1,0 +1,230 @@
+@page "/admin/items"
+@attribute [Authorize(Roles = "Admin,Seller")]
+@inject AuctionService AuctionService
+@inject IStorageService StorageService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold mb-0">📦 Manage Items</h3>
+    <button class="btn btn-warning fw-bold" @onclick="ShowAddModal">
+        <i class="bi bi-plus-lg"></i> Add New Item
+    </button>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Item</th>
+                        <th>Category</th>
+                        <th>Starting Price</th>
+                        <th>Current Price</th>
+                        <th>End Time</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (items == null)
+                    {
+                        <tr><td colspan="6" class="text-center py-4">Loading...</td></tr>
+                    }
+                    else if (!items.Any())
+                    {
+                        <tr><td colspan="6" class="text-center py-4">No items found.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in items)
+                        {
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="d-flex align-items-center">
+                                        <img src="@item.ImageUrl" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.src='https://via.placeholder.com/100?text=Error'" />
+                                        <div>
+                                            <div class="fw-bold">@item.Title</div>
+                                            <small class="text-muted">ID: @item.Id</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>@item.Category</td>
+                                <td>@Currency.Format(item.StartingPrice)</td>
+                                <td class="text-success fw-bold">@Currency.Format(item.CurrentPrice)</td>
+                                <td>@item.EndTime.ToLocalTime().ToString("g")</td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditItem(item)"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteItem(item.Id, item.ImageUrl)"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title fw-bold">@(editingItem.Id == 0 ? "Add New Item" : "Edit Item")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingItem" OnValidSubmit="SaveItem">
+                        <DataAnnotationsValidator />
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Title</label>
+                                <InputText @bind-Value="editingItem.Title" class="form-control" />
+                                <ValidationMessage For="@(() => editingItem.Title)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Category</label>
+                                <InputText @bind-Value="editingItem.Category" class="form-control" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-bold">Description</label>
+                                <InputTextArea @bind-Value="editingItem.Description" class="form-control" rows="3" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Starting Price (@Currency.Symbol)</label>
+                                <InputNumber @bind-Value="editingItem.StartingPrice" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">End Time</label>
+                                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="editingItem.EndTime" class="form-control" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-bold">Upload Image</label>
+                                <InputFile OnChange="HandleFileSelected" class="form-control" />
+                                @if (isUploading)
+                                {
+                                    <div class="mt-1 small text-primary"><div class="spinner-border spinner-border-sm" role="status"></div> Uploading...</div>
+                                }
+                                @if (!string.IsNullOrEmpty(editingItem.ImageUrl))
+                                {
+                                    <div class="mt-2">
+                                        <img src="@editingItem.ImageUrl" class="rounded border" style="width: 100px; height: 100px; object-fit: cover;" onerror="this.src='https://via.placeholder.com/100?text=Error'" />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="mt-4 text-end">
+                            <button type="button" class="btn btn-light me-2" @onclick="CloseModal">Cancel</button>
+                            <button type="submit" class="btn btn-warning fw-bold px-4" disabled="@isUploading">
+                                @(isUploading ? "Please wait..." : "Save Changes")
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AuctionItem>? items;
+    private bool showModal = false;
+    private AuctionItem editingItem = new();
+    private string? userId;
+    private bool isUploading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        await LoadItems();
+    }
+
+    private async Task LoadItems()
+    {
+        if (userId != null)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.IsInRole("Admin"))
+                items = await AuctionService.GetAllItemsAsync();
+            else
+                items = await AuctionService.GetItemsBySellerAsync(userId);
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            editingItem.ImageUrl = await StorageService.UploadFileAsync(e.File);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload error: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void ShowAddModal()
+    {
+        editingItem = new AuctionItem 
+        { 
+            StartTime = DateTime.UtcNow, 
+            EndTime = DateTime.UtcNow.AddDays(7),
+            SellerId = userId ?? "",
+            ImageUrl = "https://via.placeholder.com/600x400?text=No+Image"
+        };
+        showModal = true;
+    }
+
+    private void EditItem(AuctionItem item)
+    {
+        editingItem = new AuctionItem
+        {
+            Id = item.Id,
+            Title = item.Title,
+            Description = item.Description,
+            Category = item.Category,
+            StartingPrice = item.StartingPrice,
+            CurrentPrice = item.CurrentPrice,
+            EndTime = item.EndTime,
+            StartTime = item.StartTime,
+            ImageUrl = item.ImageUrl,
+            SellerId = item.SellerId
+        };
+        showModal = true;
+    }
+
+    private async Task SaveItem()
+    {
+        if (editingItem.Id == 0)
+        {
+            editingItem.CurrentPrice = editingItem.StartingPrice;
+            await AuctionService.CreateItemAsync(editingItem);
+        }
+        else
+        {
+            await AuctionService.UpdateItemAsync(editingItem);
+        }
+        showModal = false;
+        await LoadItems();
+    }
+
+    private async Task DeleteItem(int id, string? imageUrl)
+    {
+        await AuctionService.DeleteItemAsync(id);
+        if (!string.IsNullOrEmpty(imageUrl) && imageUrl.StartsWith("/uploads/"))
+        {
+            await StorageService.DeleteFileAsync(imageUrl);
+        }
+        await LoadItems();
+    }
+
+    private void CloseModal() => showModal = false;
+}

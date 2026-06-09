@@ -1,0 +1,179 @@
+@page "/auction/{Id:int}"
+@inject AuctionService AuctionService
+@inject BidService BidService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+@if (item == null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-warning" role="status"></div>
+    </div>
+}
+else
+{
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/">Home</a></li>
+        <li class="breadcrumb-item active">@item.Title</li>
+      </ol>
+    </nav>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card p-2 border-0 shadow-sm">
+                <img src="@item.ImageUrl" class="img-fluid rounded" alt="@item.Title" style="max-height: 500px; object-fit: cover;" onerror="this.src='https://via.placeholder.com/600x400?text=No+Image'">
+            </div>
+        </div>
+        <div class="col-md-6">
+            <h1 class="fw-bold">@item.Title</h1>
+            <span class="badge bg-secondary mb-3">@item.Category</span>
+            <p class="lead">@item.Description</p>
+            
+            <div class="card bg-light p-4 mb-4 border-0 shadow-sm">
+                <div class="row align-items-center">
+                    <div class="col-6 border-end">
+                        <small class="text-muted">Current Bid</small>
+                        <h2 class="text-success fw-bold">@Currency.Format(item.CurrentPrice)</h2>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Ends In</small>
+                        <h4 class="text-danger fw-bold">@timeLeft</h4>
+                    </div>
+                </div>
+            </div>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="card p-3 border-warning mb-4 shadow-sm">
+                        <label class="form-label fw-bold">Place Your Bid (@Currency.Symbol)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">@Currency.Symbol</span>
+                            <input type="number" class="form-control" @bind="bidAmount" min="@(item.CurrentPrice + 1000)" />
+                            <button class="btn btn-warning px-4 fw-bold" @onclick="HandleBid" disabled="@isProcessing">
+                                @(isProcessing ? "Processing..." : "Place Bid")
+                            </button>
+                        </div>
+                        <small class="text-muted mt-1">Minimum increment is @Currency.Symbol 1.000</small>
+                        @if (!string.IsNullOrEmpty(message))
+                        {
+                            <div class="mt-2 text-@(messageType == "success" ? "success" : "danger") fw-bold">@message</div>
+                        }
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="alert alert-info">Silahkan <a href="Account/Login" class="fw-bold">Login</a> untuk melakukan penawaran.</div>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            <div class="mt-4">
+                <h5 class="fw-bold mb-3">Bid History</h5>
+                <div class="list-group shadow-sm">
+                    @if (item.Bids == null || !item.Bids.Any())
+                    {
+                        <div class="list-group-item text-muted small">Belum ada penawaran. Jadi yang pertama!</div>
+                    }
+                    else
+                    {
+                        @foreach (var bid in item.Bids.OrderByDescending(b => b.Amount))
+                        {
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="fw-bold">@bid.Bidder?.FullName</span>
+                                    <small class="text-muted d-block">@bid.BidTime.ToLocalTime().ToString("g")</small>
+                                </div>
+                                <span class="badge bg-success rounded-pill px-3 py-2">@Currency.Format(bid.Amount)</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private AuctionItem? item;
+    private decimal bidAmount;
+    private string message = "";
+    private string messageType = "";
+    private bool isProcessing = false;
+    private string timeLeft = "00:00:00";
+    private System.Timers.Timer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadItem();
+        
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += (s, e) => {
+            UpdateCountdown();
+            InvokeAsync(StateHasChanged);
+        };
+        timer.Start();
+    }
+
+    private async Task LoadItem()
+    {
+        item = await AuctionService.GetItemByIdAsync(Id);
+        if (item != null)
+        {
+            bidAmount = item.CurrentPrice + 50000;
+            UpdateCountdown();
+        }
+    }
+
+    private void UpdateCountdown()
+    {
+        if (item == null) return;
+        var diff = item.EndTime - DateTime.UtcNow;
+        if (diff.TotalSeconds <= 0)
+        {
+            timeLeft = "CLOSED";
+            timer?.Stop();
+        }
+        else
+        {
+            timeLeft = $"{(int)diff.TotalDays}d {diff.Hours:D2}h {diff.Minutes:D2}m {diff.Seconds:D2}s";
+        }
+    }
+
+    private async Task HandleBid()
+    {
+        isProcessing = true;
+        message = "";
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            message = "Sesi tidak valid.";
+            messageType = "error";
+            isProcessing = false;
+            return;
+        }
+
+        var result = await BidService.PlaceBidAsync(Id, userId, bidAmount);
+        if (result.success)
+        {
+            message = result.message;
+            messageType = "success";
+            await LoadItem();
+        }
+        else
+        {
+            message = result.message;
+            messageType = "error";
+        }
+
+        isProcessing = false;
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+    }
+}

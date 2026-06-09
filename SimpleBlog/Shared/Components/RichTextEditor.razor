@@ -1,0 +1,29 @@
+@inject IJSRuntime JSRuntime
+
+<div @ref="editorElement" class="brutal-input" style="height: 400px; background: white;"></div>
+
+@code {
+    private ElementReference editorElement;
+    [Parameter] public string Content { get; set; } = "";
+    [Parameter] public EventCallback<string> ContentChanged { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("quillInterop.init", editorElement, "Write your magic here...");
+            if (!string.IsNullOrEmpty(Content))
+            {
+                await JSRuntime.InvokeVoidAsync("quillInterop.setContent", editorElement, Content);
+            }
+            
+            // Set an interval or use the change event to sync content
+            // For simplicity, we'll just pull it when requested, but we need to fix the submit flow.
+        }
+    }
+
+    public async Task<string> GetContent()
+    {
+        return await JSRuntime.InvokeAsync<string>("quillInterop.getContent", editorElement);
+    }
+}

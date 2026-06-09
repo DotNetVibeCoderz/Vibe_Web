@@ -1,0 +1,150 @@
+@page "/admin/winners"
+@attribute [Authorize(Roles = "Admin,Seller")]
+@inject AuctionService AuctionService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<h3 class="fw-bold mb-4">🏆 Tentukan Pemenang Lelang</h3>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Item</th>
+                        <th>Waktu Berakhir</th>
+                        <th>Tawaran Tertinggi</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (closedItems == null)
+                    {
+                        <tr><td colspan="5" class="text-center py-4">Memuat data...</td></tr>
+                    }
+                    else if (!closedItems.Any())
+                    {
+                        <tr><td colspan="5" class="text-center py-4">Tidak ada lelang yang berakhir/siap ditutup.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in closedItems)
+                        {
+                            var topBid = item.Bids?.OrderByDescending(b => b.Amount).FirstOrDefault();
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="fw-bold">@item.Title</div>
+                                    <small class="text-muted">Starting: @Currency.Format(item.StartingPrice)</small>
+                                </td>
+                                <td>@item.EndTime.ToLocalTime().ToString("g")</td>
+                                <td>
+                                    @if (topBid != null)
+                                    {
+                                        <div class="text-success fw-bold">@Currency.Format(topBid.Amount)</div>
+                                        <small class="text-muted">Oleh: @topBid.BidderId</small>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Tidak ada bid</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (item.Status == AuctionStatus.Closed)
+                                    {
+                                        <span class="badge bg-secondary">Sudah Ditutup</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger">Waktu Habis</span>
+                                    }
+                                </td>
+                                <td class="text-end pe-4">
+                                    @if (item.Status != AuctionStatus.Closed)
+                                    {
+                                        <button class="btn btn-sm btn-warning fw-bold" @onclick="() => ConfirmWinner(item)" disabled="@(topBid == null)">
+                                            Tentukan Pemenang
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Pemenang: @item.WinnerId</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (showConfirmModal && selectedItem != null)
+{
+    var topBid = selectedItem.Bids?.OrderByDescending(b => b.Amount).FirstOrDefault();
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Konfirmasi Pemenang</h5>
+                    <button type="button" class="btn-close" @onclick="() => showConfirmModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (topBid != null)
+                    {
+                        <p>Apakah Anda yakin ingin menetapkan <strong>@topBid.BidderId</strong> sebagai pemenang lelang <strong>@selectedItem.Title</strong> dengan nilai tawaran <strong>@Currency.Format(topBid.Amount)</strong>?</p>
+                        <div class="alert alert-info small">Lelang akan ditutup secara resmi setelah konfirmasi.</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showConfirmModal = false">Batal</button>
+                    <button class="btn btn-warning fw-bold" @onclick="ProcessSetWinner">Ya, Tetapkan Pemenang</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AuctionItem>? closedItems;
+    private string? userId;
+    private bool showConfirmModal = false;
+    private AuctionItem? selectedItem;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        if (userId != null)
+        {
+            closedItems = await AuctionService.GetClosedAuctionsBySellerAsync(userId);
+        }
+    }
+
+    private void ConfirmWinner(AuctionItem item)
+    {
+        selectedItem = item;
+        showConfirmModal = true;
+    }
+
+    private async Task ProcessSetWinner()
+    {
+        if (selectedItem != null)
+        {
+            var topBid = selectedItem.Bids?.OrderByDescending(b => b.Amount).FirstOrDefault();
+            if (topBid != null)
+            {
+                await AuctionService.SetWinnerAsync(selectedItem.Id, topBid.BidderId);
+                showConfirmModal = false;
+                await LoadData();
+            }
+        }
+    }
+}

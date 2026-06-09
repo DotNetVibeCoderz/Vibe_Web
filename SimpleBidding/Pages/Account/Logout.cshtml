@@ -1,0 +1,13 @@
+@page
+@using Microsoft.AspNetCore.Identity
+@using SimpleBidding.Models
+@attribute [IgnoreAntiforgeryToken]
+@inject SignInManager<ApplicationUser> SignInManager
+
+@{
+    if (SignInManager.IsSignedIn(User))
+    {
+        await SignInManager.SignOutAsync();
+    }
+    Response.Redirect("/");
+}

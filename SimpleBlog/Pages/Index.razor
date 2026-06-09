@@ -1,0 +1,54 @@
+@page "/"
+@inject BlogService BlogService
+
+<PageTitle>Timeline - Gravicode Engineering</PageTitle>
+
+<div class="timeline-header mb-5">
+    <h2 style="font-weight: 900; font-size: 2.5rem; text-transform: uppercase;">
+        Latest Updates 📰
+    </h2>
+    <p>Everything about Engineering, AI, and Studios Life.</p>
+</div>
+
+@if (posts == null)
+{
+    <p>Loading the magic... ✨</p>
+}
+else if (posts.Count == 0)
+{
+    <div class="brutal-card" style="background: var(--secondary); text-align: center;">
+        <h3>No posts found! 😱</h3>
+        <p>Maybe Jacky is still writing them?</p>
+    </div>
+}
+else
+{
+    @foreach (var post in posts)
+    {
+        <BlogCard Post="post" OnLike="HandleLike" />
+    }
+    
+    <div class="text-center mt-4">
+        <button class="brutal-btn" style="padding: 15px 40px; font-size: 1.2rem;">View More Posts 🔄</button>
+    </div>
+}
+
+@code {
+    private List<BlogPost>? posts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        posts = await BlogService.GetPublishedPostsAsync();
+    }
+
+    private async Task HandleLike(Guid postId)
+    {
+        // We only call the service. 
+        // In Blazor Server with Scoped context, the object in our list 
+        // will be updated by the service because it's the same reference.
+        await BlogService.LikePostAsync(postId);
+        
+        // No need to do post.Likes++ here as it causes double increment 
+        // if the service already did it on the same object reference.
+    }
+}

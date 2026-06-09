@@ -1,0 +1,120 @@
+@inherits LayoutComponentBase
+@inject BlogService BlogService
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="main-container">
+    <header class="brutal-card brutal-header mb-4 mt-4">
+        <div style="display:flex; align-items:center;">
+            <span style="font-size: 2rem; margin-right: 15px;">🛠️</span>
+            <div style="text-align: left;">
+                <h1 style="font-weight: 900; margin: 0; text-transform: uppercase; letter-spacing: -1px; color: white !important; font-size: clamp(1.2rem, 5vw, 2rem);">Gravicode Engineering</h1>
+                <small style="color: rgba(255,255,255,0.8);">Macho Blog Engine | Jacky's Edition ⚡</small>
+            </div>
+        </div>
+        <nav class="brutal-nav">
+            <button @onclick="ToggleTheme" class="brutal-btn" style="background: white; border-radius: 50%; padding: 10px; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;">
+                @(currentTheme == "light" ? "🌙" : "☀️")
+            </button>
+            <a href="/" class="brutal-btn" style="background: white;">Home</a>
+            <a href="/search" class="brutal-btn" style="background: var(--accent);">🔍 Search</a>
+            <a href="/about" class="brutal-btn" style="background: white;">About</a>
+            <a href="/contact" class="brutal-btn" style="background: white;">Contact</a>
+            <LoginDisplay />
+        </nav>
+    </header>
+
+    <div class="content-wrapper">
+        <div class="row">
+            <div class="col-lg-9 col-md-8 col-sm-12">
+                @Body
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-12 mt-4 md-0">
+                <div class="brutal-card" style="background: var(--secondary);">
+                    <h3 style="font-weight: bold; color: var(--text-main);">📂 Categories</h3>
+                    <ul style="list-style: none; padding: 0;">
+                        @if(categories != null)
+                        {
+                            @foreach(var cat in categories)
+                            {
+                                <li class="mb-2">
+                                    <a href="/category/@cat.Slug" style="color: var(--text-main); font-weight: bold; text-decoration: none; display: block; padding: 5px; border: 2px solid transparent;" class="cat-link">
+                                        @cat.Icon @cat.Name
+                                    </a>
+                                </li>
+                            }
+                        }
+                    </ul>
+                </div>
+                
+                <div class="brutal-card" style="background: var(--accent);">
+                    <h3 style="font-weight: bold; color: black;">🤝 Connect</h3>
+                    <p style="font-size: 0.9rem; color: black;">Join our engineering community!</p>
+                    <div style="font-size: 1.5rem; display: flex; gap: 15px;">
+                        <span>🐦</span> <span>🐙</span> <span>💼</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="brutal-card mt-5" style="background: #000; color: white; text-align: center;">
+        <p>© @DateTime.Now.Year Gravicode Studios Engineering Team. Built with Power. ⚡</p>
+        <p>Jacky butuh asupan pulsa, Bos! 👉 <a href="https://studios.gravicode.com/products/budax" style="color: var(--accent); font-weight: bold;">Traktir di sini</a> 😉</p>
+    </footer>
+</div>
+
+@code {
+    private List<Category>? categories;
+    private string currentTheme = "light";
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await BlogService.GetCategoriesAsync();
+        
+        try {
+            DbContext.VisitorLogs.Add(new VisitorLog { 
+                Path = Nav.Uri,
+                VisitedAt = DateTime.UtcNow
+            });
+            await DbContext.SaveChangesAsync();
+        } catch {}
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            currentTheme = await JS.InvokeAsync<string>("themeInterop.getTheme");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        currentTheme = currentTheme == "light" ? "dark" : "light";
+        await JS.InvokeVoidAsync("themeInterop.setTheme", currentTheme);
+    }
+}
+
+<style>
+    .main-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 10px;
+    }
+    .content-wrapper {
+        min-height: 70vh;
+    }
+    .cat-link:hover {
+        background: var(--bg-card);
+        border-color: var(--border-color) !important;
+        box-shadow: 4px 4px 0px var(--border-color);
+        transform: translate(-2px, -2px);
+    }
+</style>

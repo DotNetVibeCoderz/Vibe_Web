@@ -1,0 +1,109 @@
+@page "/winners"
+@attribute [Authorize]
+@inject AuctionService AuctionService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<h3 class="fw-bold mb-4">🎖️ Daftar Pemenang Lelang</h3>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link @(viewType == "won" ? "active fw-bold" : "")" @onclick='() => SwitchView("won")'>Lelang yang Saya Menangkan</button>
+                    </li>
+                    <AuthorizeView Roles="Admin,Seller">
+                        <li class="nav-item">
+                            <button class="nav-link @(viewType == "my-auctions" ? "active fw-bold" : "")" @onclick='() => SwitchView("my-auctions")'>Pemenang Lelang Saya</button>
+                        </li>
+                    </AuthorizeView>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>@(viewType == "won" ? "Penjual" : "Pemenang")</th>
+                                <th>Harga Akhir</th>
+                                <th>Tanggal Selesai</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (winningItems == null)
+                            {
+                                <tr><td colspan="5" class="text-center py-4">Memuat data...</td></tr>
+                            }
+                            else if (!winningItems.Any())
+                            {
+                                <tr><td colspan="5" class="text-center py-4">Tidak ada data ditemukan.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in winningItems)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <img src="@item.ImageUrl" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover;" onerror="this.src='https://via.placeholder.com/100'" />
+                                                <div>
+                                                    <div class="fw-bold">@item.Title</div>
+                                                    <small class="text-muted">@item.Category</small>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>@(viewType == "won" ? item.Seller?.FullName ?? item.SellerId : item.Winner?.FullName ?? item.WinnerId)</td>
+                                        <td class="text-success fw-bold">@Currency.Format(item.CurrentPrice)</td>
+                                        <td class="small text-muted">@item.EndTime.ToLocalTime().ToString("g")</td>
+                                        <td><span class="badge bg-success">Won / Completed</span></td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AuctionItem>? winningItems;
+    private string viewType = "won";
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        await LoadData();
+    }
+
+    private async Task SwitchView(string type)
+    {
+        viewType = type;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        if (userId == null) return;
+
+        winningItems = null; // show loading
+        if (viewType == "won")
+        {
+            winningItems = await AuctionService.GetWonAuctionsByBidderAsync(userId);
+        }
+        else
+        {
+            // For sellers to see winners of their auctions
+            winningItems = (await AuctionService.GetClosedAuctionsBySellerAsync(userId))
+                            .Where(a => a.WinnerId != null)
+                            .ToList();
+        }
+    }
+}

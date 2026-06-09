@@ -1,0 +1,29 @@
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <p role="alert">Maaf, kamu tidak punya akses ke halaman ini, Bos! 🚫</p>
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>404 - Not Found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <div class="brutal-card" style="background: var(--accent); text-align: center;">
+                    <h1>404 - Wah, Nyasar Bos! 🧭</h1>
+                    <p>Halaman yang kamu cari tidak ada di radar Jacky.</p>
+                    <a href="/" class="brutal-btn">Balik ke Home</a>
+                </div>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
