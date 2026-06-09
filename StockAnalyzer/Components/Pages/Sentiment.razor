@@ -1,0 +1,234 @@
+@page "/sentiment"
+@inject IStockDataService StockData
+@inject ISentimentAnalysisService SentimentAnalysis
+@inject INewsScrapingService NewsScraping
+
+<PageTitle>Sentiment Analysis - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>📰 Sentiment Analysis</h2>
+    <p>News sentiment, sector clustering, and market mood analysis</p>
+</div>
+
+@* Stock News Search *@
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Stock code (e.g., BBCA)..." @bind="stockCode" />
+                <button class="btn btn-primary" @onclick="LoadSentimentData" disabled="@(string.IsNullOrWhiteSpace(stockCode) || isLoading)">
+                    @(isLoading ? "Loading..." : "Analyze")
+                </button>
+            </div>
+            <button class="btn btn-outline" @onclick="ScrapeNews" disabled="@isScraping">
+                @(isScraping ? "Scraping..." : "🔍 Scrape Latest News")
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (stock != null)
+{
+    @* Sentiment Overview *@
+    <div class="card">
+        <div class="card-header">
+            <h3>@stock.StockCode - @stock.CompanyName</h3>
+            <span class="sentiment-badge sentiment-@overallSentiment.ToLower()">@overallSentiment</span>
+        </div>
+        <div class="card-body">
+            <div class="sentiment-stats">
+                <div class="sentiment-stat">
+                    <span class="sentiment-label">Aggregate Score</span>
+                    <span class="sentiment-value @(aggregateScore >= 0 ? "text-positive" : "text-negative")">
+                        @aggregateScore.ToString("F2")
+                    </span>
+                </div>
+                <div class="sentiment-stat">
+                    <span class="sentiment-label">Positive</span>
+                    <span class="sentiment-value text-positive">@positiveCount</span>
+                </div>
+                <div class="sentiment-stat">
+                    <span class="sentiment-label">Negative</span>
+                    <span class="sentiment-value text-negative">@negativeCount</span>
+                </div>
+                <div class="sentiment-stat">
+                    <span class="sentiment-label">Neutral</span>
+                    <span class="sentiment-value">@neutralCount</span>
+                </div>
+                <div class="sentiment-stat">
+                    <span class="sentiment-label">Total News</span>
+                    <span class="sentiment-value">@sentimentData.Count</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* News List *@
+    <div class="card">
+        <div class="card-header">
+            <h3>📋 News Articles</h3>
+        </div>
+        <div class="card-body">
+            @if (sentimentData.Any())
+            {
+                <div class="news-list">
+                    @foreach (var news in sentimentData.OrderByDescending(n => n.PublishedDate))
+                    {
+                        <div class="news-item @($"news-{news.SentimentLabel}")">
+                            <div class="news-header">
+                                <span class="news-sentiment-badge sentiment-@news.SentimentLabel">
+                                    @(news.SentimentLabel == "positive" ? "🟢" : news.SentimentLabel == "negative" ? "🔴" : "🟡")
+                                    @news.SentimentScore.ToString("F2")
+                                </span>
+                                <span class="news-date">@news.PublishedDate.ToString("dd MMM yyyy")</span>
+                                <span class="news-publisher">@news.Publisher</span>
+                            </div>
+                            <h4 class="news-title">@news.Title</h4>
+                            <p class="news-content">@(news.Content?.Length > 200 ? news.Content[..200] + "..." : news.Content)</p>
+                            @if (!string.IsNullOrEmpty(news.SourceUrl))
+                            {
+                                <a href="@news.SourceUrl" target="_blank" class="news-link">Read more →</a>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">No news data available. Click "Scrape Latest News" to fetch data.</p>
+            }
+        </div>
+    </div>
+}
+else if (!string.IsNullOrEmpty(stockCode) && !isLoading)
+{
+    <div class="card">
+        <div class="card-body">
+            <p class="text-muted">No data found for @stockCode.</p>
+        </div>
+    </div>
+}
+
+@* Sector Sentiment Overview *@
+<div class="card">
+    <div class="card-header">
+        <h3>🏢 Sector Sentiment Clustering</h3>
+    </div>
+    <div class="card-body">
+        @if (sectorSentiments.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Sector</th>
+                            <th>Sentiment</th>
+                            <th>Total News</th>
+                            <th>Positive</th>
+                            <th>Negative</th>
+                            <th>Neutral</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sector in sectorSentiments.OrderByDescending(s => s.AverageSentiment))
+                        {
+                            <tr>
+                                <td><strong>@sector.Sector</strong></td>
+                                <td>
+                                    <span class="@(sector.AverageSentiment >= 0 ? "text-positive" : "text-negative")">
+                                        @sector.AverageSentiment.ToString("F2")
+                                    </span>
+                                </td>
+                                <td>@sector.NewsCount</td>
+                                <td class="text-positive">@sector.PositiveCount</td>
+                                <td class="text-negative">@sector.NegativeCount</td>
+                                <td>@sector.NeutralCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted">No sector sentiment data available. Scrape news to generate sector clustering.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private string stockCode = "";
+    private StockEmiten? stock;
+    private List<SentimentData> sentimentData = new();
+    private List<SectorSentiment> sectorSentiments = new();
+    private bool isLoading;
+    private bool isScraping;
+    private double aggregateScore;
+    private string overallSentiment = "Neutral";
+    private int positiveCount, negativeCount, neutralCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sectorSentiments = await StockData.GetSectorSentimentsAsync();
+    }
+
+    private async Task LoadSentimentData()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isLoading = true;
+        try
+        {
+            stock = await StockData.GetStockByCodeAsync(stockCode.ToUpper());
+            if (stock != null)
+            {
+                sentimentData = await StockData.GetSentimentDataAsync(stock.Id, 20);
+                CalculateStats();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ScrapeNews()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isScraping = true;
+        try
+        {
+            stock ??= await StockData.GetStockByCodeAsync(stockCode.ToUpper());
+            if (stock != null)
+            {
+                var scrapedNews = await NewsScraping.ScrapeNewsAsync(stock.StockCode, stock.CompanyName);
+                // Scraped news would be saved to DB here
+                sentimentData = scrapedNews;
+                CalculateStats();
+            }
+        }
+        finally
+        {
+            isScraping = false;
+        }
+    }
+
+    private void CalculateStats()
+    {
+        if (sentimentData.Any())
+        {
+            aggregateScore = sentimentData.Average(s => s.SentimentScore);
+            positiveCount = sentimentData.Count(s => s.SentimentLabel == "positive");
+            negativeCount = sentimentData.Count(s => s.SentimentLabel == "negative");
+            neutralCount = sentimentData.Count(s => s.SentimentLabel == "neutral");
+
+            overallSentiment = aggregateScore switch
+            {
+                > 0.3 => "Bullish",
+                < -0.3 => "Bearish",
+                _ => "Neutral"
+            };
+        }
+    }
+}

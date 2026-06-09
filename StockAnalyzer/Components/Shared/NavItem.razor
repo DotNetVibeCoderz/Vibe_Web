@@ -1,0 +1,21 @@
+@* NavItem component for sidebar navigation *@
+<a href="@Href" class="nav-item @(IsActive ? "active" : "")">
+    <span class="nav-icon">@Icon</span>
+    <span class="nav-text">@Text</span>
+    @if (Badge != null)
+    {
+        <span class="nav-badge">@Badge</span>
+    }
+</a>
+
+@code {
+    [Parameter] public string Href { get; set; } = "/";
+    [Parameter] public string Icon { get; set; } = "📄";
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public string? Badge { get; set; }
+
+    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
+
+    private bool IsActive => NavigationManager.Uri.EndsWith(Href, StringComparison.OrdinalIgnoreCase)
+        || (Href == "/" && NavigationManager.Uri == NavigationManager.BaseUri);
+}

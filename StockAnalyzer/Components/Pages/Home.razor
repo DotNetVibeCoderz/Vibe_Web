@@ -1,0 +1,225 @@
+@page "/"
+@inject IStockDataService StockData
+@inject IRecommendationService RecommendationService
+
+<PageTitle>Dashboard - StockAnalyzer</PageTitle>
+
+@if (isLoading)
+{
+    <div class="loading-container">
+        <div class="spinner"></div>
+        <p>Loading dashboard data...</p>
+    </div>
+}
+else
+{
+    @* Market Overview Cards *@
+    <div class="dashboard-grid">
+        <div class="card stat-card">
+            <div class="stat-header">
+                <span class="stat-icon">📋</span>
+                <span class="stat-label">Total Stocks</span>
+            </div>
+            <div class="stat-value">@totalStocks</div>
+            <div class="stat-subtitle">Active emiten tracked</div>
+        </div>
+
+        <div class="card stat-card">
+            <div class="stat-header">
+                <span class="stat-icon">💹</span>
+                <span class="stat-label">Market Sentiment</span>
+            </div>
+            <div class="stat-value @(avgSentiment >= 0 ? "text-positive" : "text-negative")">
+                @(avgSentiment >= 0 ? "+" : "")@avgSentiment.ToString("F2")
+            </div>
+            <div class="stat-subtitle">7-day average sentiment</div>
+        </div>
+
+        <div class="card stat-card">
+            <div class="stat-header">
+                <span class="stat-icon">🤖</span>
+                <span class="stat-label">LLM Status</span>
+            </div>
+            <div class="stat-value @(llmAvailable ? "text-positive" : "text-negative")">
+                @(llmAvailable ? "ONLINE" : "OFFLINE")
+            </div>
+            <div class="stat-subtitle">@availableProviders providers active</div>
+        </div>
+
+        <div class="card stat-card">
+            <div class="stat-header">
+                <span class="stat-icon">⭐</span>
+                <span class="stat-label">Top Picks</span>
+            </div>
+            <div class="stat-value">@topRecommendations.Count</div>
+            <div class="stat-subtitle">Stocks with Buy rating</div>
+        </div>
+    </div>
+
+    @* Top 10 Recommendations *@
+    <div class="card">
+        <div class="card-header">
+            <h3>🏆 Top 10 Stock Recommendations</h3>
+            <button class="btn btn-outline btn-sm" @onclick="RefreshRecommendations" disabled="@isRefreshing">
+                @(isRefreshing ? "Refreshing..." : "🔄 Refresh")
+            </button>
+        </div>
+        <div class="card-body">
+            @if (topRecommendations.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Stock Code</th>
+                                <th>Company</th>
+                                <th>Sector</th>
+                                <th>Score</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rec in topRecommendations)
+                            {
+                                <tr>
+                                    <td>@rec.Rank</td>
+                                    <td><strong>@rec.StockCode</strong></td>
+                                    <td>@rec.CompanyName</td>
+                                    <td><span class="badge">@rec.Sector</span></td>
+                                    <td>
+                                        <div class="score-bar">
+                                            <div class="score-fill" style="width: @(rec.OverallScore)%"></div>
+                                            <span>@rec.OverallScore.ToString("F1")</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="rec-badge rec-@rec.Recommendation.ToLower()">@rec.Recommendation</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">No recommendations available. Click refresh to generate.</p>
+            }
+        </div>
+    </div>
+
+    @* Sector Distribution *@
+    <div class="dashboard-grid dashboard-grid-2col">
+        <div class="card">
+            <div class="card-header">
+                <h3>📊 Sector Distribution</h3>
+            </div>
+            <div class="card-body">
+                <div class="sector-list">
+                    @foreach (var sector in sectorDistribution.OrderByDescending(s => s.Value).Take(8))
+                    {
+                        <div class="sector-item">
+                            <span class="sector-name">@sector.Key</span>
+                            <span class="sector-count">@sector.Value stocks</span>
+                            <div class="sector-bar">
+                                <div class="sector-fill" style="width: @((double)sector.Value / Math.Max(1, totalStocks) * 100)%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>🔍 Quick Stock Lookup</h3>
+            </div>
+            <div class="card-body">
+                <div class="quick-lookup">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Enter stock code (e.g., BBCA)..." @bind="searchCode" />
+                        <button class="btn btn-primary" @onclick="SearchStock" disabled="@(string.IsNullOrWhiteSpace(searchCode))">
+                            Search
+                        </button>
+                    </div>
+                    @if (searchResult != null)
+                    {
+                        <div class="search-result @(searchResult.IsActive ? "" : "inactive")">
+                            <h4>@searchResult.StockCode - @searchResult.CompanyName</h4>
+                            <p>Sector: @searchResult.Sector | Market Cap: Rp @searchResult.MarketCap.ToString("N0") B</p>
+                            <p>Price: @searchResult.CurrentPrice.ToString("N0") |
+                               Change: <span class="@(searchResult.ChangePercent >= 0 ? "text-positive" : "text-negative")">
+                                   @(searchResult.ChangePercent >= 0 ? "+" : "")@searchResult.ChangePercent.ToString("F2")%
+                               </span>
+                            </p>
+                            <a href="/recommendations" class="btn btn-sm btn-outline">View Recommendation →</a>
+                        </div>
+                    }
+                    else if (searchAttempted)
+                    {
+                        <p class="text-muted mt-2">Stock not found. Try another code.</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isRefreshing;
+    private bool searchAttempted;
+    private int totalStocks;
+    private decimal avgSentiment;
+    private bool llmAvailable;
+    private int availableProviders;
+    private List<TopRecommendation> topRecommendations = new();
+    private Dictionary<string, int> sectorDistribution = new();
+    private string searchCode = "";
+    private StockEmiten? searchResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        try
+        {
+            totalStocks = await StockData.GetTotalStocksAsync();
+            avgSentiment = await StockData.GetAverageMarketSentimentAsync();
+            sectorDistribution = await StockData.GetStocksBySectorCountAsync();
+            topRecommendations = await RecommendationService.GetTopRecommendationsAsync(10);
+
+            // We can't inject LLMService directly, just check top recommendations
+            llmAvailable = topRecommendations.Any(r => r.OverallScore > 0);
+            availableProviders = 1; // Default
+
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            isLoading = false;
+            // Handle gracefully
+        }
+    }
+
+    private async Task RefreshRecommendations()
+    {
+        isRefreshing = true;
+        await RecommendationService.RefreshTopRecommendationsAsync();
+        topRecommendations = await RecommendationService.GetTopRecommendationsAsync(10);
+        isRefreshing = false;
+    }
+
+    private async Task SearchStock()
+    {
+        searchAttempted = true;
+        if (string.IsNullOrWhiteSpace(searchCode)) return;
+
+        searchResult = await StockData.GetStockByCodeAsync(searchCode.ToUpper());
+    }
+}

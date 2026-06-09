@@ -1,0 +1,200 @@
+@page "/configuration"
+@inject ILLMConfigService LLMConfigService
+@inject IConfiguration AppConfig
+
+<PageTitle>Configuration - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>⚙️ Configuration</h2>
+    <p>Manage database, storage, LLM providers, and application settings</p>
+</div>
+
+<div class="tab-nav">
+    <button class="tab-btn @(activeTab == "llm" ? "active" : "")" @onclick='@(() => activeTab = "llm")'>🤖 LLM Providers</button>
+    <button class="tab-btn @(activeTab == "database" ? "active" : "")" @onclick='@(() => activeTab = "database")'>💾 Database</button>
+    <button class="tab-btn @(activeTab == "storage" ? "active" : "")" @onclick='@(() => activeTab = "storage")'>📦 Storage</button>
+    <button class="tab-btn @(activeTab == "stockapi" ? "active" : "")" @onclick='@(() => activeTab = "stockapi")'>📡 Stock API</button>
+    <button class="tab-btn @(activeTab == "weights" ? "active" : "")" @onclick='@(() => activeTab = "weights")'>⚖️ Weights</button>
+</div>
+
+@if (activeTab == "llm")
+{
+    <div class="card">
+        <div class="card-header">
+            <h3>🤖 LLM Provider Configuration</h3>
+            <button class="btn btn-outline btn-sm" @onclick="RefreshProviders">🔄 Refresh</button>
+        </div>
+        <div class="card-body">
+            @if (llmProviders.Any())
+            {
+                <div class="provider-config-list">
+                    @foreach (var provider in llmProviders)
+                    {
+                        <div class="provider-config-item @(provider.IsEnabled ? "enabled" : "disabled")">
+                            <div class="provider-config-header">
+                                <h4>@provider.DisplayName</h4>
+                                <span class="status-dot @(provider.IsEnabled ? "online" : "offline")"></span>
+                            </div>
+                            <div class="provider-config-details">
+                                <div class="config-row">
+                                    <span class="config-label">Provider:</span><span class="config-value">@provider.ProviderName</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Model:</span><span class="config-value">@provider.ModelName</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Base URL:</span><span class="config-value">@provider.ApiBaseUrl</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">API Key:</span><span class="config-value">@(string.IsNullOrEmpty(provider.ApiKey) ? "Not set" : "********")</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Status:</span>
+                                    <span class="config-value @(provider.IsEnabled ? "text-positive" : "text-negative")">
+                                        @(provider.IsEnabled ? "Enabled" : "Disabled")
+                                    </span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Max Tokens:</span><span class="config-value">@provider.MaxTokens</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Temperature:</span><span class="config-value">@provider.Temperature</span>
+                                </div>
+                                <div class="config-row">
+                                    <span class="config-label">Timeout:</span><span class="config-value">@provider.TimeoutSeconds s</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">No LLM providers configured.</p>
+            }
+            <div class="mt-3">
+                <p class="text-muted">
+                    <small>💡 Configure LLM providers in <code>appsettings.json</code> under <code>LLM:Providers</code>.</small>
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+@if (activeTab == "database")
+{
+    <div class="card">
+        <div class="card-header"><h3>💾 Database Configuration</h3></div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td>Provider</td><td><strong>@dbProvider</strong></td></tr>
+                    <tr><td>Connection String</td><td><code>@dbConnectionString</code></td></tr>
+                </tbody>
+            </table>
+            <div class="mt-3">
+                <h4>Supported Providers</h4>
+                <ul>
+                    <li><strong>SQLite</strong> - Default, file-based database</li>
+                    <li><strong>SqlServer</strong> - Microsoft SQL Server</li>
+                    <li><strong>MySQL</strong> - MySQL / MariaDB (requires Pomelo package)</li>
+                </ul>
+                <p class="text-muted"><small>💡 Configure in <code>appsettings.json</code> → <code>Database</code> section.</small></p>
+            </div>
+        </div>
+    </div>
+}
+
+@if (activeTab == "storage")
+{
+    <div class="card">
+        <div class="card-header"><h3>📦 Storage Configuration</h3></div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td>Provider</td><td><strong>@storageProvider</strong></td></tr>
+                    <tr><td>Base Path</td><td><code>@storageBasePath</code></td></tr>
+                    <tr><td>Bucket</td><td>@storageBucket</td></tr>
+                </tbody>
+            </table>
+            <div class="mt-3">
+                <h4>Supported Providers</h4>
+                <ul>
+                    <li><strong>FileSystem</strong> - Local file storage (default)</li>
+                    <li><strong>MinIO</strong> - Self-hosted S3-compatible</li>
+                    <li><strong>S3</strong> - AWS S3</li>
+                    <li><strong>AzureBlob</strong> - Azure Blob Storage</li>
+                </ul>
+                <p class="text-muted"><small>💡 Configure in <code>appsettings.json</code> → <code>Storage</code> section.</small></p>
+            </div>
+        </div>
+    </div>
+}
+
+@if (activeTab == "stockapi")
+{
+    <div class="card">
+        <div class="card-header"><h3>📡 Stock Data API</h3></div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td>Provider</td><td><strong>@stockApiProvider</strong></td></tr>
+                    <tr><td>Refresh Interval</td><td>@stockApiRefreshInterval minutes</td></tr>
+                    <tr><td>Auto Refresh</td><td>@(stockApiAutoRefresh ? "Enabled" : "Disabled")</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@if (activeTab == "weights")
+{
+    <div class="card">
+        <div class="card-header"><h3>⚖️ Scoring Weights</h3></div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <thead><tr><th>Component</th><th>Weight</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>Technical Analysis</td><td><strong>@($"{techWeight:P0}")</strong></td><td>Price trends, indicators</td></tr>
+                    <tr><td>Fundamental Analysis</td><td><strong>@($"{fundWeight:P0}")</strong></td><td>Financial ratios, health</td></tr>
+                    <tr><td>Sentiment Analysis</td><td><strong>@($"{sentWeight:P0}")</strong></td><td>News sentiment, mood</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private string activeTab = "llm";
+    private List<LLMProviderConfig> llmProviders = new();
+    private string dbProvider = "";
+    private string dbConnectionString = "";
+    private string storageProvider = "";
+    private string storageBasePath = "";
+    private string storageBucket = "";
+    private string stockApiProvider = "";
+    private int stockApiRefreshInterval;
+    private bool stockApiAutoRefresh;
+    private double techWeight, fundWeight, sentWeight;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshProviders();
+        dbProvider = AppConfig["Database:Provider"] ?? "SQLite";
+        dbConnectionString = AppConfig["Database:ConnectionString"] ?? "N/A";
+        storageProvider = AppConfig["Storage:Provider"] ?? "FileSystem";
+        storageBasePath = AppConfig["Storage:BasePath"] ?? "Data/Storage";
+        storageBucket = AppConfig["Storage:BucketName"] ?? "stockanalyzer";
+        stockApiProvider = AppConfig["StockApi:Provider"] ?? "YahooFinance";
+        stockApiRefreshInterval = AppConfig.GetValue<int>("StockApi:RefreshIntervalMinutes", 15);
+        stockApiAutoRefresh = AppConfig.GetValue<bool>("StockApi:AutoRefresh", false);
+        techWeight = AppConfig.GetValue<double>("LLM:TechnicalWeight", 0.35);
+        fundWeight = AppConfig.GetValue<double>("LLM:FundamentalWeight", 0.35);
+        sentWeight = AppConfig.GetValue<double>("LLM:SentimentWeight", 0.30);
+    }
+
+    private async Task RefreshProviders()
+    {
+        llmProviders = await LLMConfigService.GetAllProviderConfigsAsync();
+    }
+}

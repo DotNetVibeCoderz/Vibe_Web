@@ -1,0 +1,292 @@
+@page "/technical"
+@inject IStockDataService StockData
+@inject ITechnicalAnalysisService TechnicalAnalysis
+
+<PageTitle>Technical Analysis - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>📊 Technical Analysis</h2>
+    <p>Analyze price trends, indicators, and trading signals</p>
+</div>
+
+@* Stock Selector *@
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Stock code (e.g., BBCA)..." @bind="stockCode" />
+                <button class="btn btn-primary" @onclick="LoadTechnicalData" disabled="@(string.IsNullOrWhiteSpace(stockCode) || isLoading)">
+                    @(isLoading ? "Loading..." : "Analyze")
+                </button>
+            </div>
+            <div class="filter-group">
+                <select class="form-select" @bind="selectedPeriod">
+                    <option value="30">30 Days</option>
+                    <option value="90">90 Days</option>
+                    <option value="180">180 Days</option>
+                    <option value="365">1 Year</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (stock != null && technicalData.Any())
+{
+    @* Price Summary Card *@
+    <div class="card">
+        <div class="card-header">
+            <h3>@stock.StockCode - @stock.CompanyName</h3>
+            <span class="trend-badge trend-@trend.ToLower()">@trend</span>
+        </div>
+        <div class="card-body">
+            <div class="price-summary-grid">
+                <div class="price-item">
+                    <span class="price-label">Current Price</span>
+                    <span class="price-value">@stock.CurrentPrice.ToString("N0")</span>
+                </div>
+                <div class="price-item">
+                    <span class="price-label">Change</span>
+                    <span class="price-value @(stock.ChangePercent >= 0 ? "text-positive" : "text-negative")">
+                        @(stock.ChangePercent >= 0 ? "+" : "")@stock.ChangePercent.ToString("F2")%
+                    </span>
+                </div>
+                <div class="price-item">
+                    <span class="price-label">MA20</span>
+                    <span class="price-value">@latestTech?.MA20?.ToString("N0")</span>
+                </div>
+                <div class="price-item">
+                    <span class="price-label">MA50</span>
+                    <span class="price-value">@latestTech?.MA50?.ToString("N0")</span>
+                </div>
+                <div class="price-item">
+                    <span class="price-label">RSI (14)</span>
+                    <span class="price-value @(GetRSIClass(latestTech?.RSI))">@latestTech?.RSI?.ToString("F1")</span>
+                </div>
+                <div class="price-item">
+                    <span class="price-label">MACD Signal</span>
+                    <span class="price-value @(macdBullish ? "text-positive" : "text-negative")">
+                        @(macdBullish ? "Bullish" : "Bearish")
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Technical Indicators Grid *@
+    <div class="dashboard-grid dashboard-grid-2col">
+        @* Indicator Summary *@
+        <div class="card">
+            <div class="card-header"><h3>📈 Indicators</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Indicator</th><th>Value</th><th>Signal</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>RSI</td>
+                            <td>@latestTech?.RSI?.ToString("F1")</td>
+                            <td>@GetRSISignal(latestTech?.RSI)</td>
+                        </tr>
+                        <tr>
+                            <td>MACD</td>
+                            <td>@latestTech?.MACD?.ToString("F3")</td>
+                            <td>@(macdBullish ? "🟢 Bullish" : "🔴 Bearish")</td>
+                        </tr>
+                        <tr>
+                            <td>MACD Signal</td>
+                            <td>@latestTech?.MACDSignal?.ToString("F3")</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td>MACD Histogram</td>
+                            <td>@latestTech?.MACDHistogram?.ToString("F3")</td>
+                            <td>@(latestTech?.MACDHistogram > 0 ? "🟢 Positive" : "🔴 Negative")</td>
+                        </tr>
+                        <tr>
+                            <td>Bollinger Upper</td>
+                            <td>@latestTech?.BollingerUpper?.ToString("N0")</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td>Bollinger Lower</td>
+                            <td>@latestTech?.BollingerLower?.ToString("N0")</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td>Stochastic %K</td>
+                            <td>@latestTech?.StochasticK?.ToString("F1")</td>
+                            <td>@GetStochasticSignal(latestTech?.StochasticK)</td>
+                        </tr>
+                        <tr>
+                            <td>ATR</td>
+                            <td>@latestTech?.ATR?.ToString("F2")</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* Volume Analysis *@
+        <div class="card">
+            <div class="card-header"><h3>📊 Volume Analysis</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Total Volume</td>
+                            <td>@latestTech?.Volume.ToString("N0")</td>
+                        </tr>
+                        <tr>
+                            <td>Buy Volume</td>
+                            <td>@latestTech?.BuyVolume.ToString("N0")</td>
+                        </tr>
+                        <tr>
+                            <td>Sell Volume</td>
+                            <td>@latestTech?.SellVolume.ToString("N0")</td>
+                        </tr>
+                        <tr>
+                            <td>Foreign Net</td>
+                            <td class="@(latestTech?.ForeignNetVolume >= 0 ? "text-positive" : "text-negative")">
+                                @latestTech?.ForeignNetVolume.ToString("N0")
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Avg Volume (20d)</td>
+                            <td>@avgVolume.ToString("N0")</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @* Price History Table *@
+    <div class="card">
+        <div class="card-header">
+            <h3>📋 Price History (@technicalData.Count days)</h3>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Open</th>
+                            <th>High</th>
+                            <th>Low</th>
+                            <th>Close</th>
+                            <th>Volume</th>
+                            <th>MA20</th>
+                            <th>RSI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in technicalData.OrderByDescending(t => t.TradeDate).Take(30))
+                        {
+                            <tr>
+                                <td>@item.TradeDate.ToString("dd/MM/yy")</td>
+                                <td>@item.OpenPrice.ToString("N0")</td>
+                                <td>@item.HighPrice.ToString("N0")</td>
+                                <td>@item.LowPrice.ToString("N0")</td>
+                                <td><strong>@item.ClosePrice.ToString("N0")</strong></td>
+                                <td>@item.Volume.ToString("N0")</td>
+                                <td>@item.MA20?.ToString("N0")</td>
+                                <td>@item.RSI?.ToString("F1")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+else if (!string.IsNullOrEmpty(stockCode) && !isLoading)
+{
+    <div class="card">
+        <div class="card-body">
+            <p class="text-muted">No data found for @stockCode. Try another stock code or check data availability.</p>
+        </div>
+    </div>
+}
+
+@code {
+    private string stockCode = "";
+    private int selectedPeriod = 90;
+    private StockEmiten? stock;
+    private List<TechnicalIndicator> technicalData = new();
+    private TechnicalIndicator? latestTech;
+    private bool isLoading;
+    private string trend = "N/A";
+    private bool macdBullish;
+    private long avgVolume;
+
+    private async Task LoadTechnicalData()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isLoading = true;
+        try
+        {
+            stock = await StockData.GetStockByCodeAsync(stockCode.ToUpper());
+            if (stock != null)
+            {
+                var fromDate = DateTime.UtcNow.AddDays(-selectedPeriod);
+                technicalData = await StockData.GetTechnicalHistoryAsync(stock.Id, fromDate);
+                latestTech = technicalData.OrderByDescending(t => t.TradeDate).FirstOrDefault();
+
+                if (technicalData.Any())
+                {
+                    var prices = technicalData.Select(t => t.ClosePrice).ToList();
+                    trend = TechnicalAnalysis.DetermineTrend(prices);
+                    macdBullish = latestTech?.MACD > latestTech?.MACDSignal;
+                    avgVolume = (long)technicalData.Average(t => t.Volume);
+                }
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetRSIClass(decimal? rsi)
+    {
+        if (!rsi.HasValue) return "";
+        return rsi.Value switch
+        {
+            > 70 => "text-negative",
+            < 30 => "text-positive",
+            _ => ""
+        };
+    }
+
+    private string GetRSISignal(decimal? rsi)
+    {
+        if (!rsi.HasValue) return "N/A";
+        return rsi.Value switch
+        {
+            > 70 => "🔴 Overbought",
+            > 60 => "🟡 Bullish",
+            > 40 => "🟡 Neutral",
+            > 30 => "🟢 Bearish",
+            _ => "🟢 Oversold"
+        };
+    }
+
+    private string GetStochasticSignal(decimal? k)
+    {
+        if (!k.HasValue) return "N/A";
+        return k.Value switch
+        {
+            > 80 => "🔴 Overbought",
+            < 20 => "🟢 Oversold",
+            _ => "🟡 Neutral"
+        };
+    }
+}

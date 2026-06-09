@@ -1,0 +1,134 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject SignInManager<ApplicationUser> SignInManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+@code {
+    private bool _isDarkMode;
+    private string ThemeClass => _isDarkMode ? "dark-theme" : "light-theme";
+    private string? _userName;
+    private bool _isLoggedIn;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Default to light theme
+        try
+        {
+            var savedTheme = await JS.InvokeAsync<string>("localStorage.getItem", "stockanalyzer-theme");
+            _isDarkMode = savedTheme == "dark";
+        }
+        catch
+        {
+            _isDarkMode = false; // Default: LIGHT ☀️
+        }
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _isLoggedIn = user.Identity?.IsAuthenticated ?? false;
+        _userName = _isLoggedIn ? user.Identity?.Name : null;
+    }
+
+    private async Task ToggleTheme()
+    {
+        _isDarkMode = !_isDarkMode;
+        await JS.InvokeVoidAsync("localStorage.setItem", "stockanalyzer-theme", _isDarkMode ? "dark" : "light");
+    }
+
+    private async Task Logout()
+    {
+        await SignInManager.SignOutAsync();
+        Navigation.NavigateTo("/login", forceLoad: false);
+    }
+}
+
+<div class="app-layout @ThemeClass">
+    @* Sidebar Navigation *@
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">📈</span>
+                <span class="logo-text">StockAnalyzer</span>
+            </div>
+            <button class="btn-theme-toggle" @onclick="ToggleTheme" title="Toggle Theme">
+                @if (_isDarkMode)
+                {
+                    <span>☀️</span>
+                }
+                else
+                {
+                    <span>🌙</span>
+                }
+            </button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <NavItem Href="/" Icon="🏠" Text="Dashboard" />
+            <NavItem Href="/stock-collector" Icon="📡" Text="Data Collector" />
+            <NavItem Href="/technical" Icon="📊" Text="Technical Analysis" />
+            <NavItem Href="/fundamental" Icon="💰" Text="Fundamental Analysis" />
+            <NavItem Href="/sentiment" Icon="📰" Text="Sentiment Analysis" />
+            <NavItem Href="/recommendations" Icon="⭐" Text="Recommendations" />
+            <NavItem Href="/llm-review" Icon="🤖" Text="LLM Review" />
+            <NavItem Href="/configuration" Icon="⚙️" Text="Configuration" />
+        </nav>
+
+        <div class="sidebar-footer">
+            @if (_isLoggedIn)
+            {
+                <div class="sidebar-user">
+                    <span class="user-avatar">👤</span>
+                    <a href="/profile" class="sidebar-user-name">@_userName</a>
+                    <button class="btn-logout" @onclick="Logout" title="Logout">🚪</button>
+                </div>
+            }
+            <div class="sidebar-footer-text">
+                <small>StockAnalyzer v2.0</small>
+                <small>by GraviCode Studios</small>
+            </div>
+        </div>
+    </aside>
+
+    @* Main Content *@
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="top-bar-title">
+                <h2>@PageTitle</h2>
+            </div>
+            <div class="top-bar-actions">
+                <span class="market-status">🟢 Market Open</span>
+                <span class="current-time">@DateTime.Now.ToString("HH:mm")</span>
+                @if (_isLoggedIn)
+                {
+                    <a href="/profile" class="user-link">👤 @_userName</a>
+                    <button class="btn btn-sm btn-outline" @onclick="Logout">Logout</button>
+                }
+            </div>
+        </header>
+        <div class="page-content">
+            @Body
+        </div>
+    </main>
+</div>
+
+@code {
+    private string? PageTitle { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        var uri = Navigation?.Uri ?? "";
+        PageTitle = uri switch
+        {
+            var u when u.EndsWith("/") => "Dashboard",
+            var u when u.Contains("/stock-collector") => "Stock Data Collector",
+            var u when u.Contains("/technical") => "Technical Analysis",
+            var u when u.Contains("/fundamental") => "Fundamental Analysis",
+            var u when u.Contains("/sentiment") => "Sentiment Analysis",
+            var u when u.Contains("/recommendations") => "Stock Recommendations",
+            var u when u.Contains("/llm-review") => "LLM Review",
+            var u when u.Contains("/configuration") => "Configuration",
+            var u when u.Contains("/profile") => "User Profile",
+            _ => "StockAnalyzer"
+        };
+    }
+}

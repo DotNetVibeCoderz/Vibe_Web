@@ -1,0 +1,247 @@
+@page "/fundamental"
+@inject IStockDataService StockData
+@inject IFundamentalAnalysisService FundamentalAnalysis
+
+<PageTitle>Fundamental Analysis - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>💰 Fundamental Analysis</h2>
+    <p>Evaluate company financial health through key ratios</p>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Stock code (e.g., BBCA)..." @bind="stockCode" />
+                <button class="btn btn-primary" @onclick="LoadFundamentalData" disabled="@(string.IsNullOrWhiteSpace(stockCode) || isLoading)">
+                    @(isLoading ? "Loading..." : "Analyze")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (stock != null && fundamentalData != null)
+{
+    @* Financial Health Score *@
+    <div class="card">
+        <div class="card-header">
+            <h3>@stock.StockCode - @stock.CompanyName</h3>
+            <span class="health-score health-@healthLevel.ToLower()">Score: @fundamentalScore.ToString("F1")/100</span>
+        </div>
+    </div>
+
+    <div class="dashboard-grid dashboard-grid-2col">
+        @* Profitability Ratios *@
+        <div class="card">
+            <div class="card-header"><h3>📈 Profitability</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td>PER (Price to Earnings)</td>
+                            <td><strong>@(fundamentalData.PER?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td>@FundamentalAnalysis.AssessPER(fundamentalData.PER)</td>
+                        </tr>
+                        <tr>
+                            <td>EPS (Earnings Per Share)</td>
+                            <td><strong>@(fundamentalData.EPS?.ToString("F2") ?? "N/A")</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>ROE (Return on Equity)</td>
+                            <td><strong>@(fundamentalData.ROE?.ToString("F1") ?? "N/A")%</strong></td>
+                            <td>@FundamentalAnalysis.AssessROE(fundamentalData.ROE)</td>
+                        </tr>
+                        <tr>
+                            <td>ROA (Return on Assets)</td>
+                            <td><strong>@(fundamentalData.ROA?.ToString("F1") ?? "N/A")%</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>Net Profit Margin</td>
+                            <td><strong>@(fundamentalData.NetProfitMargin?.ToString("F1") ?? "N/A")%</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>Gross Profit Margin</td>
+                            <td><strong>@(fundamentalData.GrossProfitMargin?.ToString("F1") ?? "N/A")%</strong></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* Valuation Ratios *@
+        <div class="card">
+            <div class="card-header"><h3>💎 Valuation</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td>PBV (Price to Book Value)</td>
+                            <td><strong>@(fundamentalData.PBV?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td>@FundamentalAnalysis.AssessPBV(fundamentalData.PBV)</td>
+                        </tr>
+                        <tr>
+                            <td>PSR (Price to Sales)</td>
+                            <td><strong>@(fundamentalData.PSR?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>EV/EBITDA</td>
+                            <td><strong>@(fundamentalData.EVEBITDA?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>Dividend Yield</td>
+                            <td><strong>@(fundamentalData.DividendYield?.ToString("F2") ?? "N/A")%</strong></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-grid dashboard-grid-2col">
+        @* Solvency *@
+        <div class="card">
+            <div class="card-header"><h3>🏦 Solvency & Risk</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td>DER (Debt to Equity)</td>
+                            <td><strong>@(fundamentalData.DER?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td>@FundamentalAnalysis.AssessDER(fundamentalData.DER)</td>
+                        </tr>
+                        <tr>
+                            <td>Current Ratio</td>
+                            <td><strong>@(fundamentalData.CurrentRatio?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>Interest Coverage</td>
+                            <td><strong>@(fundamentalData.InterestCoverage?.ToString("F2") ?? "N/A")x</strong></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* Growth & Cash Flow *@
+        <div class="card">
+            <div class="card-header"><h3>🚀 Growth & Cash Flow</h3></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td>Revenue Growth</td>
+                            <td><strong>@(fundamentalData.RevenueGrowth?.ToString("F1") ?? "N/A")%</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Earnings Growth</td>
+                            <td><strong>@(fundamentalData.EarningsGrowth?.ToString("F1") ?? "N/A")%</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Growth Assessment</td>
+                            <td>@FundamentalAnalysis.AssessGrowth(fundamentalData.RevenueGrowth, fundamentalData.EarningsGrowth)</td>
+                        </tr>
+                        <tr>
+                            <td>Operating Cash Flow</td>
+                            <td><strong>@(fundamentalData.OperatingCashFlow?.ToString("N0") ?? "N/A")</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Free Cash Flow</td>
+                            <td><strong>@(fundamentalData.FreeCashFlow?.ToString("N0") ?? "N/A")</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @* Balance Sheet Summary *@
+    <div class="card">
+        <div class="card-header"><h3>📒 Balance Sheet (in Billions IDR)</h3></div>
+        <div class="card-body">
+            <div class="dashboard-grid dashboard-grid-3col">
+                <div class="balance-item">
+                    <span class="balance-label">Total Assets</span>
+                    <span class="balance-value">Rp @(fundamentalData.TotalAssets?.ToString("N0") ?? "N/A") B</span>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Total Liabilities</span>
+                    <span class="balance-value">Rp @(fundamentalData.TotalLiabilities?.ToString("N0") ?? "N/A") B</span>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Total Equity</span>
+                    <span class="balance-value">Rp @(fundamentalData.TotalEquity?.ToString("N0") ?? "N/A") B</span>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Revenue</span>
+                    <span class="balance-value">Rp @(fundamentalData.Revenue?.ToString("N0") ?? "N/A") B</span>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Net Income</span>
+                    <span class="balance-value">Rp @(fundamentalData.NetIncome?.ToString("N0") ?? "N/A") B</span>
+                </div>
+                <div class="balance-item">
+                    <span class="balance-label">Period</span>
+                    <span class="balance-value">@fundamentalData.Period</span>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else if (!string.IsNullOrEmpty(stockCode) && !isLoading)
+{
+    <div class="card">
+        <div class="card-body">
+            <p class="text-muted">No fundamental data found for @stockCode.</p>
+        </div>
+    </div>
+}
+
+@code {
+    private string stockCode = "";
+    private StockEmiten? stock;
+    private FundamentalData? fundamentalData;
+    private bool isLoading;
+    private double fundamentalScore;
+    private string healthLevel = "N/A";
+
+    private async Task LoadFundamentalData()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isLoading = true;
+        try
+        {
+            stock = await StockData.GetStockByCodeAsync(stockCode.ToUpper());
+            if (stock != null)
+            {
+                fundamentalData = await StockData.GetLatestFundamentalAsync(stock.Id);
+                if (fundamentalData != null)
+                {
+                    fundamentalScore = FundamentalAnalysis.CalculateFundamentalScore(fundamentalData);
+                    healthLevel = fundamentalScore switch
+                    {
+                        >= 70 => "Excellent",
+                        >= 55 => "Good",
+                        >= 40 => "Fair",
+                        _ => "Weak"
+                    };
+                }
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

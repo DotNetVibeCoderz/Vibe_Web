@@ -1,0 +1,228 @@
+@page "/recommendations"
+@inject IStockDataService StockData
+@inject IRecommendationService RecommendationService
+
+<PageTitle>Stock Recommendations - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>⭐ Stock Recommendations</h2>
+    <p>Comprehensive stock analysis with buy/sell/hold recommendations</p>
+</div>
+
+@* Action Bar *@
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Stock code (e.g., BBCA)..." @bind="stockCode" />
+                <button class="btn btn-primary" @onclick="GenerateRecommendation" disabled="@(string.IsNullOrWhiteSpace(stockCode) || isAnalyzing)">
+                    @(isAnalyzing ? "Analyzing..." : "🔍 Generate Recommendation")
+                </button>
+            </div>
+            <div class="filter-group">
+                <select class="form-select" value="@selectedSector" @onchange="OnSectorChanged">
+                    <option value="">All Sectors</option>
+                    @foreach (var sector in sectors)
+                    {
+                        <option value="@sector">@sector</option>
+                    }
+                </select>
+            </div>
+            <button class="btn btn-outline" @onclick="RefreshTop" disabled="@isRefreshing">
+                @(isRefreshing ? "Refreshing..." : "🔄 Refresh Top 10")
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (currentRecommendation != null)
+{
+    @* Recommendation Result *@
+    <div class="card recommendation-card rec-@currentRecommendation.Recommendation.ToLower()">
+        <div class="card-header">
+            <h3>@stockCode?.ToUpper() - @currentRecommendation.StockEmiten?.CompanyName</h3>
+            <span class="rec-badge-large rec-@currentRecommendation.Recommendation.ToLower()">
+                @currentRecommendation.Recommendation
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="rec-details-grid">
+                <div class="rec-detail">
+                    <span class="rec-label">Overall Score</span>
+                    <span class="rec-value-large">@currentRecommendation.OverallScore.ToString("F1")/100</span>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: @(currentRecommendation.OverallScore)%"></div>
+                    </div>
+                </div>
+                <div class="rec-detail">
+                    <span class="rec-label">Target Price</span>
+                    <span class="rec-value">Rp @currentRecommendation.TargetPrice?.ToString("N0")</span>
+                </div>
+                <div class="rec-detail">
+                    <span class="rec-label">Stop Loss</span>
+                    <span class="rec-value text-negative">Rp @currentRecommendation.StopLossPrice?.ToString("N0")</span>
+                </div>
+                <div class="rec-detail">
+                    <span class="rec-label">Risk Level</span>
+                    <span class="rec-value risk-@currentRecommendation.RiskLevel.ToLower()">@currentRecommendation.RiskLevel</span>
+                </div>
+            </div>
+
+            @* Score Breakdown *@
+            <div class="score-breakdown">
+                <h4>Score Breakdown</h4>
+                <div class="breakdown-grid">
+                    <div class="breakdown-item">
+                        <span>Technical</span>
+                        <div class="score-bar"><div class="score-fill tech-fill" style="width: @(currentRecommendation.TechnicalScore)%"></div></div>
+                        <span>@currentRecommendation.TechnicalScore.ToString("F1")</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span>Fundamental</span>
+                        <div class="score-bar"><div class="score-fill fund-fill" style="width: @(currentRecommendation.FundamentalScore)%"></div></div>
+                        <span>@currentRecommendation.FundamentalScore.ToString("F1")</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span>Sentiment</span>
+                        <div class="score-bar"><div class="score-fill sent-fill" style="width: @(currentRecommendation.SentimentScore)%"></div></div>
+                        <span>@currentRecommendation.SentimentScore.ToString("F1")</span>
+                    </div>
+                </div>
+            </div>
+
+            @* LLM Review *@
+            @if (!string.IsNullOrEmpty(currentRecommendation.LLMReview))
+            {
+                <div class="llm-review-box">
+                    <div class="llm-review-header">
+                        <span>🤖 AI Review</span>
+                        <small>via @currentRecommendation.LLMProvider / @currentRecommendation.LLMModel</small>
+                    </div>
+                    <pre class="llm-review-content">@currentRecommendation.LLMReview</pre>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* Top 10 Recommendations Table *@
+<div class="card">
+    <div class="card-header">
+        <h3>🏆 Top Recommendations</h3>
+    </div>
+    <div class="card-body">
+        @if (topRecommendations.Any())
+        {
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Stock</th>
+                            <th>Company</th>
+                            <th>Sector</th>
+                            <th>Score</th>
+                            <th>Recommendation</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rec in topRecommendations)
+                        {
+                            <tr>
+                                <td>@rec.Rank</td>
+                                <td><strong>@rec.StockCode</strong></td>
+                                <td>@rec.CompanyName</td>
+                                <td><span class="badge">@rec.Sector</span></td>
+                                <td>@rec.OverallScore.ToString("F1")</td>
+                                <td><span class="rec-badge rec-@rec.Recommendation.ToLower()">@rec.Recommendation</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline" @onclick="() => AnalyzeStock(rec.StockCode)">
+                                        Detail
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted">No recommendations yet. Generate recommendations or refresh the list.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private string stockCode = "";
+    private string selectedSector = "";
+    private List<string> sectors = new();
+    private List<TopRecommendation> topRecommendations = new();
+    private StockRecommendation? currentRecommendation;
+    private bool isAnalyzing;
+    private bool isRefreshing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sectors = await StockData.GetAllSectorsAsync();
+        topRecommendations = await RecommendationService.GetTopRecommendationsAsync(10);
+    }
+
+    private async Task AnalyzeStock(string code)
+    {
+        stockCode = code;
+        await GenerateRecommendation();
+    }
+
+    private async Task GenerateRecommendation()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isAnalyzing = true;
+        try
+        {
+            currentRecommendation = await RecommendationService.GenerateRecommendationAsync(stockCode.ToUpper());
+        }
+        catch (Exception ex)
+        {
+            currentRecommendation = null;
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
+    }
+
+    private async Task OnSectorChanged(ChangeEventArgs e)
+    {
+        selectedSector = e.Value?.ToString() ?? "";
+        if (!string.IsNullOrEmpty(selectedSector))
+        {
+            var sectorRecs = await RecommendationService.GetRecommendationsBySectorAsync(selectedSector);
+            topRecommendations = sectorRecs.Select(r => new TopRecommendation
+            {
+                Rank = 0,
+                StockEmitenId = r.StockEmitenId,
+                StockCode = r.StockEmiten?.StockCode ?? "",
+                CompanyName = r.StockEmiten?.CompanyName ?? "",
+                OverallScore = r.OverallScore,
+                Recommendation = r.Recommendation,
+                Sector = selectedSector,
+                GeneratedDate = r.CreatedAt
+            }).OrderByDescending(r => r.OverallScore).ToList();
+        }
+        else
+        {
+            topRecommendations = await RecommendationService.GetTopRecommendationsAsync(10);
+        }
+    }
+
+    private async Task RefreshTop()
+    {
+        isRefreshing = true;
+        await RecommendationService.RefreshTopRecommendationsAsync();
+        topRecommendations = await RecommendationService.GetTopRecommendationsAsync(10);
+        isRefreshing = false;
+    }
+}

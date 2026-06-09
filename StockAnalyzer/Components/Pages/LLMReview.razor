@@ -1,0 +1,278 @@
+@page "/llm-review"
+@inject IStockDataService StockData
+@inject ILLMService LLMService
+@inject ITechnicalAnalysisService TechnicalAnalysis
+@inject IFundamentalAnalysisService FundamentalAnalysis
+@inject ISentimentAnalysisService SentimentAnalysis
+
+<PageTitle>LLM Review - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>🤖 LLM-Powered Stock Review</h2>
+    <p>AI-generated analysis using multi-LLM providers (OpenAI, Gemini, Anthropic, Ollama)</p>
+</div>
+
+@* Stock Input & LLM Selection *@
+<div class="card">
+    <div class="card-body">
+        <div class="filter-bar">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Stock code (e.g., BBCA)..." @bind="stockCode" />
+            </div>
+            <div class="filter-group">
+                <select class="form-select" @bind="selectedAnalysisType">
+                    <option value="TechnicalReview">Technical Review</option>
+                    <option value="FundamentalReview">Fundamental Review</option>
+                    <option value="SentimentAnalysis">Sentiment Analysis</option>
+                    <option value="StockRecommendation">Full Recommendation</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select class="form-select" @bind="selectedProvider">
+                    <option value="">Auto (Default)</option>
+                    @foreach (var provider in availableProviders)
+                    {
+                        <option value="@provider">@provider</option>
+                    }
+                </select>
+            </div>
+            <button class="btn btn-primary" @onclick="RunLLMAnalysis" disabled="@(string.IsNullOrWhiteSpace(stockCode) || isAnalyzing)">
+                @(isAnalyzing ? "🔄 Analyzing..." : "🤖 Run Analysis")
+            </button>
+        </div>
+    </div>
+</div>
+
+@* LLM Status *@
+<div class="card">
+    <div class="card-body">
+        <div class="provider-status-grid">
+            @foreach (var status in providerStatuses)
+            {
+                <div class="provider-status @(status.IsAvailable ? "status-available" : "status-unavailable")">
+                    <span class="status-indicator @(status.IsAvailable ? "online" : "offline")"></span>
+                    <span class="status-name">@status.Name</span>
+                    <span class="status-text">@(status.IsAvailable ? "Available" : "Unavailable")</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (analysisResult != null)
+{
+    <div class="card">
+        <div class="card-header">
+            <h3>
+                @switch (selectedAnalysisType)
+                {
+                    case "TechnicalReview": <span>📊 Technical Review</span> break;
+                    case "FundamentalReview": <span>💰 Fundamental Review</span> break;
+                    case "SentimentAnalysis": <span>📰 Sentiment Analysis</span> break;
+                    case "StockRecommendation": <span>⭐ Full Recommendation</span> break;
+                }
+                for @stockCode?.ToUpper()
+            </h3>
+            @if (analysisResult.IsSuccess)
+            {
+                <span class="badge badge-success">
+                    @analysisResult.ProviderName / @analysisResult.ModelName
+                    (@analysisResult.ResponseTime.TotalSeconds.ToString("F1")s)
+                </span>
+            }
+        </div>
+        <div class="card-body">
+            @if (analysisResult.IsSuccess)
+            {
+                <div class="llm-result">
+                    <pre class="llm-review-content">@analysisResult.Content</pre>
+                </div>
+            }
+            else
+            {
+                <div class="error-box">
+                    <h4>⚠️ Analysis Failed</h4>
+                    <p>@analysisResult.ErrorMessage</p>
+                    <p class="text-muted">Make sure your LLM provider is configured and running.</p>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* Analysis History *@
+@if (analysisHistory.Any())
+{
+    <div class="card">
+        <div class="card-header"><h3>📋 Analysis History</h3></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Stock</th>
+                            <th>Type</th>
+                            <th>Provider</th>
+                            <th>Status</th>
+                            <th>Response Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in analysisHistory)
+                        {
+                            <tr>
+                                <td>@item.Time.ToString("HH:mm:ss")</td>
+                                <td><strong>@item.StockCode</strong></td>
+                                <td>@item.AnalysisType</td>
+                                <td>@item.ProviderName</td>
+                                <td><span class="@(item.IsSuccess ? "text-positive" : "text-negative")">
+                                    @(item.IsSuccess ? "✅" : "❌")</span></td>
+                                <td>@item.ResponseTime.TotalSeconds.ToString("F1")s</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string stockCode = "";
+    private string selectedAnalysisType = "TechnicalReview";
+    private string selectedProvider = "";
+    private List<string> availableProviders = new();
+    private LLMResponse? analysisResult;
+    private bool isAnalyzing;
+    private List<ProviderStatus> providerStatuses = new();
+    private List<HistoryItem> analysisHistory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check which providers are available
+        var allProviders = new[] { "OpenAI", "Gemini", "Anthropic", "Ollama", "OpenAICompatible" };
+
+        foreach (var providerName in allProviders)
+        {
+            try
+            {
+                var isAvailable = await LLMService.AnalyzeWithProviderAsync(
+                    new LLMRequest { SystemPrompt = "ping", UserPrompt = "pong", MaxTokens = 5 },
+                    providerName);
+
+                providerStatuses.Add(new ProviderStatus
+                {
+                    Name = providerName,
+                    IsAvailable = isAvailable.IsSuccess
+                });
+
+                if (isAvailable.IsSuccess)
+                    availableProviders.Add(providerName);
+            }
+            catch
+            {
+                providerStatuses.Add(new ProviderStatus { Name = providerName, IsAvailable = false });
+            }
+        }
+    }
+
+    private async Task RunLLMAnalysis()
+    {
+        if (string.IsNullOrWhiteSpace(stockCode)) return;
+
+        isAnalyzing = true;
+        var startTime = DateTime.UtcNow;
+
+        try
+        {
+            var stock = await StockData.GetStockByCodeAsync(stockCode.ToUpper());
+            if (stock == null)
+            {
+                analysisResult = new LLMResponse { IsSuccess = false, ErrorMessage = $"Stock '{stockCode}' not found" };
+                return;
+            }
+
+            // Prepare data based on analysis type
+            LLMResponse? result = null;
+
+            switch (selectedAnalysisType)
+            {
+                case "TechnicalReview":
+                    var techData = await StockData.GetTechnicalHistoryAsync(stock.Id);
+                    var techSummary = techData.Any()
+                        ? $"Price: {stock.CurrentPrice}, RSI: {techData.Last().RSI}, MA20: {techData.Last().MA20}"
+                        : "No technical data";
+                    result = string.IsNullOrEmpty(selectedProvider)
+                        ? await LLMService.GetTechnicalReviewAsync(stockCode, techSummary)
+                        : await LLMService.AnalyzeWithProviderAsync(
+                            new LLMRequest { SystemPrompt = "Anda analis teknikal.", UserPrompt = $"Saham {stockCode}: {techSummary}" },
+                            selectedProvider);
+                    break;
+
+                case "FundamentalReview":
+                    var fundData = await StockData.GetLatestFundamentalAsync(stock.Id);
+                    var fundSummary = fundData != null
+                        ? $"PER: {fundData.PER}, PBV: {fundData.PBV}, ROE: {fundData.ROE}%, DER: {fundData.DER}"
+                        : "No fundamental data";
+                    result = await LLMService.GetFundamentalReviewAsync(stockCode, fundSummary);
+                    break;
+
+                case "SentimentAnalysis":
+                    var sentData = await StockData.GetSentimentDataAsync(stock.Id, 10);
+                    var sentSummary = string.Join("\n", sentData.Select(s => $"- [{s.SentimentLabel}] {s.Title}"));
+                    result = await LLMService.GetSentimentAnalysisAsync(stockCode,
+                        string.IsNullOrEmpty(sentSummary) ? "No news data" : sentSummary);
+                    break;
+
+                case "StockRecommendation":
+                    result = await LLMService.GetStockRecommendationAsync(stockCode,
+                        $"Price: {stock.CurrentPrice}, Change: {stock.ChangePercent}%",
+                        $"PER: {stock.MarketCap}",
+                        "No sentiment data");
+                    break;
+            }
+
+            analysisResult = result ?? new LLMResponse { IsSuccess = false, ErrorMessage = "No result" };
+
+            // Add to history
+            analysisHistory.Insert(0, new HistoryItem
+            {
+                Time = DateTime.UtcNow,
+                StockCode = stockCode,
+                AnalysisType = selectedAnalysisType,
+                ProviderName = analysisResult.ProviderName,
+                IsSuccess = analysisResult.IsSuccess,
+                ResponseTime = analysisResult.ResponseTime
+            });
+
+            // Keep only last 20
+            if (analysisHistory.Count > 20)
+                analysisHistory = analysisHistory.Take(20).ToList();
+        }
+        catch (Exception ex)
+        {
+            analysisResult = new LLMResponse { IsSuccess = false, ErrorMessage = ex.Message };
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
+    }
+
+    private class ProviderStatus
+    {
+        public string Name { get; set; } = "";
+        public bool IsAvailable { get; set; }
+    }
+
+    private class HistoryItem
+    {
+        public DateTime Time { get; set; }
+        public string StockCode { get; set; } = "";
+        public string AnalysisType { get; set; } = "";
+        public string ProviderName { get; set; } = "";
+        public bool IsSuccess { get; set; }
+        public TimeSpan ResponseTime { get; set; }
+    }
+}

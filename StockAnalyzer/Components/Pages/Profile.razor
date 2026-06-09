@@ -1,0 +1,218 @@
+@page "/profile"
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@attribute [Authorize]
+
+<PageTitle>Profile - StockAnalyzer</PageTitle>
+
+<div class="page-header">
+    <h2>👤 User Profile</h2>
+    <p>Manage your account settings</p>
+</div>
+
+@if (user == null)
+{
+    <div class="loading-container">
+        <div class="spinner"></div>
+        <p>Loading profile...</p>
+    </div>
+}
+else
+{
+    <div class="dashboard-grid dashboard-grid-2col">
+        <div class="card">
+            <div class="card-header"><h3>Profile Information</h3></div>
+            <div class="card-body">
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="alert alert-success"><span>✅</span> @successMessage</div>
+                }
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error"><span>⚠️</span> @errorMessage</div>
+                }
+
+                <EditForm Model="profileModel" OnValidSubmit="UpdateProfile" FormName="profile">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input class="form-control" value="@user.Email" disabled />
+                    </div>
+                    <div class="form-group">
+                        <label for="displayName">Display Name</label>
+                        <InputText id="displayName" class="form-control" @bind-Value="profileModel.DisplayName" />
+                    </div>
+                    <div class="form-group">
+                        <label for="theme">Preferred Theme</label>
+                        <select class="form-select" @bind="profileModel.PreferredTheme">
+                            <option value="light">☀️ Light</option>
+                            <option value="dark">🌙 Dark</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                        @(isSaving ? "Saving..." : "💾 Save Profile")
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Change Password</h3></div>
+            <div class="card-body">
+                @if (!string.IsNullOrEmpty(passwordMessage))
+                {
+                    <div class="alert @(passwordError ? "alert-error" : "alert-success")">
+                        <span>@(passwordError ? "⚠️" : "✅")</span> @passwordMessage
+                    </div>
+                }
+
+                <EditForm Model="passwordModel" OnValidSubmit="ChangePassword" FormName="changepass">
+                    <div class="form-group">
+                        <label for="currentPw">Current Password</label>
+                        <InputText id="currentPw" type="password" class="form-control" @bind-Value="passwordModel.CurrentPassword" />
+                    </div>
+                    <div class="form-group">
+                        <label for="newPw">New Password</label>
+                        <InputText id="newPw" type="password" class="form-control" @bind-Value="passwordModel.NewPassword" />
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPw">Confirm New Password</label>
+                        <InputText id="confirmPw" type="password" class="form-control" @bind-Value="passwordModel.ConfirmPassword" />
+                    </div>
+                    <button type="submit" class="btn btn-primary" disabled="@isChangingPw">
+                        @(isChangingPw ? "Changing..." : "🔒 Change Password")
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>Account Summary</h3></div>
+        <div class="card-body">
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td><strong>Registered</strong></td><td>@user.RegisteredAt.ToString("dd MMM yyyy")</td></tr>
+                    <tr><td><strong>Last Login</strong></td><td>@(user.LastLoginAt?.ToString("dd MMM yyyy HH:mm") ?? "N/A")</td></tr>
+                    <tr><td><strong>Email Confirmed</strong></td><td>@(user.EmailConfirmed ? "✅ Yes" : "❌ No")</td></tr>
+                    <tr><td><strong>User ID</strong></td><td><code>@user.Id</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private ApplicationUser? user;
+    private ProfileModel profileModel = new();
+    private PasswordModel passwordModel = new();
+    private string? successMessage;
+    private string? errorMessage;
+    private string? passwordMessage;
+    private bool passwordError;
+    private bool isSaving;
+    private bool isChangingPw;
+
+    private class ProfileModel
+    {
+        public string DisplayName { get; set; } = "";
+        public string PreferredTheme { get; set; } = "light";
+    }
+    private class PasswordModel
+    {
+        public string CurrentPassword { get; set; } = "";
+        public string NewPassword { get; set; } = "";
+        public string ConfirmPassword { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        user = await UserManager.GetUserAsync(authState.User);
+
+        if (user != null)
+        {
+            profileModel.DisplayName = user.DisplayName ?? "";
+            profileModel.PreferredTheme = user.PreferredTheme ?? "light";
+        }
+    }
+
+    private async Task UpdateProfile()
+    {
+        isSaving = true;
+        successMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            if (user != null)
+            {
+                user.DisplayName = profileModel.DisplayName;
+                user.PreferredTheme = profileModel.PreferredTheme;
+                var result = await UserManager.UpdateAsync(user);
+                if (result.Succeeded)
+                {
+                    successMessage = "Profile updated successfully!";
+                }
+                else
+                {
+                    errorMessage = string.Join(", ", result.Errors.Select(e => e.Description));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        isChangingPw = true;
+        passwordMessage = null;
+        passwordError = false;
+
+        if (passwordModel.NewPassword != passwordModel.ConfirmPassword)
+        {
+            passwordError = true;
+            passwordMessage = "New passwords do not match.";
+            isChangingPw = false;
+            return;
+        }
+
+        try
+        {
+            if (user != null)
+            {
+                var result = await UserManager.ChangePasswordAsync(user,
+                    passwordModel.CurrentPassword, passwordModel.NewPassword);
+                if (result.Succeeded)
+                {
+                    passwordMessage = "Password changed successfully!";
+                    passwordModel = new PasswordModel();
+                }
+                else
+                {
+                    passwordError = true;
+                    passwordMessage = string.Join(", ", result.Errors.Select(e => e.Description));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            passwordError = true;
+            passwordMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isChangingPw = false;
+        }
+    }
+}
