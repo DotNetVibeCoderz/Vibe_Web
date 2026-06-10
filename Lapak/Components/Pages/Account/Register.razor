@@ -1,0 +1,47 @@
+@page "/account/register"
+
+<div class="auth-container">
+    <h2 class="auth-title">Daftar di Lapak</h2>
+    <p class="auth-subtitle">Buat akun untuk mulai berbelanja dan berjualan!</p>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="toast error mb-2">@error</div>
+    }
+
+    <form method="post" action="/api/account/register">
+        <AntiforgeryToken />
+        <div class="form-group">
+            <label class="form-label">Nama Lengkap</label>
+            <input class="form-input" name="FullName" placeholder="Nama kamu" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" name="Email" type="email" placeholder="nama@email.com" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">No. Telepon</label>
+            <input class="form-input" name="Phone" placeholder="08123456789" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Password</label>
+            <input class="form-input" name="Password" type="password" placeholder="Min. 8 karakter" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Konfirmasi Password</label>
+            <input class="form-input" name="ConfirmPassword" type="password" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Daftar Sebagai</label>
+            <select class="form-input" name="UserType">
+                <option value="Buyer" selected>Pembeli</option>
+                <option value="Seller">Penjual</option>
+            </select>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Daftar</button>
+        <p class="text-center mt-3">Sudah punya akun? <a href="/account/login">Masuk</a></p>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? error { get; set; }
+}

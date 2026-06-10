@@ -1,0 +1,61 @@
+@page "/account/orders"
+@page "/account/orders/{OrderNumber}"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+@if (string.IsNullOrEmpty(OrderNumber))
+{
+    <div class="page-header"><h1 class="page-title">📋 Pesanan Saya</h1></div>
+    @if (!_orders.Any()) { <div class="text-center mt-4"><div style="font-size:4rem;">📋</div><h3>Belum ada pesanan</h3><a href="/products" class="btn btn-primary mt-2">Mulai Belanja</a></div> }
+    else { foreach(var o in _orders) {
+        <div class="card mb-2"><div class="card-body"><div class="flex justify-between items-center"><div><strong>#@o.OrderNumber</strong> <small class="text-muted">@o.CreatedAt.ToString("dd MMM yyyy HH:mm")</small></div><span class="badge-status" style="background:@GetStatusColor(o.Status)">@o.Status</span></div>
+        <div class="mt-2">@foreach(var oi in o.OrderItems){<span class="mr-2">@oi.Product?.Name x@oi.Quantity</span>}</div>
+        <div class="flex justify-between mt-2"><span>Total: <strong>Rp@(o.GrandTotal.ToString("N0"))</strong></span><a href="/account/orders/@o.OrderNumber" class="btn btn-sm btn-primary">Detail</a></div></div></div>
+    }}
+}
+else
+{
+    @if (_order == null) { <div class="text-center mt-4"><h3>Pesanan tidak ditemukan</h3></div> }
+    else
+    {
+        <nav class="breadcrumb mb-2"><a href="/account/orders">← Pesanan Saya</a></nav>
+        <div class="page-header"><h1 class="page-title">Pesanan #@_order.OrderNumber</h1></div>
+        <div class="row">
+            <div class="col-8">
+                <div class="card mb-3"><div class="card-header">Status Pesanan</div><div class="card-body"><div class="order-timeline">
+                    @{ var statuses = new[]{"Pending","Paid","Processing","Shipped","Delivered","Completed"};
+                       var currentIdx = Array.IndexOf(statuses, _order.Status); if(currentIdx<0)currentIdx=0;
+                       for(int i=0;i<statuses.Length;i++){<div class="timeline-step @(i<=currentIdx?"active":"")"><div class="timeline-dot">@(i<=currentIdx?"✅":"⭕")</div><div>@statuses[i]</div></div>} }
+                </div></div></div>
+                <div class="card mb-3"><div class="card-header">Item Pesanan</div><div class="card-body">@foreach(var oi in _order.OrderItems){<div class="flex justify-between items-center mb-2"><div>@oi.Product?.Name x@oi.Quantity</div><div>Rp@(oi.SubTotal.ToString("N0"))</div></div>}<hr/><div class="flex justify-between"><strong>Total</strong><strong style="color:var(--accent);">Rp@(_order.GrandTotal.ToString("N0"))</strong></div></div></div>
+                @if (_order.ShippingTrackings.Any()) { <div class="card mb-3"><div class="card-header">📦 Tracking</div><div class="card-body">@foreach(var t in _order.ShippingTrackings.OrderByDescending(t=>t.EventDate)){<div class="mb-2"><strong>@t.Status</strong><br/>@t.Description<br/><small class="text-muted">@t.Location · @t.EventDate.ToString("dd MMM yyyy HH:mm")</small></div>}</div></div> }
+            </div>
+            <div class="col-4">
+                <div class="card mb-3"><div class="card-header">Info Pengiriman</div><div class="card-body"><p>@_order.ShippingAddress</p><p>@_order.ShippingCity, @_order.ShippingProvince @_order.ShippingPostalCode</p><p>Kurir: @_order.ShippingCourier @_order.ShippingService</p><p>Resi: @_order.TrackingNumber</p></div></div>
+                <div class="card"><div class="card-header">Pembayaran</div><div class="card-body"><p>Status: <strong>@_order.PaymentStatus</strong></p><p>Metode: @_order.PaymentMethod</p><p>Gateway: @_order.PaymentGateway</p>@if(_order.PaymentStatus=="Unpaid"){<a href="/chat/siti-bohay" class="btn btn-sm btn-secondary mt-2">💁 Bantuan Bayar</a>}</div></div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? OrderNumber { get; set; }
+    private List<Order> _orders = new();
+    private Order? _order;
+    private Guid _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login?redirect=/account/orders"); return; }
+        _userId = Guid.Parse(uid);
+        if (!string.IsNullOrEmpty(OrderNumber)) _order = Db.Orders.Include(o=>o.OrderItems).ThenInclude(oi=>oi.Product).Include(o=>o.ShippingTrackings).FirstOrDefault(o=>o.OrderNumber==OrderNumber&&o.UserId==_userId);
+        else _orders = Db.Orders.Include(o=>o.OrderItems).ThenInclude(oi=>oi.Product).Where(o=>o.UserId==_userId).OrderByDescending(o=>o.CreatedAt).Take(20).ToList();
+    }
+
+    private string GetStatusColor(string s) => s switch {"Completed"=>"var(--success)","Paid"=>"var(--info)","Processing"=>"var(--warning)","Shipped"=>"var(--accent)","Cancelled"=>"var(--danger)",_=>"var(--text-muted)"};
+}

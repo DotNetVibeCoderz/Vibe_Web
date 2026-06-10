@@ -1,0 +1,116 @@
+# Kebijakan Platform Lapak
+
+## 1. Kebijakan Retur & Pengembalian Barang
+
+### Syarat Retur
+- Retur barang dapat dilakukan maksimal 7 (tujuh) hari kalender setelah barang diterima oleh pembeli.
+- Barang yang diretur harus dalam kondisi lengkap, termasuk aksesoris, kartu garansi, dan kemasan asli.
+- Barang yang telah digunakan, rusak karena kelalaian pembeli, atau tidak sesuai syarat tidak dapat diretur.
+
+### Prosedur Retur
+1. Pembeli mengajukan permintaan retur melalui fitur "Retur" di halaman pesanan.
+2. Penjual memiliki waktu 2x24 jam untuk menyetujui atau menolak permintaan retur.
+3. Jika disetujui, pembeli mengirimkan barang kembali ke penjual menggunakan kurir yang ditentukan.
+4. Penjual memverifikasi kondisi barang dalam waktu 2x24 jam setelah diterima.
+5. Jika verifikasi berhasil, refund akan diproses.
+
+### Biaya Retur
+- Jika retur karena kesalahan penjual (barang salah, cacat, atau tidak sesuai deskripsi), ongkir retur ditanggung penjual.
+- Jika retur karena perubahan pikiran pembeli, ongkir retur ditanggung pembeli.
+
+## 2. Kebijakan Refund (Pengembalian Dana)
+
+### Proses Refund
+- Refund akan diproses dalam waktu 1-3 hari kerja setelah barang diterima dan diverifikasi oleh penjual.
+- Dana akan dikembalikan ke metode pembayaran yang digunakan saat transaksi.
+- Untuk pembayaran via bank transfer, dana akan dikirim ke rekening yang terdaftar di profil pembeli.
+
+### Kasus Khusus
+- Jika pesanan dibatalkan oleh penjual, refund akan diproses otomatis dalam 1x24 jam.
+- Jika terjadi force majeure atau bencana alam yang mengganggu pengiriman, Lapak akan melakukan mediasi.
+- Pesanan yang belum dibayar dalam waktu 24 jam akan otomatis dibatalkan oleh sistem.
+
+## 3. Kebijakan Pembayaran
+
+### Metode Pembayaran
+- Transfer Bank: BCA, Mandiri, BNI, BRI, CIMB Niaga
+- E-Wallet: OVO, GoPay, Dana, ShopeePay, LinkAja
+- Kartu Kredit: Visa, Mastercard, JCB
+- Gerai Retail: Alfamart, Indomaret
+
+### Batas Waktu Pembayaran
+- Setelah checkout, pembeli memiliki waktu 24 jam untuk menyelesaikan pembayaran.
+- Jika dalam 24 jam pembayaran belum diterima, pesanan akan otomatis dibatalkan.
+
+### Verifikasi Pembayaran
+- Pembayaran melalui bank transfer akan diverifikasi otomatis oleh sistem.
+- Jika dalam 2 jam setelah transfer, status pembayaran belum berubah, hubungi customer support.
+
+## 4. Kebijakan Pengiriman
+
+### Kurir yang Tersedia
+- JNE (Reguler, YES, OKE)
+- J&T Express (EZ, ECO)
+- SiCepat (REG, BEST, GOKIL)
+- Pos Indonesia (Pos Reguler, Pos Kilat Khusus)
+- AnterAja (Reguler, Next Day)
+- Ninja Express (Standard)
+- Lion Parcel (Reguler)
+
+### Estimasi Pengiriman
+- Jabodetabek: 1-3 hari kerja
+- Pulau Jawa: 2-5 hari kerja
+- Luar Jawa: 5-14 hari kerja
+- Indonesia Timur: 7-21 hari kerja
+
+### Klaim Keterlambatan atau Kerusakan
+- Jika barang tidak sampai dalam estimasi waktu, pembeli dapat mengajukan komplain.
+- Jika barang rusak saat pengiriman, pembeli wajib melampirkan foto/video unboxing sebagai bukti.
+- Klaim akan diverifikasi oleh tim Lapak dalam 2x24 jam.
+
+## 5. Kebijakan Komplain & Eskalasi
+
+### Cara Mengajukan Komplain
+1. Hubungi Siti Bohay (chatbot customer support) di aplikasi Lapak.
+2. Jika tidak terselesaikan, akan dieskalasi ke tim support manusia via WhatsApp/Email.
+3. Komplain yang memerlukan investigasi akan ditangani dalam 3x7 hari kerja.
+
+### Kontak Support
+- WhatsApp: +62 812-3456-7890 (Senin-Jumat, 09:00-18:00 WIB)
+- Email: support@lapak.com
+- Live Chat: Siti Bohay AI Chatbot (24/7)
+
+## 6. Kebijakan Loyalty & Poin
+
+### Program Loyalitas
+- Setiap transaksi yang selesai akan memberikan loyalty points.
+- 1 poin = Rp1 transaksi (setiap kelipatan Rp10.000).
+- Poin dapat ditukarkan dengan voucher diskon atau produk eksklusif.
+
+### Tier Pelanggan
+- Bronze: 0-99 poin skor
+- Silver: 100-499 poin skor
+- Gold: 500-999 poin skor
+- Platinum: 1000+ poin skor
+
+### Benefit per Tier
+- Bronze: Akses ke promo reguler
+- Silver: +5% ekstra loyalty points, akses promo eksklusif
+- Gold: +10% ekstra loyalty points, gratis ongkir 2x/bulan, priority support
+- Platinum: +20% ekstra loyalty points, gratis ongkir unlimited, dedicated account manager
+
+## 7. Syarat & Ketentuan Umum
+
+### Akun Pengguna
+- Setiap pengguna hanya boleh memiliki 1 akun.
+- Pengguna bertanggung jawab atas kerahasiaan password akunnya.
+- Lapak berhak menonaktifkan akun yang melanggar ketentuan.
+
+### Transaksi
+- Semua transaksi bersifat final setelah pesanan selesai (completed).
+- Harga dapat berubah sewaktu-waktu tanpa pemberitahuan sebelumnya.
+- Lapak tidak bertanggung jawab atas transaksi di luar platform.
+
+### Privasi
+- Data pribadi pengguna dilindungi sesuai UU Perlindungan Data Pribadi.
+- Lapak tidak akan membagikan data pengguna ke pihak ketiga tanpa izin.

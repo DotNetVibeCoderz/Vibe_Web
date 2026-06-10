@@ -1,0 +1,76 @@
+@page "/stores"
+@page "/stores/{Slug}"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+
+@if (string.IsNullOrEmpty(Slug))
+{
+    <div class="page-header"><h1 class="page-title">Toko</h1><p class="page-subtitle">@_totalStores toko di Lapak</p></div>
+    <div class="card mb-3"><div class="card-body"><div class="row" style="align-items:end;"><div class="col-4"><label class="form-label">Cari</label><input class="form-input" @bind="_q" /></div><div class="col-3"><label class="form-label">Kota</label><input class="form-input" @bind="_cityFilter" /></div><div class="col-2"><label class="form-label">Status</label><select class="form-input" @bind="_verified"><option value="">Semua</option><option value="true">Verified</option></select></div><div class="col-3"><button class="btn btn-primary btn-block" @onclick="ApplyFilter">Cari</button></div></div></div></div>
+    <div class="store-grid-list">@foreach (var s in _stores){ <a href="/stores/@s.Slug" class="store-card-full"><div class="store-card-header"><div style="font-size:2.5rem;">🏪</div><div style="flex:1;"><h3>@s.Name @if(s.IsVerified){<span>✅</span>}</h3><p class="text-muted">@(s.City??"")</p></div><div><div>⭐@s.AverageRating.ToString("F1")</div><small>@s.RatingCount ulasan</small></div></div><p>@s.Description</p><div>📦@s.TotalProducts produk · 💰@s.TotalSales penjualan</div></a> }</div>
+    @if (!_stores.Any()) { <div class="text-center mt-4"><h3>Tidak ada toko</h3></div> }
+}
+else
+{
+    @if (_store == null && !_loadingDetail) { <div class="text-center mt-4"><h3>Toko tidak ditemukan</h3><a href="/stores">Kembali</a></div> }
+    else if (_loadingDetail) { <div class="text-center mt-4"><div class="loading-spinner"></div><p>Memuat...</p></div> }
+    else if (_store != null) {
+        <nav class="breadcrumb mb-2"><a href="/">Home</a> / <a href="/stores">Toko</a> / <span>@_store.Name</span></nav>
+        <div class="card mb-3" style="background:linear-gradient(135deg,var(--accent-light),var(--bg-secondary));"><div class="card-body" style="display:flex;gap:24px;align-items:center;"><div style="font-size:5rem;">🏪</div><div style="flex:1;"><h1>@_store.Name @if(_store.IsVerified){<span>✅ Verified</span>}</h1><p>@_store.Description</p><div class="flex gap-3 mt-2"><span>@_store.City</span><span>⭐@_store.AverageRating.ToString("F1") (@_store.RatingCount)</span><span>❤️@_store.LikeCount</span></div></div><div><button class="btn btn-primary" @onclick="ToggleLike">❤️ @(_liked?"Unlike":"Suka")</button></div></div></div>
+        <h3 class="mb-2">Produk</h3><div class="product-grid">@foreach(var p in _storeProducts){ var url = "/products/" + p.Slug; <ProductCard Product="p" OnClick="() => Nav.NavigateTo(url)" />}</div>
+        <div class="mt-4"><div class="card"><div class="card-header flex justify-between"><span>Ulasan (@_reviews.Count)</span><button class="btn btn-sm btn-primary" @onclick="()=>_showForm=!_showForm">Tulis Ulasan</button></div>
+        @if(_showForm){<div class="card-body"><select class="form-input mb-2" @bind="_newRating"><option value="5">5</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select><textarea class="form-input mb-2" @bind="_newComment" rows="2"></textarea><div class="flex gap-2"><button class="btn btn-primary" @onclick="SubmitReview">Kirim</button><button class="btn btn-secondary" @onclick="()=>_showForm=false">Batal</button></div></div>}
+        <div class="card-body">@foreach(var r in _reviews.Take(10)){ <div style="border-bottom:1px solid var(--border-color);padding:12px 0;"><strong>@r.User?.FullName</strong> <span>@RenderStars(r.Rating)</span><br/><small>@r.CreatedAt.ToString("dd MMM yyyy")</small><p>@r.Comment</p></div> }</div></div></div>
+    }
+}
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+
+    private List<Lapak.Models.Store> _stores = new(); private int _totalStores; private string _q="",_cityFilter="",_verified="";
+    private Lapak.Models.Store? _store; private List<Product> _storeProducts = new(); private List<StoreReview> _reviews = new();
+    private bool _liked,_showForm; private int _newRating=5; private string _newComment="";
+    private string? _prevSlug;
+    private bool _loadingDetail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Slug)) await LoadStoreDetail();
+        else { _stores = Db.Stores.Where(s => s.IsActive).OrderByDescending(s => s.AverageRating).Take(20).ToList(); _totalStores = Db.Stores.Count(s => s.IsActive); }
+        _prevSlug = Slug;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_prevSlug != Slug)
+        {
+            _prevSlug = Slug;
+            _store = null; _storeProducts = new(); _reviews = new(); _showForm = false; _liked = false;
+            if (!string.IsNullOrEmpty(Slug)) await LoadStoreDetail();
+            else { _stores = Db.Stores.Where(s => s.IsActive).OrderByDescending(s => s.AverageRating).Take(20).ToList(); _totalStores = Db.Stores.Count(s => s.IsActive); }
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadStoreDetail()
+    {
+        _loadingDetail = true; StateHasChanged();
+        try
+        {
+            _store = Db.Stores.FirstOrDefault(s => s.Slug == Slug && s.IsActive);
+            if (_store != null)
+            {
+                _storeProducts = Db.Products.Where(p => p.StoreId == _store.Id && p.IsActive).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(20).ToList();
+                _reviews = Db.StoreReviews.Include(r => r.User).Where(r => r.StoreId == _store.Id).OrderByDescending(r => r.CreatedAt).ToList();
+            }
+        }
+        finally { _loadingDetail = false; }
+    }
+
+    private async Task ApplyFilter() { var q = Db.Stores.Where(s => s.IsActive); if (!string.IsNullOrWhiteSpace(_q)) { var qLower = _q.ToLower().Trim(); q = q.Where(s => s.Name.ToLower().Contains(qLower) || (s.Description != null && s.Description.ToLower().Contains(qLower))); } if (!string.IsNullOrWhiteSpace(_cityFilter)) { var cLower = _cityFilter.ToLower().Trim(); q = q.Where(s => s.City != null && s.City.ToLower().Contains(cLower)); } if (_verified == "true") q = q.Where(s => s.IsVerified); _stores = q.OrderByDescending(s => s.AverageRating).Take(20).ToList(); }
+    private async Task ToggleLike() { _liked=!_liked; if(_liked&&_store!=null){_store.LikeCount++;Db.SaveChanges();} }
+    private async Task SubmitReview() { if(_store==null||string.IsNullOrWhiteSpace(_newComment))return; Db.StoreReviews.Add(new StoreReview{StoreId=_store.Id,UserId=Guid.Empty,Rating=_newRating,Comment=_newComment}); _store.RatingCount++; _store.AverageRating=Math.Round(((_store.AverageRating*(_store.RatingCount-1))+_newRating)/_store.RatingCount,1); Db.SaveChanges(); _showForm=false;_newComment=""; _reviews=Db.StoreReviews.Include(r=>r.User).Where(r=>r.StoreId==_store.Id).OrderByDescending(r=>r.CreatedAt).ToList(); }
+    private string RenderStars(int rating) => rating switch { 5=>"⭐⭐⭐⭐⭐", 4=>"⭐⭐⭐⭐", 3=>"⭐⭐⭐", 2=>"⭐⭐", _=>"⭐" };
+}

@@ -1,0 +1,72 @@
+@page "/cart"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<div class="page-header"><h1 class="page-title">🛒 Keranjang Belanja</h1></div>
+
+@if (!_items.Any()) { <div class="text-center mt-4"><div style="font-size:5rem;">🛒</div><h3>Keranjang kosong</h3><p class="text-muted">Yuk, mulai belanja!</p><a href="/products" class="btn btn-primary mt-2">Lihat Produk</a></div> }
+else
+{
+    <div class="row">
+        <div class="col-8">
+            <div class="card"><div class="card-header flex justify-between"><span>@_items.Sum(i => i.Quantity) item</span><button class="btn btn-sm btn-danger" @onclick="ClearCart">🗑️ Kosongkan</button></div>
+            @foreach (var item in _items)
+            {
+                var p = item.Product;
+                var subtotal = p.Price * item.Quantity;
+                <div style="border-bottom:1px solid var(--border-color);padding:16px 20px;display:flex;gap:16px;align-items:center;">
+                    <div style="width:80px;height:80px;background:var(--bg-tertiary);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:2rem;">📦</div>
+                    <div style="flex:1;">
+                        <a href="/products/@p.Slug" style="font-weight:600;color:var(--text-primary);">@p.Name</a>
+                        <div class="text-muted" style="font-size:0.85rem;">🏪 @p.Store?.Name</div>
+                        <div style="color:var(--accent);font-weight:700;">Rp@p.Price.ToString("N0")</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button class="btn btn-sm btn-secondary" @onclick="()=>UpdateQty(item,-1)" disabled="@(item.Quantity<=1)">−</button>
+                        <span style="min-width:32px;text-align:center;font-weight:600;">@item.Quantity</span>
+                        <button class="btn btn-sm btn-secondary" @onclick="()=>UpdateQty(item,1)" disabled="@(item.Quantity>=p.MaxOrder)">+</button>
+                    </div>
+                    <div style="font-weight:700;min-width:120px;text-align:right;">Rp@(subtotal.ToString("N0"))</div>
+                    <button class="btn btn-sm btn-danger" @onclick="()=>RemoveItem(item)">🗑️</button>
+                </div>
+            }
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="card"><div class="card-header">Ringkasan Belanja</div><div class="card-body">
+                <div class="flex justify-between mb-2"><span>Total Harga</span><strong>Rp@(_totalPrice.ToString("N0"))</strong></div>
+                <hr style="border-color:var(--border-color);margin:12px 0;"/>
+                <div class="flex justify-between mb-3"><span style="font-size:1.2rem;">Grand Total</span><span style="font-size:1.4rem;font-weight:700;color:var(--accent);">Rp@(_totalPrice.ToString("N0"))</span></div>
+                <button class="btn btn-primary btn-lg btn-block" @onclick="GoCheckout">🛍️ Checkout (@_items.Sum(i=>i.Quantity) item)</button>
+                <a href="/products" class="btn btn-secondary btn-block mt-2">Lanjut Belanja</a>
+            </div></div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<CartItem> _items = new();
+    private decimal _totalPrice => _items.Sum(i => i.Product.Price * i.Quantity);
+    private Guid _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login?redirect=/cart"); return; }
+        _userId = Guid.Parse(uid);
+        _items = Db.CartItems.Include(c => c.Product).ThenInclude(p => p.Store).Where(c => c.UserId == _userId).ToList();
+    }
+
+    private async Task UpdateQty(CartItem item, int delta)
+    {
+        item.Quantity = Math.Clamp(item.Quantity + delta, 1, item.Product.MaxOrder);
+        Db.SaveChanges();
+    }
+    private async Task RemoveItem(CartItem item) { Db.CartItems.Remove(item); Db.SaveChanges(); _items.Remove(item); }
+    private async Task ClearCart() { Db.CartItems.RemoveRange(_items); Db.SaveChanges(); _items.Clear(); }
+    private void GoCheckout() => Nav.NavigateTo("/checkout");
+}

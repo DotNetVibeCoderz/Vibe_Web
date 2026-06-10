@@ -1,0 +1,33 @@
+@page "/seller/manage-store"
+@using Lapak.Models
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<div class="page-header"><h1 class="page-title">Kelola Toko</h1></div>
+@if (_store == null) { <div class="text-center mt-4"><p>Kamu belum punya toko. <a href="/seller/register-store">Daftarkan sekarang!</a></p></div> }
+else {
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
+    <div style="display:flex;gap:12px;margin-bottom:20px;"><a href="/seller/manage-products" class="btn btn-primary">Kelola Produk</a><a href="/stores/@_store.Slug" class="btn btn-secondary">Lihat Toko</a></div>
+    <div class="row"><div class="col-8"><div class="card"><div class="card-header">Edit Informasi</div><div class="card-body">
+    <div class="row"><div class="col-6"><label class="form-label">Nama Toko</label><input class="form-input" @bind="_name" /></div><div class="col-6"><label class="form-label">Slug</label><input class="form-input" @bind="_slug" /></div></div>
+    <div class="mt-2"><label class="form-label">Deskripsi</label><textarea class="form-input" @bind="_desc" rows="3"></textarea></div>
+    <div class="row mt-2"><div class="col-6"><label class="form-label">Telepon</label><input class="form-input" @bind="_phone" /></div><div class="col-6"><label class="form-label">Email</label><input class="form-input" @bind="_storeEmail" /></div></div>
+    <div class="mt-2"><label class="form-label">Alamat</label><textarea class="form-input" @bind="_addr" rows="2"></textarea></div>
+    <div class="row mt-2"><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_cty" /></div><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_prov" /></div></div>
+    <button class="btn btn-primary mt-3" @onclick="SaveStore">Simpan</button>
+    </div></div></div><div class="col-4"><div class="card text-center"><div class="card-body"><div style="font-size:4rem;">🏪</div><h3>@_store.Name</h3><p>@(_store.IsVerified?"Verified":"Pending")</p><div>⭐@_store.AverageRating.ToString("F1") · @_store.TotalProducts produk</div></div></div></div></div>
+}
+
+@code {
+    private Lapak.Models.Store? _store;
+    private string _name="",_slug="",_desc="",_phone="",_storeEmail="",_addr="",_cty="",_prov="",_msg="";
+
+    protected override async Task OnInitializedAsync() {
+        var auth = await AuthState.GetAuthenticationStateAsync(); var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login"); return; }
+        _store = Db.Stores.FirstOrDefault(s => s.UserId == Guid.Parse(uid));
+        if (_store != null) { _name=_store.Name;_slug=_store.Slug;_desc=_store.Description??"";_phone=_store.PhoneNumber??"";_storeEmail=_store.Email??"";_addr=_store.Address??"";_cty=_store.City??"";_prov=_store.Province??""; }
+    }
+    private async Task SaveStore() { if(_store==null)return; _store.Name=_name;_store.Slug=_slug;_store.Description=_desc;_store.PhoneNumber=_phone;_store.Email=_storeEmail;_store.Address=_addr;_store.City=_cty;_store.Province=_prov; Db.SaveChanges(); _msg="Toko berhasil diupdate!"; }
+}

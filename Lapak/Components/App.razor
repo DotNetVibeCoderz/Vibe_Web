@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["Lapak.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet />
+    <HeadContent>
+        <script>
+            // Fix for Blazor Server interactive rendering
+            Blazor.start({
+                configureSignalR: function (builder) {
+                    builder.withServerTimeout(120000);
+                }
+            });
+        </script>
+    </HeadContent>
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

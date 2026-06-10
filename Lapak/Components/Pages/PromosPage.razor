@@ -1,0 +1,146 @@
+@page "/promos"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+
+<div class="page-header">
+    <h1 class="page-title">🎫 Promo & Voucher</h1>
+    <p class="page-subtitle">Manfaatkan promo dan voucher menarik untuk belanja lebih hemat!</p>
+</div>
+
+@* 🔥 Active Product Promos *@
+<div class="section">
+    <div class="section-header">
+        <h2>🏷️ Promo Produk Aktif</h2>
+        <span class="text-muted">@_activePromos.Count promo aktif</span>
+    </div>
+    @if (_activePromos.Any())
+    {
+        <div class="promo-grid">
+            @foreach (var promo in _activePromos)
+            {
+                <div class="promo-card">
+                    <div class="promo-card-type @(promo.Type == "Discount" ? "promo-percent" : (promo.Type == "Cashback" ? "promo-fixed" : "promo-percent"))" style="@(promo.Type == "Cashback" ? "background:#fff3e0;color:#e65100;" : "")">
+                        @if (promo.Type == "Discount") { <span>🔥 DISKON @promo.Value%</span> }
+                        else if (promo.Type == "Cashback") { <span>💰 CASHBACK @promo.Value%</span> }
+                        else { <span>🎁 @promo.Name</span> }
+                    </div>
+                    <div class="promo-card-body">
+                        <div class="promo-card-name">@promo.Name</div>
+                        <div style="margin-top:4px;">
+                            <a href="/products/@promo.Product?.Slug" style="font-weight:600;color:var(--accent);">📦 @promo.Product?.Name</a>
+                        </div>
+                        <div class="flex gap-2 mt-1" style="font-size:0.8rem;color:var(--text-muted);">
+                            <span>💰 Rp@(promo.Product?.Price.ToString("N0"))</span>
+                            @if (promo.Product?.OriginalPrice > promo.Product?.Price) { <span style="text-decoration:line-through;">Rp@(promo.Product?.OriginalPrice?.ToString("N0"))</span> }
+                        </div>
+                        <div class="promo-card-expire">⏰ Berlaku: @promo.StartDate.ToString("dd MMM") - @promo.EndDate.ToString("dd MMM yyyy")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else { <div class="card"><div class="card-body text-center"><p class="text-muted">Belum ada promo produk aktif saat ini.</p></div></div> }
+</div>
+
+@* 🎟️ Vouchers *@
+<div class="section">
+    <div class="section-header">
+        <h2>🎟️ Voucher Tersedia</h2>
+        <span class="text-muted">@_activeVouchers.Count voucher</span>
+    </div>
+    @if (_activeVouchers.Any())
+    {
+        <div style="display:grid;grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px;">
+            @foreach (var v in _activeVouchers)
+            {
+                <div class="card" style="border-left:4px solid var(--accent);">
+                    <div class="card-body">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 style="font-size:1.1rem;">@v.Name</h3>
+                            <span style="font-size:1.4rem;font-weight:800;color:var(--accent);">
+                                @if (v.Type == "Percentage") { <text>@v.Value%</text> }
+                                else if (v.Type == "Shipping") { <text>🆓</text> }
+                                else { <text>Rp@(v.Value.ToString("N0"))</text> }
+                            </span>
+                        </div>
+                        <div style="background:var(--bg-tertiary);padding:8px 12px;border-radius:var(--radius-sm);margin-bottom:8px;">
+                            <code style="font-size:1.1rem;font-weight:700;letter-spacing:2px;">@v.Code</code>
+                        </div>
+                        @if (!string.IsNullOrEmpty(v.Description)) { <p class="text-muted" style="font-size:0.9rem;">@v.Description</p> }
+                        <div style="font-size:0.8rem;color:var(--text-muted);">
+                            @if (v.MinPurchase.HasValue) { <span>Min. belanja Rp@(v.MinPurchase.Value.ToString("N0")) · </span> }
+                            @if (v.MaxDiscount.HasValue && v.Type == "Percentage") { <span>Maks. diskon Rp@(v.MaxDiscount.Value.ToString("N0")) · </span> }
+                            @if (!string.IsNullOrEmpty(v.TargetTier)) { <span>🎯 Untuk member @v.TargetTier+ · </span> }
+                            <span>@v.CurrentUsage/@v.MaxUsage digunakan</span>
+                        </div>
+                        <div class="promo-card-expire mt-1">⏰ s/d @v.EndDate.ToString("dd MMM yyyy")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else { <div class="card"><div class="card-body text-center"><p class="text-muted">Belum ada voucher aktif saat ini.</p></div></div> }
+</div>
+
+@* 🏅 Loyalty Points Info *@
+<div class="section">
+    <div class="section-header"><h2>🏅 Loyalty Points</h2></div>
+    <div class="card">
+        <div class="card-body">
+            <p>Kumpulkan poin setiap kali berbelanja dan dapatkan benefit eksklusif!</p>
+            <div class="row mt-2">
+                <div class="col-3"><div class="stat-card"><div class="stat-icon" style="background:#cd7f32;">🥉</div><div><div class="stat-value" style="font-size:1.2rem;">Bronze</div><div class="stat-label">0 - 99 poin</div></div></div></div>
+                <div class="col-3"><div class="stat-card"><div class="stat-icon" style="background:#c0c0c0;">🥈</div><div><div class="stat-value" style="font-size:1.2rem;">Silver</div><div class="stat-label">100 - 499 poin</div></div></div></div>
+                <div class="col-3"><div class="stat-card"><div class="stat-icon" style="background:#ffd700;">🥇</div><div><div class="stat-value" style="font-size:1.2rem;">Gold</div><div class="stat-label">500 - 999 poin</div></div></div></div>
+                <div class="col-3"><div class="stat-card"><div class="stat-icon" style="background:#b8b8ff;">💎</div><div><div class="stat-value" style="font-size:1.2rem;">Platinum</div><div class="stat-label">1000+ poin</div></div></div></div>
+            </div>
+            <div class="mt-3">
+                <strong>Benefit per Tier:</strong>
+                <ul style="margin:8px 0 0 20px;line-height:2;">
+                    <li>🥉 <strong>Bronze</strong> — Akses promo reguler</li>
+                    <li>🥈 <strong>Silver</strong> — +5% loyalty points, promo eksklusif</li>
+                    <li>🥇 <strong>Gold</strong> — +10% loyalty points, gratis ongkir 2x/bulan, priority support</li>
+                    <li>💎 <strong>Platinum</strong> — +20% loyalty points, gratis ongkir unlimited, dedicated account manager</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 💡 Tips *@
+<div class="card mt-3">
+    <div class="card-body">
+        <strong>💡 Tips Menggunakan Promo & Voucher:</strong>
+        <ul style="margin:8px 0 0 20px;">
+            <li>Masukkan kode voucher saat <strong>checkout</strong> di halaman pembayaran</li>
+            <li>Voucher tidak bisa digabung dengan voucher lain dalam satu transaksi</li>
+            <li>Promo produk otomatis diterapkan — tidak perlu kode</li>
+            <li>Poin loyalty terkumpul otomatis setiap transaksi selesai</li>
+            <li>Punya pertanyaan? Tanya <a href="/chat/siti-bohay">💁 Siti Bohay</a> atau <a href="/chat/tony-kurus">🤖 Tony Kurus</a>!</li>
+        </ul>
+    </div>
+</div>
+
+@code {
+    private List<ProductPromo> _activePromos = new();
+    private List<Voucher> _activeVouchers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTime.UtcNow;
+        _activePromos = Db.ProductPromos
+            .Include(p => p.Product)
+            .Where(p => p.IsActive && p.StartDate <= now && p.EndDate >= now)
+            .OrderByDescending(p => p.EndDate)
+            .Take(12)
+            .ToList();
+
+        _activeVouchers = Db.Vouchers
+            .Where(v => v.IsActive && v.StartDate <= now && v.EndDate >= now && v.CurrentUsage < v.MaxUsage)
+            .OrderByDescending(v => v.EndDate)
+            .Take(12)
+            .ToList();
+    }
+}

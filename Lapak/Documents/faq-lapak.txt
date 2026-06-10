@@ -1,0 +1,31 @@
+# FAQ - Frequently Asked Questions Lapak
+
+## Q: Bagaimana cara membuat akun di Lapak?
+A: Klik tombol "Daftar" di pojok kanan atas, isi data diri (nama, email, password), verifikasi email, dan akun siap digunakan! Kamu juga bisa daftar menggunakan akun Google (SSO).
+
+## Q: Bagaimana cara reset password?
+A: Klik "Lupa Password" di halaman login, masukkan email terdaftar, cek email untuk link reset password, lalu buat password baru.
+
+## Q: Bagaimana cara berbelanja di Lapak?
+A: Cari produk yang diinginkan → Masukkan ke keranjang → Checkout → Pilih metode pembayaran → Bayar sesuai instruksi → Tunggu barang dikirim → Barang diterima → Konfirmasi penerimaan → Selesai!
+
+## Q: Berapa lama uang refund masuk ke rekening?
+A: Refund diproses 1-3 hari kerja setelah barang diterima penjual. Untuk bank transfer, dana akan masuk ke rekening terdaftar dalam 1-3 hari kerja setelah diproses.
+
+## Q: Bagaimana cara menjadi penjual di Lapak?
+A: Registrasi sebagai penjual → Lengkapi profil toko → Upload dokumen verifikasi (KTP, NPWP opsional) → Tunggu verifikasi (1-3 hari kerja) → Toko siap buka!
+
+## Q: Apakah ada biaya untuk berjualan di Lapak?
+A: Lapak mengenakan biaya layanan 2-5% per transaksi (tergantung kategori produk). Tidak ada biaya pendaftaran atau biaya bulanan.
+
+## Q: Bagaimana cara menghubungi penjual?
+A: Buka halaman produk → Klik nama toko → Gunakan fitur "Chat Penjual" di halaman toko. Atau langsung chat dari halaman pesanan.
+
+## Q: Apakah Lapak menjamin keamanan transaksi?
+A: Ya! Lapak menggunakan sistem escrow (rekening bersama). Dana pembeli ditahan dulu, baru diteruskan ke penjual setelah barang diterima. Jika ada masalah, dana bisa dikembalikan.
+
+## Q: Bagaimana jika barang tidak sesuai deskripsi?
+A: Ajukan retur dalam 7 hari setelah barang diterima. Lampirkan foto/video bukti. Tim Lapak akan memediasi antara pembeli dan penjual.
+
+## Q: Apakah bisa COD (Cash on Delivery)?
+A: Saat ini Lapak belum mendukung COD. Pembayaran tersedia via transfer bank, e-wallet, dan kartu kredit.
