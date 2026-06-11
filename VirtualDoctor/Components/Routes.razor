@@ -1,0 +1,22 @@
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(MainLayout)">
+            <div class="vd-card text-center p-5 mt-5">
+                <h3>404 - Halaman Tidak Ditemukan</h3>
+                <a href="/" class="vd-btn vd-btn-primary">Kembali ke Beranda</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

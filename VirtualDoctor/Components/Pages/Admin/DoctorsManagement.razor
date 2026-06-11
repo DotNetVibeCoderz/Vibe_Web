@@ -1,0 +1,263 @@
+@page "/admin/doctors"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.IDoctorService DoctorService
+@inject Services.IAuthService AuthService
+
+@if (!_isAdmin)
+{
+    <div class="vd-card text-center p-5 mt-5">
+        <i class="bi bi-shield-lock-fill" style="font-size:4rem;color:var(--vd-danger);"></i>
+        <h3 class="mt-3">Akses Ditolak</h3>
+        <p class="vd-text-muted">Halaman ini hanya untuk administrator.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke Beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between">
+        <div>
+            <h3 class="mb-0"><i class="bi bi-person-badge"></i> Master Dokter</h3>
+            <small class="vd-text-muted">CRUD + Export + Filter + Paging</small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="OpenCreateForm"><i class="bi bi-plus-circle"></i> Tambah Dokter</button>
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/doctors?format=csv"><i class="bi bi-filetype-csv"></i> CSV</a>
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/doctors?format=xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+        </div>
+    </div>
+
+    <div class="vd-card vd-mb-2">
+        <div class="vd-grid vd-grid-3">
+            <div><label class="vd-form-label">Cari</label><input class="vd-form-control" @bind="_search" @bind:event="oninput" @bind:after="ApplyFilter" placeholder="Nama / Spesialis" /></div>
+            <div><label class="vd-form-label">Status Online</label><select class="vd-form-control" @bind="_onlineFilter" @bind:after="ApplyFilter"><option value="">Semua</option><option value="true">Online</option><option value="false">Offline</option></select></div>
+            <div><label class="vd-form-label">Page Size</label><select class="vd-form-control" @bind="_pageSize" @bind:after="ApplyFilter"><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></div>
+        </div>
+    </div>
+
+    <div class="vd-card" style="overflow-x:auto;">
+        <table class="vd-table">
+            <thead><tr>
+                <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.Doctor.FullName))" style="cursor:pointer;">Nama <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.Doctor.FullName))</span></th>
+                <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.Doctor.Specialization))" style="cursor:pointer;">Spesialis <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.Doctor.Specialization))</span></th>
+                <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.Doctor.ConsultationFee))" style="cursor:pointer;">Biaya <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.Doctor.ConsultationFee))</span></th>
+                <th>Online</th><th>Available</th><th style="width:120px;">Aksi</th></tr></thead>
+            <tbody>
+                @foreach (var d in PagedItems)
+                {
+                    <tr>
+                        <td>@d.FullName</td>
+                        <td>@d.Specialization</td>
+                        <td>Rp@(d.ConsultationFee.ToString("N0"))</td>
+                        <td>@(d.IsOnline ? "Online" : "Offline")</td>
+                        <td>@(d.IsAvailable ? "Ya" : "Tidak")</td>
+                        <td>
+                            <div class="vd-flex vd-gap-1">
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => OpenEditForm(d)"><i class="bi bi-pencil"></i></button>
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" style="color:var(--vd-danger);" @onclick="() => Delete(d)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="vd-flex vd-flex-between mt-2">
+        <small class="vd-text-muted">Hal @_page/@_totalPages · Total @_filtered.Count</small>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => GoPage(_page - 1)">◀</button>
+            <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= _totalPages)" @onclick="() => GoPage(_page + 1)">▶</button>
+        </div>
+    </div>
+}
+
+@if (_showForm)
+{
+    <div class="vd-modal-overlay" @onclick="CloseForm">
+        <div class="vd-modal-content" @onclick:stopPropagation="true">
+            <div class="vd-card-header">
+                <span class="vd-card-title">@(_isEdit ? "✏️ Edit Dokter" : "➕ Tambah Dokter")</span>
+                <button class="btn btn-icon" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="vd-grid vd-grid-2">
+                <div class="vd-form-group"><label class="vd-form-label">Nama</label><input class="vd-form-control" @bind="_formName" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Email</label><input class="vd-form-control" @bind="_formEmail" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Spesialisasi</label><input class="vd-form-control" @bind="_formSpec" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Biaya Konsultasi</label><input type="number" class="vd-form-control" @bind="_formFee" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Available</label><select class="vd-form-control" @bind="_formAvailable"><option value="true">Ya</option><option value="false">Tidak</option></select></div>
+                <div class="vd-form-group"><label class="vd-form-label">Online</label><select class="vd-form-control" @bind="_formOnline"><option value="true">Online</option><option value="false">Offline</option></select></div>
+            </div>
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                <button class="vd-btn vd-btn-outline" @onclick="CloseForm">Batal</button>
+                <button class="vd-btn vd-btn-primary" @onclick="Save">💾 Simpan</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_formMsg)) { <small class="vd-text-muted d-block mt-1">@_formMsg</small> }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isAdmin;
+    private List<VirtualDoctor.Models.Doctor> _all = new();
+    private List<VirtualDoctor.Models.Doctor> _filtered = new();
+    private int _page = 1;
+    private int _pageSize = 10;
+    private int _totalPages = 1;
+    private string _search = "";
+    private string _onlineFilter = "";
+    private string _sortColumn = nameof(VirtualDoctor.Models.Doctor.FullName);
+    private bool _sortAsc = true;
+
+    private bool _showForm;
+    private bool _isEdit;
+    private string _editId = "";
+    private string _formName = "";
+    private string _formEmail = "";
+    private string _formSpec = "";
+    private decimal _formFee = 0;
+    private bool _formAvailable = true;
+    private bool _formOnline = true;
+    private string? _formMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        if (!_isAdmin) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _all = await DoctorService.GetAllAsync();
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        var q = _search.Trim();
+        _filtered = _all.Where(d =>
+            (string.IsNullOrEmpty(q) || d.FullName.Contains(q, StringComparison.OrdinalIgnoreCase) || d.Specialization.Contains(q, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(_onlineFilter) || (_onlineFilter == "true" && d.IsOnline) || (_onlineFilter == "false" && !d.IsOnline))
+        ).ToList();
+        _filtered = ApplySort(_filtered);
+        _page = 1;
+        _totalPages = Math.Max(1, (int)Math.Ceiling(_filtered.Count / (double)_pageSize));
+    }
+
+    private List<VirtualDoctor.Models.Doctor> ApplySort(List<VirtualDoctor.Models.Doctor> data)
+    {
+        return _sortColumn switch
+        {
+            nameof(VirtualDoctor.Models.Doctor.FullName) => _sortAsc ? data.OrderBy(x => x.FullName).ToList() : data.OrderByDescending(x => x.FullName).ToList(),
+            nameof(VirtualDoctor.Models.Doctor.Specialization) => _sortAsc ? data.OrderBy(x => x.Specialization).ToList() : data.OrderByDescending(x => x.Specialization).ToList(),
+            nameof(VirtualDoctor.Models.Doctor.ConsultationFee) => _sortAsc ? data.OrderBy(x => x.ConsultationFee).ToList() : data.OrderByDescending(x => x.ConsultationFee).ToList(),
+            _ => data
+        };
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = true; }
+        ApplyFilter();
+    }
+
+    private string SortIcon(string column)
+    {
+        if (_sortColumn != column) return "";
+        return _sortAsc ? "▲" : "▼";
+    }
+
+    private IEnumerable<VirtualDoctor.Models.Doctor> PagedItems => _filtered.Skip((_page - 1) * _pageSize).Take(_pageSize);
+
+    private void GoPage(int p)
+    {
+        if (p < 1 || p > _totalPages) return;
+        _page = p;
+    }
+
+    private void OpenCreateForm()
+    {
+        ResetForm();
+        _showForm = true;
+    }
+
+    private void OpenEditForm(VirtualDoctor.Models.Doctor d)
+    {
+        _showForm = true;
+        _isEdit = true;
+        _editId = d.Id;
+        _formName = d.FullName;
+        _formEmail = d.Email;
+        _formSpec = d.Specialization;
+        _formFee = d.ConsultationFee;
+        _formAvailable = d.IsAvailable;
+        _formOnline = d.IsOnline;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formMsg = null;
+    }
+
+    private async Task Save()
+    {
+        _formMsg = null;
+        if (string.IsNullOrWhiteSpace(_formName) || string.IsNullOrWhiteSpace(_formSpec))
+        {
+            _formMsg = "Nama dan spesialisasi wajib diisi.";
+            return;
+        }
+
+        if (_isEdit)
+        {
+            var doc = _all.FirstOrDefault(d => d.Id == _editId);
+            if (doc == null) return;
+            doc.FullName = _formName.Trim();
+            doc.Email = _formEmail.Trim();
+            doc.Specialization = _formSpec.Trim();
+            doc.ConsultationFee = _formFee;
+            doc.IsAvailable = _formAvailable;
+            doc.IsOnline = _formOnline;
+            await DoctorService.UpdateAsync(doc);
+        }
+        else
+        {
+            var doc = new VirtualDoctor.Models.Doctor
+            {
+                FullName = _formName.Trim(),
+                Email = _formEmail.Trim(),
+                Specialization = _formSpec.Trim(),
+                ConsultationFee = _formFee,
+                IsAvailable = _formAvailable,
+                IsOnline = _formOnline,
+                CreatedAt = DateTime.UtcNow
+            };
+            await DoctorService.CreateAsync(doc);
+        }
+
+        CloseForm();
+        await LoadData();
+    }
+
+    private async Task Delete(VirtualDoctor.Models.Doctor d)
+    {
+        await DoctorService.DeleteAsync(d.Id);
+        await LoadData();
+    }
+
+    private void ResetForm()
+    {
+        _isEdit = false;
+        _editId = "";
+        _formName = "";
+        _formEmail = "";
+        _formSpec = "";
+        _formFee = 0;
+        _formAvailable = true;
+        _formOnline = true;
+        _formMsg = null;
+    }
+}

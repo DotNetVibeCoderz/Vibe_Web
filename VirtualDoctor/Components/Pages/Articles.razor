@@ -1,0 +1,30 @@
+@page "/articles"
+@page "/articles/{ArticleId}"
+@rendermode InteractiveServer
+@inject Services.IArticleService ArticleService
+@inject Services.RAG.IRagQueryService RagQueryService
+@inject NavigationManager Navigation
+
+@if (!string.IsNullOrEmpty(ArticleId))
+{ @if (_article != null) { <div class="vd-mb-2"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="GoBack">Kembali</button></div><div class="vd-card"><span class="vd-badge vd-badge-info vd-mb-1">@_article.Category</span><h2>@_article.Title</h2><p class="vd-text-muted">Oleh @_article.Author - @_article.PublishedAt.ToString("dd MMM yyyy") - @_article.ViewCount views</p><hr /><p>@_article.Summary</p><div>@_article.Content</div></div>@if (_article.IsIndexed) { <div class="vd-card vd-mb-2"><h5>Tanya AI tentang Artikel Ini</h5><div class="vd-flex vd-gap-1"><input class="vd-form-control" @bind="_ragQuestion" placeholder="Tanyakan..." style="flex:1;" /><button class="vd-btn vd-btn-primary" @onclick="AskRag">Tanya</button></div>@if (!string.IsNullOrEmpty(_ragAnswer)) { <div class="p-3 mt-2" style="background:var(--vd-surface-hover);border-radius:8px;"><strong>Jawaban:</strong><p class="mb-0">@_ragAnswer</p></div> }</div> } } }
+else
+{
+    <div class="vd-mb-2"><h3 class="mb-0">Artikel Kesehatan</h3><small class="vd-text-muted">Informasi kesehatan + RAG AI</small></div>
+    <div class="vd-card vd-mb-2" style="background:linear-gradient(135deg,#ede9fe,#dbeafe);border:none;"><h5>Tanya Artikel via AI (RAG)</h5><p class="vd-text-muted">AI mencari jawaban dari database artikel</p><div class="vd-flex vd-gap-1"><input class="vd-form-control" @bind="_ragGlobalQuestion" placeholder="Contoh: Apa gejala diabetes?" style="flex:1;" /><button class="vd-btn vd-btn-primary" @onclick="AskRagGlobal">Cari & Jawab</button></div>@if (!string.IsNullOrEmpty(_ragGlobalAnswer)) { <div class="p-3 mt-2" style="background:white;border-radius:8px;">@_ragGlobalAnswer</div> }</div>
+    <div class="vd-search-bar"><input type="text" placeholder="Cari artikel..." @bind="_searchQuery" @bind:event="oninput" @bind:after="FilterArticles" style="flex:1;" class="vd-form-control" /></div>
+    <div class="vd-grid vd-grid-2">@foreach (var a in _filteredArticles) { <div class="vd-card" style="cursor:pointer;" @onclick="() => GoToArticle(a.Id)"><div class="vd-flex vd-flex-between vd-mb-1"><span class="vd-badge vd-badge-info">@a.Category</span>@if (a.IsIndexed) { <span class="vd-badge vd-badge-success">RAG</span> }</div><h5>@a.Title</h5><p class="vd-text-muted">@GetSummary(a)</p><small>@a.Author - @a.ViewCount views</small></div> }</div>
+}
+
+@code {
+    [Parameter] public string? ArticleId { get; set; }
+    private VirtualDoctor.Models.HealthArticle? _article; private List<VirtualDoctor.Models.HealthArticle> _allArticles = new(); private List<VirtualDoctor.Models.HealthArticle> _filteredArticles = new();
+    private string _searchQuery = ""; private string _ragQuestion = ""; private string _ragAnswer = ""; private string _ragGlobalQuestion = ""; private string _ragGlobalAnswer = "";
+
+    protected override async Task OnInitializedAsync() { if (!string.IsNullOrEmpty(ArticleId)) { _article = await ArticleService.GetByIdAsync(ArticleId); if (_article != null) _article.ViewCount++; } else { _allArticles = await ArticleService.GetAllAsync(); _filteredArticles = _allArticles; } }
+    private string GetSummary(VirtualDoctor.Models.HealthArticle a) => string.IsNullOrEmpty(a.Summary) ? "" : (a.Summary.Length > 150 ? a.Summary[..150] + "..." : a.Summary);
+    private void FilterArticles() { var q = _searchQuery.ToLower(); _filteredArticles = _allArticles.Where(a => string.IsNullOrEmpty(q) || a.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || (a.Summary != null && a.Summary.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList(); }
+    private async Task AskRag() { _ragAnswer = await RagQueryService.QueryAsync(_ragQuestion); }
+    private async Task AskRagGlobal() { _ragGlobalAnswer = await RagQueryService.QueryAsync(_ragGlobalQuestion); }
+    private void GoToArticle(string id) => Navigation.NavigateTo("/articles/" + id);
+    private void GoBack() => Navigation.NavigateTo("/articles");
+}

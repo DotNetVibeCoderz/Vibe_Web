@@ -1,0 +1,23 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject Services.AI.IAiChatService AiChatService
+
+<div class="vd-mb-2"><h3 class="mb-0">⚙️ Pengaturan</h3><small class="vd-text-muted">Konfigurasi AI, bot, dan preferensi</small></div>
+<div class="vd-grid vd-grid-2">
+    <div class="vd-card"><h5>🤖 Pengaturan Bot AI</h5>
+        <div class="vd-form-group"><label class="vd-form-label">Nama Bot</label><input class="vd-form-control" @bind="_botName" /></div>
+        <div class="vd-form-group"><label class="vd-form-label">System Prompt</label><textarea class="vd-form-control" @bind="_systemPrompt" rows="4"></textarea></div>
+        <div class="vd-form-group"><label class="vd-form-label">Temperature: @_temperature</label><input type="range" min="0" max="1" step="0.1" class="vd-w-100" @bind="_temperature" /></div>
+        <button class="vd-btn vd-btn-primary" @onclick="SaveBot">💾 Simpan</button>
+    </div>
+    <div class="vd-card"><h5>🔌 LLM Providers</h5><p class="vd-text-muted">Konfigurasi via appsettings.json</p>
+        <table class="vd-table"><thead><tr><th>Provider</th><th>Model</th><th>Status</th></tr></thead><tbody><tr><td>OpenAI</td><td>gpt-4o</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Gemini</td><td>gemini-2.0-flash</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Anthropic</td><td>claude-3-5-sonnet</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Ollama</td><td>llama3.1</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr></tbody></table>
+    </div>
+    <div class="vd-card"><h5>📋 Sistem</h5><table class="vd-table"><tbody><tr><td><strong>Framework</strong></td><td>.NET Blazor Server</td></tr><tr><td><strong>Database</strong></td><td>SQLite</td></tr><tr><td><strong>Vector DB</strong></td><td>InMemory</td></tr></tbody></table></div>
+    <div class="vd-card"><h5>🎨 Tampilan</h5><p class="vd-text-muted">Light/Dark toggle di top bar ☀️/🌙</p></div>
+</div>
+
+@code { private string _botName = ""; private string _systemPrompt = ""; private double _temperature = 0.7;
+    protected override async Task OnInitializedAsync() { _botName = await AiChatService.GetBotNameAsync(); }
+    private async Task SaveBot() { await AiChatService.SetBotNameAsync(_botName); await AiChatService.UpdateSystemPromptAsync(_systemPrompt); await AiChatService.UpdateTemperatureAsync(_temperature); }
+}

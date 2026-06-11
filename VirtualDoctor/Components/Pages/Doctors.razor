@@ -1,0 +1,197 @@
+@page "/doctors"
+@page "/doctors/{DoctorId}"
+@rendermode InteractiveServer
+@inject Services.IDoctorService DoctorService
+@inject Services.IReviewService ReviewService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+@if (!string.IsNullOrEmpty(DoctorId))
+{
+    @if (_doctor != null)
+    {
+        <div class="vd-mb-2"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="GoBack">Kembali</button></div>
+        <div class="vd-card vd-mb-2">
+            <div class="vd-flex vd-gap-2">
+                <div class="vd-doctor-avatar" style="width:120px;height:120px;"><i class="bi bi-person-badge-fill" style="font-size:3rem;"></i></div>
+                <div>
+                    <h3>@_doctor.FullName</h3><p class="vd-text-muted">@_doctor.Specialization</p>
+                    <div class="vd-flex vd-gap-1 vd-mb-1">
+                        <span class="vd-badge vd-badge-success">⭐ @(_doctorStats?.AverageRating.ToString("F1") ?? "0.0")</span>
+                        <span class="vd-badge vd-badge-info">@(_doctorStats?.TotalPatients ?? 0) Pasien</span>
+                        <span class="vd-badge vd-badge-primary">@_doctor.ExperienceYears Tahun</span>
+                    </div>
+                    <p>@_doctor.About</p><p>Pendidikan: @_doctor.Education</p><p>Afiliasi: @_doctor.HospitalAffiliation</p>
+                    <p class="vd-medicine-price">Biaya: Rp@(_doctor.ConsultationFee.ToString("N0"))</p>
+                    <div class="vd-flex vd-gap-1"><button class="vd-btn vd-btn-primary" @onclick="StartConsult">Chat Dokter</button><button class="vd-btn vd-btn-success" @onclick="BookNow">Booking Janji</button></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="vd-card vd-mb-2">
+            <div class="vd-card-header">
+                <div class="vd-card-title">📝 Ulasan Pasien</div>
+                <small class="vd-text-muted">@(_doctorStats?.ReviewCount ?? 0) ulasan</small>
+            </div>
+
+            @if (_pendingReviewTarget != null)
+            {
+                <div class="vd-review-form vd-mb-2">
+                    <div class="vd-flex vd-gap-1">
+                        <select class="vd-form-control" style="width:120px;" @bind="_detailRating">
+                            <option value="0">Rating</option>
+                            @for (var i = 1; i <= 5; i++) { <option value="@i">@i ★</option> }
+                        </select>
+                        <input class="vd-form-control" placeholder="Tulis komentar..." @bind="_detailComment" />
+                        <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="SubmitDetailReview">Kirim</button>
+                    </div>
+                    <small class="vd-text-muted">Review hanya untuk konsultasi/appointment yang sudah selesai.</small>
+                </div>
+            }
+
+            @if (_doctorReviews.Any())
+            {
+                <div class="vd-review-list">
+                    @foreach (var rev in _doctorReviews)
+                    {
+                        <div class="vd-review-item">
+                            <div class="vd-flex vd-flex-between">
+                                <strong>@rev.User.FullName</strong>
+                                <span class="vd-badge vd-badge-success">⭐ @rev.Rating</span>
+                            </div>
+                            <small class="vd-text-muted">@rev.CreatedAt.ToString("dd MMM yyyy")</small>
+                            <p class="vd-mb-0">@rev.Comment</p>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="vd-text-muted">Belum ada ulasan.</p>
+            }
+        </div>
+    }
+    else { <p class="text-center mt-5">Dokter tidak ditemukan.</p> }
+}
+else
+{
+    <div class="vd-mb-2"><h3 class="mb-0">Daftar Dokter</h3><small class="vd-text-muted">Konsultasi dengan dokter berpengalaman</small></div>
+    <div class="vd-search-bar">
+        <div class="vd-search-input"><input type="text" placeholder="Cari dokter..." @bind="_searchQuery" @bind:event="oninput" @bind:after="FilterDoctors" /></div>
+        <select class="vd-form-control" style="width:200px;" @bind="_filterSpec" @bind:after="FilterDoctors">
+            <option value="">Semua Spesialisasi</option>
+            @foreach (var spec in _specializations) { <option value="@spec">@spec</option> }
+        </select>
+    </div>
+    <div class="vd-grid vd-grid-3">
+        @foreach (var doc in _filteredDoctors)
+        {
+            var stats = _doctorStatsMap.GetValueOrDefault(doc.Id) ?? new VirtualDoctor.Models.DoctorStats();
+            <div class="vd-doctor-card" @onclick="() => GoToDoctor(doc.Id)">
+                <div class="vd-doctor-avatar"><i class="bi bi-person-badge-fill"></i></div>
+                <div class="vd-doctor-name">@doc.FullName</div><div class="vd-doctor-spec">@doc.Specialization</div>
+                <div class="vd-doctor-rating">⭐ @stats.AverageRating.ToString("F1") (@stats.TotalPatients pasien)</div>
+                <small class="vd-text-muted">Rp@(doc.ConsultationFee.ToString("N0"))/konsultasi</small>
+                <div class="mt-2">@if (doc.IsOnline) { <span class="vd-badge vd-badge-success">Online</span> } else { <span class="vd-badge vd-badge-info">Offline</span> }</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? DoctorId { get; set; }
+    private VirtualDoctor.Models.Doctor? _doctor;
+    private VirtualDoctor.Models.DoctorStats? _doctorStats;
+    private VirtualDoctor.Models.DoctorReviewTarget? _pendingReviewTarget;
+    private List<VirtualDoctor.Models.DoctorReview> _doctorReviews = new();
+    private Dictionary<string, VirtualDoctor.Models.DoctorStats> _doctorStatsMap = new();
+    private List<VirtualDoctor.Models.Doctor> _allDoctors = new();
+    private List<VirtualDoctor.Models.Doctor> _filteredDoctors = new();
+    private List<string> _specializations = new();
+    private string _searchQuery = "";
+    private string _filterSpec = "";
+    private int _detailRating;
+    private string _detailComment = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (!string.IsNullOrEmpty(DoctorId))
+        {
+            _doctor = await DoctorService.GetByIdAsync(DoctorId);
+            if (_doctor != null)
+            {
+                _doctorStats = await ReviewService.GetDoctorStatsAsync(DoctorId);
+                _doctorReviews = await ReviewService.GetDoctorReviewsAsync(DoctorId, 8);
+                var user = await AuthService.GetCurrentUserAsync();
+                if (user != null)
+                {
+                    _pendingReviewTarget = await ReviewService.GetPendingReviewForDoctorAsync(DoctorId, user.Id);
+                }
+            }
+            return;
+        }
+
+        _doctor = null;
+        _doctorStats = null;
+        _allDoctors = await DoctorService.GetAllAsync();
+        _filteredDoctors = _allDoctors;
+        _specializations = _allDoctors.Select(d => d.Specialization).Distinct().ToList();
+
+        _doctorStatsMap.Clear();
+        foreach (var doc in _allDoctors)
+        {
+            _doctorStatsMap[doc.Id] = await ReviewService.GetDoctorStatsAsync(doc.Id);
+        }
+
+        FilterDoctors();
+    }
+
+    private void FilterDoctors()
+    {
+        var q = _searchQuery.ToLower();
+        _filteredDoctors = _allDoctors.Where(d =>
+            (string.IsNullOrEmpty(q) || d.FullName.Contains(q, StringComparison.OrdinalIgnoreCase) || d.Specialization.Contains(q, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(_filterSpec) || d.Specialization == _filterSpec)).ToList();
+    }
+
+    private async Task SubmitDetailReview()
+    {
+        if (_pendingReviewTarget == null || _detailRating < 1) return;
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user == null) return;
+
+        VirtualDoctor.Models.DoctorReview? review = null;
+        if (_pendingReviewTarget.SourceType == VirtualDoctor.Models.ReviewSourceType.Consultation)
+        {
+            review = await ReviewService.CreateReviewForConsultationAsync(_pendingReviewTarget.SourceId, user.Id, _detailRating, _detailComment);
+        }
+        else
+        {
+            review = await ReviewService.CreateReviewForAppointmentAsync(_pendingReviewTarget.SourceId, user.Id, _detailRating, _detailComment);
+        }
+
+        if (review != null && DoctorId != null)
+        {
+            _detailRating = 0;
+            _detailComment = "";
+            _doctorStats = await ReviewService.GetDoctorStatsAsync(DoctorId);
+            _doctorReviews = await ReviewService.GetDoctorReviewsAsync(DoctorId, 8);
+            _pendingReviewTarget = await ReviewService.GetPendingReviewForDoctorAsync(DoctorId, user.Id);
+        }
+    }
+
+    private void GoToDoctor(string id) => Navigation.NavigateTo("/doctors/" + id);
+    private void GoBack() => Navigation.NavigateTo("/doctors");
+    private void StartConsult() => Navigation.NavigateTo("/consultations/new?doctorId=" + DoctorId);
+    private void BookNow() => Navigation.NavigateTo("/appointments/new?doctorId=" + DoctorId);
+}

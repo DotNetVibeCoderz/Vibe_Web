@@ -1,0 +1,50 @@
+@page "/auth/register"
+@layout MinimalLayout
+@attribute [AllowAnonymous]
+
+<div class="vd-auth-container">
+    <div class="vd-auth-card">
+        <div class="vd-auth-logo">
+            <i class="bi bi-heart-pulse-fill"></i>
+            <h2>Daftar Akun</h2>
+            <p class="vd-text-muted">Bergabung dengan VirtualDoctor</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+        @if (!string.IsNullOrEmpty(_success)) { <div class="alert alert-success">@_success</div> }
+
+        @if (!_registered)
+        {
+            <!-- data-enhanced="false" agar redirect setelah register bekerja -->
+            <form method="post" action="/auth/register-handler" data-enhanced="false">
+                <div class="vd-form-group"><label class="vd-form-label">Nama Lengkap *</label><input type="text" name="fullName" class="vd-form-control" placeholder="Masukkan nama..." required /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Email *</label><input type="email" name="email" class="vd-form-control" placeholder="Masukkan email..." required /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Password * (min 8)</label><input type="password" name="password" class="vd-form-control" placeholder="Minimal 8 karakter..." required minlength="8" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Konfirmasi Password *</label><input type="password" name="confirmPassword" class="vd-form-control" placeholder="Ulangi password..." required minlength="8" /></div>
+                <button type="submit" class="vd-btn vd-btn-primary vd-btn-lg vd-w-100 vd-mb-2"><i class="bi bi-person-plus"></i> Daftar</button>
+            </form>
+        }
+        else
+        {
+            <div class="text-center">
+                <i class="bi bi-check-circle-fill" style="font-size:3rem;color:var(--vd-accent);"></i>
+                <h5 class="mt-2">Pendaftaran Berhasil!</h5>
+                <p class="vd-text-muted">Silakan login dengan akun baru Anda.</p>
+                <a href="/auth/login" class="vd-btn vd-btn-primary vd-btn-lg vd-w-100">Ke Halaman Login</a>
+            </div>
+        }
+        <div class="text-center mt-3"><a href="/auth/login">Sudah punya akun? Masuk</a></div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? error { get; set; }
+    [SupplyParameterFromQuery] private bool registered { get; set; }
+    private string? _error; private string? _success; private bool _registered;
+    protected override void OnInitialized()
+    {
+        _registered = registered;
+        _error = error switch { "email" => "Email sudah terdaftar.", "password" => "Password tidak cocok/min 8 karakter.", "name" => "Nama harus diisi.", _ => null };
+        if (_registered) _success = "Pendaftaran berhasil!";
+    }
+}

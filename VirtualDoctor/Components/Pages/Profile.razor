@@ -1,0 +1,150 @@
+@page "/profile"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Forms
+@inject Services.IAuthService AuthService
+@inject Services.IUserService UserService
+@inject Services.Storage.IFileStorageService StorageService
+
+<div class="vd-mb-2"><h3 class="mb-0">👤 Profil Saya</h3></div>
+
+@if (_user != null)
+{
+    <div class="vd-grid vd-grid-2">
+        <div class="vd-card">
+            <div class="text-center vd-mb-2">
+                <div class="vd-doctor-avatar" style="width:100px;height:100px;margin:0 auto;overflow:hidden;">
+                    @if (!string.IsNullOrWhiteSpace(_avatarUrl))
+                    {
+                        <img src="@_avatarUrl" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                    }
+                    else
+                    {
+                        <i class="bi bi-person-circle" style="font-size:3rem;"></i>
+                    }
+                </div>
+                <h4 class="mt-2">@_user.FullName</h4><p class="vd-text-muted">@_user.Email</p>
+
+                <div class="vd-mt-2">
+                    <InputFile OnChange="OnAvatarSelected" accept="image/*" />
+                    @if (!string.IsNullOrEmpty(_avatarMsg))
+                    {
+                        <small class="vd-text-muted d-block mt-1">@_avatarMsg</small>
+                    }
+                </div>
+            </div>
+            <table class="vd-table">
+                <tbody>
+                    <tr><td><strong>Telepon</strong></td><td>@(_user.PhoneNumber ?? "-")</td></tr>
+                    <tr><td><strong>Tanggal Lahir</strong></td><td>@_user.DateOfBirth.ToString("dd MMM yyyy")</td></tr>
+                    <tr><td><strong>Jenis Kelamin</strong></td><td>@(_user.Gender ?? "-")</td></tr>
+                    <tr><td><strong>Golongan Darah</strong></td><td>@(_user.BloodType ?? "-")</td></tr>
+                    <tr><td><strong>Alamat</strong></td><td>@(_user.Address ?? "-")</td></tr>
+                    <tr><td><strong>Bergabung</strong></td><td>@_user.CreatedAt.ToString("dd MMM yyyy")</td></tr>
+                </tbody>
+            </table>
+            <a href="/auth/logout" class="vd-btn vd-btn-danger vd-btn-sm mt-2"><i class="bi bi-box-arrow-right"></i> Keluar dari Akun</a>
+        </div>
+
+        <div>
+            <div class="vd-card vd-mb-2">
+                <h5>✏️ Edit Profil</h5>
+                <div class="vd-form-group"><label class="vd-form-label">Nama Lengkap</label><input class="vd-form-control" @bind="_editName" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Telepon</label><input class="vd-form-control" @bind="_editPhone" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Alamat</label><textarea class="vd-form-control" @bind="_editAddress" rows="2"></textarea></div>
+                <button class="vd-btn vd-btn-primary" @onclick="SaveProfile">💾 Simpan Perubahan</button>
+                @if (!string.IsNullOrEmpty(_saveMsg)) { <small class="vd-text-muted mt-1 d-block">@_saveMsg</small> }
+            </div>
+
+            <div class="vd-card">
+                <h5>🔒 Ganti Password</h5>
+                <div class="vd-form-group"><label class="vd-form-label">Password Lama</label><input type="password" class="vd-form-control" @bind="_oldPassword" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Password Baru (min 8 karakter)</label><input type="password" class="vd-form-control" @bind="_newPassword" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Konfirmasi Password Baru</label><input type="password" class="vd-form-control" @bind="_confirmNewPassword" /></div>
+                <button class="vd-btn vd-btn-primary" @onclick="ChangePassword">🔒 Ganti Password</button>
+                @if (!string.IsNullOrEmpty(_pwdMsg)) { <small class="vd-text-muted mt-1 d-block">@_pwdMsg</small> }
+            </div>
+        </div>
+    </div>
+}
+else { <p class="vd-text-muted">Memuat profil...</p> }
+
+@code {
+    private VirtualDoctor.Models.ApplicationUser? _user;
+    private string _editName = ""; private string _editPhone = ""; private string _editAddress = "";
+    private string _oldPassword = ""; private string _newPassword = ""; private string _confirmNewPassword = "";
+    private string? _saveMsg; private string? _pwdMsg;
+    private string? _avatarUrl; private string? _avatarMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await AuthService.GetCurrentUserAsync();
+        if (_user != null)
+        {
+            _editName = _user.FullName;
+            _editPhone = _user.PhoneNumber ?? "";
+            _editAddress = _user.Address ?? "";
+            _avatarUrl = _user.AvatarUrl;
+        }
+    }
+
+    private async Task OnAvatarSelected(InputFileChangeEventArgs e)
+    {
+        if (_user == null) return;
+        _avatarMsg = null;
+
+        var file = e.File;
+        if (file == null) return;
+
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp", "image/gif" };
+        if (!allowedTypes.Contains(file.ContentType))
+        {
+            _avatarMsg = "❌ Format gambar harus JPG/PNG/WEBP/GIF.";
+            return;
+        }
+
+        const long maxSize = 2 * 1024 * 1024; // 2MB
+        if (file.Size > maxSize)
+        {
+            _avatarMsg = "❌ Ukuran file maksimal 2MB.";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxSize);
+            var path = await StorageService.UploadAsync(stream, file.Name, file.ContentType);
+            var url = await StorageService.GetPublicUrlAsync(path);
+
+            _user.AvatarUrl = url;
+            var ok = await UserService.UpdateProfileAsync(_user);
+            _avatarUrl = ok ? url : _avatarUrl;
+            _avatarMsg = ok ? "✅ Foto profil berhasil diupdate." : "❌ Gagal menyimpan foto.";
+        }
+        catch (Exception ex)
+        {
+            _avatarMsg = $"❌ Upload gagal: {ex.Message}";
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        if (_user == null) return;
+        _user.FullName = _editName; _user.PhoneNumber = _editPhone; _user.Address = _editAddress;
+        var ok = await UserService.UpdateProfileAsync(_user);
+        _saveMsg = ok ? "✅ Profil berhasil disimpan" : "❌ Gagal menyimpan";
+    }
+
+    private async Task ChangePassword()
+    {
+        _pwdMsg = null;
+        if (string.IsNullOrWhiteSpace(_oldPassword)) { _pwdMsg = "❌ Masukkan password lama."; return; }
+        if (_newPassword.Length < 8) { _pwdMsg = "❌ Password baru minimal 8 karakter."; return; }
+        if (_newPassword != _confirmNewPassword) { _pwdMsg = "❌ Password baru tidak cocok."; return; }
+        if (_user == null) return;
+
+        var ok = await AuthService.ChangePasswordAsync(_user.Id, _oldPassword, _newPassword);
+        _pwdMsg = ok ? "✅ Password berhasil diganti!" : "❌ Password lama salah.";
+        if (ok) { _oldPassword = ""; _newPassword = ""; _confirmNewPassword = ""; }
+    }
+}

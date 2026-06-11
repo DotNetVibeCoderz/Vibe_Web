@@ -1,0 +1,75 @@
+@page "/doctor/appointments"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.IAppointmentService AppointmentService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="vd-mb-2"><h3 class="mb-0">🗓️ Appointment Dokter</h3></div>
+
+@if (_appointments.Any())
+{
+    <table class="vd-table vd-card">
+        <thead>
+            <tr><th>Pasien</th><th>Tanggal</th><th>Tipe</th><th>Status</th><th>Biaya</th><th>Aksi</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var apt in _appointments)
+            {
+                <tr>
+                    <td>@apt.User?.FullName</td>
+                    <td>@apt.AppointmentDate.ToString("dd/MM/yyyy")</td>
+                    <td>@(apt.Type == VirtualDoctor.Models.AppointmentType.Online ? "Online" : "Tatap Muka")</td>
+                    <td><span class="vd-badge @GetBadge(apt.Status)">@apt.Status</span></td>
+                    <td>Rp@(apt.EstimatedCost.ToString("N0"))</td>
+                    <td>
+                        @if (apt.Status == VirtualDoctor.Models.AppointmentStatus.Scheduled || apt.Status == VirtualDoctor.Models.AppointmentStatus.Confirmed)
+                        {
+                            <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => UpdateStatus(apt.Id, VirtualDoctor.Models.AppointmentStatus.InProgress)">Mulai</button>
+                        }
+                        else if (apt.Status == VirtualDoctor.Models.AppointmentStatus.InProgress)
+                        {
+                            <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="() => UpdateStatus(apt.Id, VirtualDoctor.Models.AppointmentStatus.Completed)">Selesai</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <div class="vd-card text-center p-5"><h4>Belum ada appointment</h4></div>
+}
+
+@code {
+    private string _doctorId = string.Empty;
+    private List<VirtualDoctor.Models.Appointment> _appointments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user == null || !user.IsDoctor || string.IsNullOrEmpty(user.DoctorId))
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        _doctorId = user.DoctorId;
+        _appointments = await AppointmentService.GetDoctorAppointmentsAsync(_doctorId);
+    }
+
+    private async Task UpdateStatus(string id, VirtualDoctor.Models.AppointmentStatus status)
+    {
+        await AppointmentService.UpdateStatusAsync(id, status);
+        _appointments = await AppointmentService.GetDoctorAppointmentsAsync(_doctorId);
+    }
+
+    private string GetBadge(VirtualDoctor.Models.AppointmentStatus s) => s switch
+    {
+        VirtualDoctor.Models.AppointmentStatus.Scheduled => "vd-badge-info",
+        VirtualDoctor.Models.AppointmentStatus.Confirmed => "vd-badge-primary",
+        VirtualDoctor.Models.AppointmentStatus.InProgress => "vd-badge-warning",
+        VirtualDoctor.Models.AppointmentStatus.Completed => "vd-badge-success",
+        _ => "vd-badge-danger"
+    };
+}

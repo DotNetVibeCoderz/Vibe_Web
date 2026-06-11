@@ -1,0 +1,140 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject Services.IAuthService AuthService
+
+<div class="vd-app @(_darkMode ? "dark-theme" : "")">
+    <aside class="vd-sidebar @(_sidebarCollapsed ? "collapsed" : "")">
+        <div class="vd-sidebar-header">
+            <a href="/" class="vd-logo">
+                <span class="vd-logo-mark vd-icon vd-icon-brand"></span>
+                @if (!_sidebarCollapsed) { <span>VirtualDoctor</span> }
+            </a>
+            <button class="btn-toggle" @onclick="ToggleSidebar" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+                <i class="bi bi-list"></i>
+            </button>
+        </div>
+
+        <nav class="vd-nav">
+            <NavLink href="/" Match="NavLinkMatch.All"><span class="vd-icon vd-icon-home"></span> <span>Beranda</span></NavLink>
+            <NavLink href="/ai-chat"><span class="vd-icon vd-icon-ai"></span> <span>AI Chat</span></NavLink>
+            <NavLink href="/doctors"><span class="vd-icon vd-icon-doctor"></span> <span>Dokter</span></NavLink>
+            <NavLink href="/consultations"><span class="vd-icon vd-icon-chat"></span> <span>Konsultasi</span></NavLink>
+            <NavLink href="/appointments"><span class="vd-icon vd-icon-calendar"></span> <span>Booking</span></NavLink>
+            <NavLink href="/pharmacy"><span class="vd-icon vd-icon-pharmacy"></span> <span>Farmasi</span></NavLink>
+            <NavLink href="/homecare"><span class="vd-icon vd-icon-homecare"></span> <span>Homecare</span></NavLink>
+            <NavLink href="/hospitals"><span class="vd-icon vd-icon-hospital"></span> <span>RS/Klinik</span></NavLink>
+            <NavLink href="/articles"><span class="vd-icon vd-icon-article"></span> <span>Artikel</span></NavLink>
+            <NavLink href="/dashboard"><span class="vd-icon vd-icon-dashboard"></span> <span>Dashboard</span></NavLink>
+            <NavLink href="/settings"><span class="vd-icon vd-icon-settings"></span> <span>Pengaturan</span></NavLink>
+
+            @if (_isDoctor)
+            {
+                <div class="vd-nav-divider"></div>
+                <NavLink href="/doctor/consultations"><span class="vd-icon vd-icon-chat"></span> <span>Dokter - Konsultasi</span></NavLink>
+                <NavLink href="/doctor/appointments"><span class="vd-icon vd-icon-calendar"></span> <span>Dokter - Appointment</span></NavLink>
+            }
+
+            @if (_isAdmin)
+            {
+                <div class="vd-nav-divider"></div>
+                <NavLink href="/admin/users"><span class="vd-icon vd-icon-admin"></span> <span>Admin Users</span></NavLink>
+                <NavLink href="/admin/doctors"><span class="vd-icon vd-icon-admin"></span> <span>Admin Dokter</span></NavLink>
+                <NavLink href="/admin/hospitals"><span class="vd-icon vd-icon-admin"></span> <span>Admin RS/Klinik</span></NavLink>
+                <NavLink href="/admin/medicines"><span class="vd-icon vd-icon-admin"></span> <span>Admin Obat</span></NavLink>
+                <NavLink href="/admin/articles"><span class="vd-icon vd-icon-admin"></span> <span>Admin Artikel</span></NavLink>
+                <NavLink href="/admin/appointments"><span class="vd-icon vd-icon-admin"></span> <span>Admin Booking</span></NavLink>
+                <NavLink href="/admin/doctor-schedules"><span class="vd-icon vd-icon-admin"></span> <span>Admin Jadwal</span></NavLink>
+                <NavLink href="/admin/homecare"><span class="vd-icon vd-icon-admin"></span> <span>Admin Homecare</span></NavLink>
+            }
+        </nav>
+
+        <div class="vd-sidebar-footer">
+            <small class="text-muted">© 2025 VirtualDoctor</small>
+        </div>
+    </aside>
+
+    <main class="vd-main">
+        <header class="vd-topbar">
+            <div class="vd-topbar-left">
+                <button class="btn btn-icon" @onclick="ToggleSidebar" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+                    <i class="bi bi-list"></i>
+                </button>
+                <span class="vd-page-title">@_pageTitle</span>
+            </div>
+            <div class="vd-topbar-right">
+                <button class="vd-theme-toggle @(_darkMode ? "is-dark" : "")" @onclick="ToggleDarkMode" title="Tema" aria-label="Tema">
+                    <span class="vd-icon vd-icon-sun"></span>
+                    <span class="vd-icon vd-icon-moon"></span>
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-icon dropdown-toggle" data-bs-toggle="dropdown"><span class="vd-icon vd-icon-user"></span></button>
+                    <div class="dropdown-menu dropdown-menu-end">
+                        <span class="dropdown-item-text fw-bold">@_userName</span>
+                        <div class="dropdown-divider"></div>
+                        <a href="/profile" class="dropdown-item"><i class="bi bi-person"></i> Profil</a>
+                        @if (_isAdmin)
+                        {
+                            <a href="/admin/users" class="dropdown-item"><i class="bi bi-people"></i> Admin Users</a>
+                            <a href="/admin/articles" class="dropdown-item"><i class="bi bi-journal-medical"></i> Admin Artikel</a>
+                        }
+                        <a href="/settings" class="dropdown-item"><i class="bi bi-gear"></i> Pengaturan</a>
+                        <div class="dropdown-divider"></div>
+                        <a href="/auth/logout" class="dropdown-item text-danger"><i class="bi bi-box-arrow-right"></i> Keluar</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="vd-content vd-page-enter">@Body</div>
+    </main>
+</div>
+
+@code {
+    private bool _sidebarCollapsed;
+    private bool _darkMode;
+    private string _pageTitle = "Beranda";
+    private string _userName = "User";
+    private bool _isAdmin;
+    private bool _isDoctor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user != null) _userName = user.FullName;
+        _isAdmin = AuthService.IsAdmin();
+        _isDoctor = AuthService.IsDoctor();
+
+        Navigation.LocationChanged += (_, e) =>
+        {
+            _pageTitle = e.Location switch
+            {
+                "/" => "Beranda",
+                string u when u.Contains("admin/users") => "Admin Users",
+                string u when u.Contains("admin/doctors") => "Admin Dokter",
+                string u when u.Contains("admin/hospitals") => "Admin RS/Klinik",
+                string u when u.Contains("admin/medicines") => "Admin Obat",
+                string u when u.Contains("admin/articles") => "Admin Artikel",
+                string u when u.Contains("admin/appointments") => "Admin Booking",
+                string u when u.Contains("admin/doctor-schedules") => "Admin Jadwal",
+                string u when u.Contains("admin/homecare") => "Admin Homecare",
+                string u when u.Contains("doctor/consultations") => "Dokter - Konsultasi",
+                string u when u.Contains("doctor/appointments") => "Dokter - Appointment",
+                string u when u.Contains("ai-chat") => "AI Chat",
+                string u when u.Contains("doctors") => "Dokter",
+                string u when u.Contains("consultations") => "Konsultasi",
+                string u when u.Contains("appointments") => "Booking",
+                string u when u.Contains("pharmacy") => "Farmasi",
+                string u when u.Contains("homecare") => "Homecare",
+                string u when u.Contains("hospitals") => "RS/Klinik",
+                string u when u.Contains("articles") => "Artikel",
+                string u when u.Contains("dashboard") => "Dashboard",
+                string u when u.Contains("settings") => "Pengaturan",
+                _ => "VirtualDoctor"
+            };
+            StateHasChanged();
+        };
+    }
+
+    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+    private void ToggleDarkMode() => _darkMode = !_darkMode;
+}

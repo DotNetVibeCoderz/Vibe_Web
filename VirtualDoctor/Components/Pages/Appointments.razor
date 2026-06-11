@@ -1,0 +1,138 @@
+@page "/appointments"
+@page "/appointments/new"
+@rendermode InteractiveServer
+@inject Services.IAppointmentService AppointmentService
+@inject Services.IDoctorService DoctorService
+@inject Services.IHospitalService HospitalService
+@inject Services.IReviewService ReviewService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+@if (_isNewBooking)
+{
+    <div class="vd-mb-2"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="CancelNew">Kembali</button></div>
+    <div class="vd-card">
+        <h4 class="vd-mb-2">Booking Janji Konsultasi</h4>
+        <div class="vd-grid vd-grid-2">
+            <div><label class="vd-form-label">Dokter</label><select class="vd-form-control" @bind="_selectedDoctorId">@foreach (var doc in _doctors) { <option value="@doc.Id">@doc.FullName</option> }</select></div>
+            <div><label class="vd-form-label">Jenis</label><select class="vd-form-control" @bind="_appointmentType"><option value="InPerson">Tatap Muka</option><option value="Online">Online</option></select></div>
+        </div>
+        @if (_appointmentType == "InPerson") { <div class="vd-form-group"><label class="vd-form-label">RS/Klinik</label><select class="vd-form-control" @bind="_selectedHospitalId">@foreach (var h in _hospitals) { <option value="@h.Id">@h.Name</option> }</select></div> }
+        <div class="vd-grid vd-grid-2"><div><label class="vd-form-label">Tanggal (yyyy-MM-dd)</label><input class="vd-form-control" @bind="_apptDateStr" /></div><div><label class="vd-form-label">Jam (HH:mm)</label><input class="vd-form-control" @bind="_apptTimeStr" /></div></div>
+        <div class="vd-form-group"><label class="vd-form-label">Catatan</label><textarea class="vd-form-control" @bind="_notes" rows="3"></textarea></div>
+        <p><strong>Biaya:</strong> Rp@(_estFee.ToString("N0"))</p>
+        <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="BookNow">Buat Janji</button>
+    </div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">Booking & Janji</h3></div><button class="vd-btn vd-btn-primary" @onclick="StartNew">+ Booking Baru</button></div>
+    @if (_myAppointments.Any())
+    {
+        <table class="vd-table vd-card">
+            <thead>
+                <tr><th>Dokter</th><th>Tanggal</th><th>Tipe</th><th>Status</th><th>Biaya</th><th>Rating</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var apt in _myAppointments)
+                {
+                    var review = _appointmentReviews.GetValueOrDefault(apt.Id);
+                    EnsureAppointmentReviewState(apt.Id);
+                    <tr>
+                        <td>@apt.Doctor?.FullName</td>
+                        <td>@apt.AppointmentDate.ToString("dd/MM/yyyy")</td>
+                        <td>@(apt.Type == VirtualDoctor.Models.AppointmentType.Online ? "Online" : "Tatap Muka")</td>
+                        <td><span class="vd-badge @GetBadge(apt.Status)">@apt.Status</span></td>
+                        <td>Rp@(apt.EstimatedCost.ToString("N0"))</td>
+                        <td>
+                            @if (apt.Status == VirtualDoctor.Models.AppointmentStatus.Completed)
+                            {
+                                if (review != null)
+                                {
+                                    <span class="vd-badge vd-badge-success">⭐ @review.Rating</span>
+                                    <small class="vd-text-muted d-block">@review.Comment</small>
+                                }
+                                else
+                                {
+                                    <div class="vd-review-form">
+                                        <select class="vd-form-control" style="width:110px;" @bind="_pendingAppointmentRatings[apt.Id]">
+                                            <option value="0">Rating</option>
+                                            @for (var i = 1; i <= 5; i++) { <option value="@i">@i ★</option> }
+                                        </select>
+                                        <input class="vd-form-control" placeholder="Komentar..." @bind="_pendingAppointmentComments[apt.Id]" />
+                                        <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="() => SubmitAppointmentReview(apt.Id)">Rating</button>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <small class="vd-text-muted">-</small>
+                            }
+                        </td>
+                        <td>@if (apt.Status == VirtualDoctor.Models.AppointmentStatus.Scheduled) { <button class="vd-btn vd-btn-danger vd-btn-sm" @onclick="() => CancelApt(apt.Id)">Batal</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else { <div class="vd-card text-center p-5"><h4>Belum ada janji</h4></div> }
+}
+
+@code {
+    private bool _isNewBooking; private string _selectedDoctorId = ""; private string _selectedHospitalId = ""; private string _appointmentType = "InPerson";
+    private string _apptDateStr = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd"); private string _apptTimeStr = "09:00"; private string _notes = ""; private decimal _estFee;
+    private List<VirtualDoctor.Models.Doctor> _doctors = new(); private List<VirtualDoctor.Models.Hospital> _hospitals = new();
+    private List<VirtualDoctor.Models.Appointment> _myAppointments = new();
+    private Dictionary<string, VirtualDoctor.Models.DoctorReview> _appointmentReviews = new();
+    private Dictionary<string, int> _pendingAppointmentRatings = new();
+    private Dictionary<string, string> _pendingAppointmentComments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _doctors = await DoctorService.GetAllAsync(); _hospitals = await HospitalService.GetByTypeAsync(VirtualDoctor.Models.HospitalType.Hospital);
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user != null)
+        {
+            _myAppointments = await AppointmentService.GetUserAppointmentsAsync(user.Id);
+            await LoadReviewsAsync(user.Id);
+        }
+        var uri = new Uri(Navigation.Uri); var q = System.Web.HttpUtility.ParseQueryString(uri.Query); var did = q["doctorId"];
+        if (!string.IsNullOrEmpty(did)) { _isNewBooking = true; _selectedDoctorId = did; var d = await DoctorService.GetByIdAsync(did); _estFee = d?.ConsultationFee ?? 0; }
+    }
+    private void StartNew() => _isNewBooking = true; private void CancelNew() => _isNewBooking = false;
+    private async Task BookNow() { var u = await AuthService.GetCurrentUserAsync(); if (u == null || string.IsNullOrEmpty(_selectedDoctorId)) return; var apt = new VirtualDoctor.Models.Appointment { UserId = u.Id, DoctorId = _selectedDoctorId, HospitalId = string.IsNullOrEmpty(_selectedHospitalId) ? null : _selectedHospitalId, AppointmentDate = DateTime.Parse(_apptDateStr), StartTime = TimeSpan.Parse(_apptTimeStr), EndTime = TimeSpan.Parse(_apptTimeStr).Add(TimeSpan.FromMinutes(30)), Type = _appointmentType == "Online" ? VirtualDoctor.Models.AppointmentType.Online : VirtualDoctor.Models.AppointmentType.InPerson, EstimatedCost = _estFee, Notes = _notes }; await AppointmentService.BookAsync(apt); _isNewBooking = false; _myAppointments = await AppointmentService.GetUserAppointmentsAsync(u.Id); await LoadReviewsAsync(u.Id); }
+    private async Task CancelApt(string id) { await AppointmentService.CancelAsync(id); var u = await AuthService.GetCurrentUserAsync(); if (u != null) { _myAppointments = await AppointmentService.GetUserAppointmentsAsync(u.Id); await LoadReviewsAsync(u.Id); } }
+    private string GetBadge(VirtualDoctor.Models.AppointmentStatus s) => s switch { VirtualDoctor.Models.AppointmentStatus.Scheduled => "vd-badge-info", VirtualDoctor.Models.AppointmentStatus.Confirmed => "vd-badge-primary", VirtualDoctor.Models.AppointmentStatus.InProgress => "vd-badge-warning", VirtualDoctor.Models.AppointmentStatus.Completed => "vd-badge-success", _ => "vd-badge-danger" };
+
+    private void EnsureAppointmentReviewState(string appointmentId)
+    {
+        if (!_pendingAppointmentRatings.ContainsKey(appointmentId)) _pendingAppointmentRatings[appointmentId] = 0;
+        if (!_pendingAppointmentComments.ContainsKey(appointmentId)) _pendingAppointmentComments[appointmentId] = string.Empty;
+    }
+
+    private async Task LoadReviewsAsync(string userId)
+    {
+        _appointmentReviews.Clear();
+        var reviews = await ReviewService.GetReviewsByUserAsync(userId);
+        foreach (var rev in reviews.Where(r => r.AppointmentId != null))
+        {
+            _appointmentReviews[rev.AppointmentId!] = rev;
+        }
+    }
+
+    private async Task SubmitAppointmentReview(string appointmentId)
+    {
+        var u = await AuthService.GetCurrentUserAsync();
+        if (u == null) return;
+        if (!_pendingAppointmentRatings.TryGetValue(appointmentId, out var rating) || rating < 1) return;
+        _pendingAppointmentComments.TryGetValue(appointmentId, out var comment);
+
+        var review = await ReviewService.CreateReviewForAppointmentAsync(appointmentId, u.Id, rating, comment ?? "");
+        if (review != null)
+        {
+            _appointmentReviews[appointmentId] = review;
+            _pendingAppointmentRatings[appointmentId] = 0;
+            _pendingAppointmentComments[appointmentId] = string.Empty;
+        }
+    }
+}

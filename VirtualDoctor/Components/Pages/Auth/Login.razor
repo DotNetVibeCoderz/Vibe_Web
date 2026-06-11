@@ -1,0 +1,62 @@
+@page "/auth/login"
+@layout MinimalLayout
+@attribute [AllowAnonymous]
+
+<div class="vd-auth-container">
+    <div class="vd-auth-card">
+        <div class="vd-auth-logo">
+            <i class="bi bi-heart-pulse-fill"></i>
+            <h2>VirtualDoctor</h2>
+            <p class="vd-text-muted">Platform Kesehatan Digital</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger">@_error</div>
+        }
+
+        <!-- data-enhanced="false" agar form submit full page dan redirect berfungsi -->
+        <form method="post" action="/auth/login-handler" data-enhanced="false">
+            <div class="vd-form-group">
+                <label class="vd-form-label">Email</label>
+                <input type="email" name="email" class="vd-form-control" placeholder="Masukkan email..." required />
+            </div>
+            <div class="vd-form-group">
+                <label class="vd-form-label">Password</label>
+                <input type="password" name="password" class="vd-form-control" placeholder="Masukkan password..." required />
+            </div>
+            <div class="vd-form-group">
+                <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" name="remember" value="true" checked /> Ingat saya
+                </label>
+            </div>
+            <button type="submit" class="vd-btn vd-btn-primary vd-btn-lg vd-w-100 vd-mb-2">
+                <i class="bi bi-box-arrow-in-right"></i> Masuk
+            </button>
+        </form>
+
+        <div class="vd-flex vd-flex-between vd-mb-2">
+            <a href="/auth/register">Belum punya akun?</a>
+            <a href="/auth/reset-password" class="vd-text-muted">Lupa password?</a>
+        </div>
+
+        <div class="text-center">
+            <small class="vd-text-muted">Demo: budi@email.com / Password123!</small>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? error { get; set; }
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _error = error switch
+        {
+            "invalid" => "Email atau password salah. Silakan coba lagi.",
+            "denied" => "Akses ditolak. Silakan login terlebih dahulu.",
+            _ => null
+        };
+    }
+}

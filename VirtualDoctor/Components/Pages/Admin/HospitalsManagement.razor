@@ -1,0 +1,256 @@
+@page "/admin/hospitals"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using VirtualDoctor.Models
+@inject Services.IHospitalService HospitalService
+@inject Services.IAuthService AuthService
+
+@if (!_isAdmin)
+{
+    <div class="vd-card text-center p-5 mt-5">
+        <i class="bi bi-shield-lock-fill" style="font-size:4rem;color:var(--vd-danger);"></i>
+        <h3 class="mt-3">Akses Ditolak</h3>
+        <p class="vd-text-muted">Halaman ini hanya untuk administrator.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke Beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between">
+        <div>
+            <h3 class="mb-0"><i class="bi bi-hospital"></i> Master RS/Klinik</h3>
+            <small class="vd-text-muted">CRUD + Export + Filter + Paging</small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="OpenCreateForm"><i class="bi bi-plus-circle"></i> Tambah RS/Klinik</button>
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/hospitals?format=csv"><i class="bi bi-filetype-csv"></i> CSV</a>
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/hospitals?format=xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+        </div>
+    </div>
+
+    <div class="vd-card vd-mb-2">
+        <div class="vd-grid vd-grid-3">
+            <div><label class="vd-form-label">Cari</label><input class="vd-form-control" @bind="_search" @bind:event="oninput" @bind:after="ApplyFilter" placeholder="Nama / Kota" /></div>
+            <div><label class="vd-form-label">Tipe</label><select class="vd-form-control" @bind="_typeFilter" @bind:after="ApplyFilter"><option value="">Semua</option>@foreach (var t in Enum.GetValues<HospitalType>()) { <option value="@t">@t</option> }</select></div>
+            <div><label class="vd-form-label">Page Size</label><select class="vd-form-control" @bind="_pageSize" @bind:after="ApplyFilter"><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></div>
+        </div>
+    </div>
+
+    <div class="vd-card" style="overflow-x:auto;">
+        <table class="vd-table">
+            <thead><tr>
+                <th @onclick="() => SortBy(nameof(Hospital.Name))" style="cursor:pointer;">Nama <span class="ms-1">@SortIcon(nameof(Hospital.Name))</span></th>
+                <th @onclick="() => SortBy(nameof(Hospital.Type))" style="cursor:pointer;">Tipe <span class="ms-1">@SortIcon(nameof(Hospital.Type))</span></th>
+                <th @onclick="() => SortBy(nameof(Hospital.City))" style="cursor:pointer;">Kota <span class="ms-1">@SortIcon(nameof(Hospital.City))</span></th>
+                <th>Telepon</th><th>Aktif</th><th style="width:120px;">Aksi</th></tr></thead>
+            <tbody>
+                @foreach (var h in PagedItems)
+                {
+                    <tr>
+                        <td>@h.Name</td>
+                        <td>@h.Type</td>
+                        <td>@(h.City ?? "-")</td>
+                        <td>@(h.PhoneNumber ?? "-")</td>
+                        <td>@(h.IsActive ? "Aktif" : "Nonaktif")</td>
+                        <td>
+                            <div class="vd-flex vd-gap-1">
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => OpenEditForm(h)"><i class="bi bi-pencil"></i></button>
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" style="color:var(--vd-danger);" @onclick="() => Delete(h)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="vd-flex vd-flex-between mt-2">
+        <small class="vd-text-muted">Hal @_page/@_totalPages · Total @_filtered.Count</small>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => GoPage(_page - 1)">◀</button>
+            <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= _totalPages)" @onclick="() => GoPage(_page + 1)">▶</button>
+        </div>
+    </div>
+}
+
+@if (_showForm)
+{
+    <div class="vd-modal-overlay" @onclick="CloseForm">
+        <div class="vd-modal-content" @onclick:stopPropagation="true">
+            <div class="vd-card-header">
+                <span class="vd-card-title">@(_isEdit ? "✏️ Edit RS/Klinik" : "➕ Tambah RS/Klinik")</span>
+                <button class="btn btn-icon" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="vd-grid vd-grid-2">
+                <div class="vd-form-group"><label class="vd-form-label">Nama</label><input class="vd-form-control" @bind="_formName" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Tipe</label><select class="vd-form-control" @bind="_formType">@foreach (var t in Enum.GetValues<HospitalType>()) { <option value="@t">@t</option> }</select></div>
+                <div class="vd-form-group"><label class="vd-form-label">Kota</label><input class="vd-form-control" @bind="_formCity" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Alamat</label><input class="vd-form-control" @bind="_formAddress" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Telepon</label><input class="vd-form-control" @bind="_formPhone" /></div>
+                <div class="vd-form-group"><label class="vd-form-label">Aktif</label><select class="vd-form-control" @bind="_formActive"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></div>
+            </div>
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                <button class="vd-btn vd-btn-outline" @onclick="CloseForm">Batal</button>
+                <button class="vd-btn vd-btn-primary" @onclick="Save">💾 Simpan</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_formMsg)) { <small class="vd-text-muted d-block mt-1">@_formMsg</small> }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isAdmin;
+    private List<Hospital> _all = new();
+    private List<Hospital> _filtered = new();
+    private int _page = 1;
+    private int _pageSize = 10;
+    private int _totalPages = 1;
+    private string _search = "";
+    private string _typeFilter = "";
+    private string _sortColumn = nameof(Hospital.Name);
+    private bool _sortAsc = true;
+
+    private bool _showForm;
+    private bool _isEdit;
+    private string _editId = "";
+    private string _formName = "";
+    private HospitalType _formType = HospitalType.Hospital;
+    private string _formCity = "";
+    private string _formAddress = "";
+    private string _formPhone = "";
+    private bool _formActive = true;
+    private string? _formMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        if (!_isAdmin) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _all = await HospitalService.GetAllAsync();
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        var q = _search.Trim();
+        _filtered = _all.Where(h =>
+            (string.IsNullOrEmpty(q) || h.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || (h.City ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(_typeFilter) || h.Type.ToString() == _typeFilter)
+        ).ToList();
+        _filtered = ApplySort(_filtered);
+        _page = 1;
+        _totalPages = Math.Max(1, (int)Math.Ceiling(_filtered.Count / (double)_pageSize));
+    }
+
+    private List<Hospital> ApplySort(List<Hospital> data)
+    {
+        return _sortColumn switch
+        {
+            nameof(Hospital.Name) => _sortAsc ? data.OrderBy(x => x.Name).ToList() : data.OrderByDescending(x => x.Name).ToList(),
+            nameof(Hospital.Type) => _sortAsc ? data.OrderBy(x => x.Type).ToList() : data.OrderByDescending(x => x.Type).ToList(),
+            nameof(Hospital.City) => _sortAsc ? data.OrderBy(x => x.City).ToList() : data.OrderByDescending(x => x.City).ToList(),
+            _ => data
+        };
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = true; }
+        ApplyFilter();
+    }
+
+    private string SortIcon(string column)
+    {
+        if (_sortColumn != column) return "";
+        return _sortAsc ? "▲" : "▼";
+    }
+
+    private IEnumerable<Hospital> PagedItems => _filtered.Skip((_page - 1) * _pageSize).Take(_pageSize);
+
+    private void GoPage(int p) { if (p < 1 || p > _totalPages) return; _page = p; }
+
+    private void OpenCreateForm()
+    {
+        ResetForm();
+        _showForm = true;
+    }
+
+    private void OpenEditForm(Hospital h)
+    {
+        _showForm = true;
+        _isEdit = true;
+        _editId = h.Id;
+        _formName = h.Name;
+        _formType = h.Type;
+        _formCity = h.City ?? "";
+        _formAddress = h.Address ?? "";
+        _formPhone = h.PhoneNumber ?? "";
+        _formActive = h.IsActive;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formMsg = null;
+    }
+
+    private async Task Save()
+    {
+        _formMsg = null;
+        if (string.IsNullOrWhiteSpace(_formName)) { _formMsg = "Nama wajib diisi."; return; }
+
+        if (_isEdit)
+        {
+            var h = _all.FirstOrDefault(x => x.Id == _editId);
+            if (h == null) return;
+            h.Name = _formName.Trim();
+            h.Type = _formType;
+            h.City = _formCity.Trim();
+            h.Address = _formAddress.Trim();
+            h.PhoneNumber = _formPhone.Trim();
+            h.IsActive = _formActive;
+            await HospitalService.UpdateAsync(h);
+        }
+        else
+        {
+            var h = new Hospital
+            {
+                Name = _formName.Trim(),
+                Type = _formType,
+                City = _formCity.Trim(),
+                Address = _formAddress.Trim(),
+                PhoneNumber = _formPhone.Trim(),
+                IsActive = _formActive,
+                CreatedAt = DateTime.UtcNow
+            };
+            await HospitalService.CreateAsync(h);
+        }
+
+        CloseForm();
+        await LoadData();
+    }
+
+    private async Task Delete(Hospital h)
+    {
+        await HospitalService.DeleteAsync(h.Id);
+        await LoadData();
+    }
+
+    private void ResetForm()
+    {
+        _isEdit = false;
+        _editId = "";
+        _formName = "";
+        _formType = HospitalType.Hospital;
+        _formCity = "";
+        _formAddress = "";
+        _formPhone = "";
+        _formActive = true;
+        _formMsg = null;
+    }
+}

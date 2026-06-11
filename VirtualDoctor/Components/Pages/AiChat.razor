@@ -1,0 +1,273 @@
+@page "/ai-chat"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.AI.IAiChatService ChatService
+@inject Services.IAuthService AuthService
+@inject Services.Storage.IFileStorageService StorageService
+@inject NavigationManager Navigation
+
+<div class="vd-mb-2 vd-flex vd-flex-between">
+    <div>
+        <h3 class="mb-0">🤖 AI Chat Dokter</h3>
+        <small class="vd-text-muted">Konsultasi kesehatan dengan @_botName</small>
+    </div>
+    <div class="vd-flex vd-gap-1">
+        <select class="vd-form-control" style="width:auto;" @bind="_selectedProvider" @bind:after="OnProviderChanged">
+            @foreach (var p in _providers) { <option value="@p">@p</option> }
+        </select>
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ResetChat" disabled="@(!_messages.Any() || string.IsNullOrEmpty(_currentChatId))"><i class="bi bi-arrow-counterclockwise"></i> Reset Chat</button>
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="NewChat"><i class="bi bi-plus-circle"></i> Chat Baru</button>
+    </div>
+</div>
+
+<div class="vd-grid vd-grid-2" style="height: calc(100vh - 160px);">
+    <div class="vd-card" style="max-width: 300px; overflow-y: auto;">
+        <div class="vd-card-title vd-mb-2">💬 Riwayat Chat</div>
+        @if (_chats.Any())
+        {
+            foreach (var chat in _chats)
+            {
+                var cid = chat.Id; var title = chat.Title.Length > 25 ? chat.Title[..25] + "..." : chat.Title;
+                <div class="vd-chat-history-item" @onclick="() => SelectChat(cid)">
+                    <div>
+                        <small class="fw-bold">@title</small><br>
+                        <small class="vd-text-muted">@chat.UpdatedAt.ToString("dd/MM HH:mm")</small>
+                    </div>
+                    <button class="vd-chat-history-delete" title="Hapus chat" @onclick="() => DeleteChat(cid)" @onclick:stopPropagation>
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            }
+        }
+        else { <p class="vd-text-muted text-center">Belum ada chat</p> }
+    </div>
+
+    <div class="vd-chat-container" style="flex:1;">
+        <div class="vd-chat-messages" id="chatMessages">
+            @if (_messages.Count == 0)
+            {
+                <div class="text-center vd-text-muted" style="margin-top: 60px;">
+                    <i class="bi bi-robot" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3">Halo! Saya @_botName 👩‍⚕️</h4>
+                    <p>Silakan tanyakan keluhan atau pertanyaan kesehatan Anda.</p>
+                    <div class="vd-flex vd-gap-1" style="justify-content:center; flex-wrap:wrap;">
+                        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => SendSuggestion(_sugg1)">💊 Obat sakit kepala</button>
+                        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => SendSuggestion(_sugg2)">🛡️ Daya tahan tubuh</button>
+                        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => SendSuggestion(_sugg3)">🏥 RS terdekat</button>
+                        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => SendSuggestion(_sugg4)">💡 Tips kesehatan</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                @foreach (var msg in _messages)
+                {
+                    <div class="vd-chat-message @(msg.Role == "user" ? "user" : "")">
+                        <div class="vd-chat-avatar @(msg.Role == "user" ? "user" : "bot")">
+                            <i class="bi @(msg.Role == "user" ? "bi-person-fill" : "bi-heart-pulse-fill")"></i>
+                        </div>
+                        <div><div class="vd-chat-bubble">@RenderMessage(msg.Content)</div><small class="vd-text-muted">@msg.SentAt.ToString("HH:mm")</small></div>
+                    </div>
+                }
+                @if (_isTyping)
+                {
+                    <div class="vd-chat-message"><div class="vd-chat-avatar bot"><i class="bi bi-heart-pulse-fill"></i></div><div class="vd-chat-bubble"><em>Mengetik...</em></div></div>
+                }
+            }
+        </div>
+
+        <div class="vd-chat-input-area">
+            <div class="vd-chat-input-panel">
+                @if (!string.IsNullOrEmpty(_imageName) || !string.IsNullOrEmpty(_docName))
+                {
+                    <div class="vd-chat-attachments">
+                        @if (!string.IsNullOrEmpty(_imageName))
+                        {
+                            <span class="vd-badge vd-badge-info">🖼️ @_imageName</span>
+                            <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ClearImage">Hapus</button>
+                        }
+                        @if (!string.IsNullOrEmpty(_docName))
+                        {
+                            <span class="vd-badge vd-badge-primary">📄 @_docName</span>
+                            <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ClearDoc">Hapus</button>
+                        }
+                    </div>
+                }
+
+                <div class="vd-chat-toolbar">
+                    <div class="vd-chat-attach-group">
+                        <label class="vd-btn vd-btn-outline vd-btn-sm" style="cursor:pointer;">
+                            <i class="bi bi-image"></i> Gambar
+                            <InputFile OnChange="OnImageSelected" accept="image/*" style="display:none;" />
+                        </label>
+                        <label class="vd-btn vd-btn-outline vd-btn-sm" style="cursor:pointer;">
+                            <i class="bi bi-paperclip"></i> Dokumen
+                            <InputFile OnChange="OnDocSelected" accept=".pdf,.doc,.docx" style="display:none;" />
+                        </label>
+                    </div>
+                    <span class="vd-text-muted">Lampirkan file jika perlu</span>
+                </div>
+
+                <div class="vd-chat-entry">
+                    <textarea class="vd-chat-input vd-chat-input-wide" @bind="_messageInput" @bind:event="oninput" @onkeydown="HandleKeyDown" placeholder="Tanyakan kesehatan Anda..." rows="1"></textarea>
+                    <button class="vd-btn vd-btn-primary vd-chat-send" @onclick="SendMessage" disabled="@(string.IsNullOrWhiteSpace(_messageInput) || _isTyping)">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_uploadMsg))
+                {
+                    <small class="vd-text-muted d-block mt-1">@_uploadMsg</small>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _currentChatId = ""; private string _messageInput = ""; private string _selectedProvider = "OpenAI";
+    private string _botName = "dokter Markonah Al-senyumwati"; private bool _isTyping;
+    private List<string> _providers = new();
+    private List<VirtualDoctor.Models.ChatHistory> _chats = new();
+    private List<VirtualDoctor.Models.ChatMessage> _messages = new();
+    private readonly string _sugg1 = "Saya sakit kepala, apa yang harus saya lakukan?";
+    private readonly string _sugg2 = "Tips menjaga daya tahan tubuh";
+    private readonly string _sugg3 = "Cari rumah sakit terdekat di Jakarta";
+    private readonly string _sugg4 = "Apa obat untuk demam?";
+
+    private string? _imageUrl;
+    private string? _docUrl;
+    private string? _imageName;
+    private string? _docName;
+    private string? _uploadMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _botName = await ChatService.GetBotNameAsync();
+        _providers = new() { "OpenAI", "Gemini", "Anthropic", "Ollama", "OpenAICompatible" };
+        _selectedProvider = await ChatService.GetCurrentProviderAsync();
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user != null) { _chats = await ChatService.GetUserChatsAsync(user.Id); if (_chats.Any()) await SelectChat(_chats.First().Id); }
+    }
+
+    private async Task SelectChat(string chatId)
+    {
+        _currentChatId = chatId;
+        var c = await ChatService.GetChatAsync(chatId);
+        if (c != null) _messages = c.Messages.OrderBy(m => m.SentAt).ToList();
+        StateHasChanged();
+    }
+
+    private async Task NewChat()
+    {
+        var user = await AuthService.GetCurrentUserAsync(); if (user == null) return;
+        var c = await ChatService.CreateChatAsync(user.Id); _chats.Insert(0, c); _currentChatId = c.Id; _messages.Clear();
+    }
+
+    private async Task ResetChat()
+    {
+        if (string.IsNullOrEmpty(_currentChatId)) return;
+        await ChatService.ClearChatAsync(_currentChatId);
+        _messages.Clear();
+        StateHasChanged();
+    }
+
+    private async Task DeleteChat(string chatId)
+    {
+        var success = await ChatService.DeleteChatAsync(chatId);
+        if (!success) return;
+        _chats.RemoveAll(c => c.Id == chatId);
+
+        if (_currentChatId == chatId)
+        {
+            _currentChatId = string.Empty;
+            _messages.Clear();
+            if (_chats.Any()) await SelectChat(_chats.First().Id);
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnImageSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        _uploadMsg = null;
+
+        try
+        {
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var path = await StorageService.UploadAsync(stream, file.Name, file.ContentType);
+            _imageUrl = await StorageService.GetPublicUrlAsync(path);
+            _imageName = file.Name;
+        }
+        catch (Exception ex)
+        {
+            _uploadMsg = $"❌ Upload gambar gagal: {ex.Message}";
+        }
+    }
+
+    private async Task OnDocSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        _uploadMsg = null;
+
+        try
+        {
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            var path = await StorageService.UploadAsync(stream, file.Name, file.ContentType);
+            _docUrl = await StorageService.GetPublicUrlAsync(path);
+            _docName = file.Name;
+        }
+        catch (Exception ex)
+        {
+            _uploadMsg = $"❌ Upload dokumen gagal: {ex.Message}";
+        }
+    }
+
+    private void ClearImage() { _imageUrl = null; _imageName = null; }
+    private void ClearDoc() { _docUrl = null; _docName = null; }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_messageInput)) return;
+        var msg = _messageInput.Trim(); _messageInput = ""; _isTyping = true; StateHasChanged();
+
+        try
+        {
+            var user = await AuthService.GetCurrentUserAsync(); if (user == null) return;
+            if (string.IsNullOrEmpty(_currentChatId)) { var c = await ChatService.CreateChatAsync(user.Id); _chats.Insert(0, c); _currentChatId = c.Id; }
+
+            _messages.Add(new() { Role = "user", Content = msg, SentAt = DateTime.UtcNow });
+            StateHasChanged();
+
+            var resp = await ChatService.SendMessageAsync(user.Id, _currentChatId, msg, _selectedProvider, _imageUrl, _docUrl);
+            var updated = await ChatService.GetChatAsync(_currentChatId);
+            if (updated != null) _messages = updated.Messages.OrderBy(m => m.SentAt).ToList();
+
+            var cht = _chats.FirstOrDefault(x => x.Id == _currentChatId);
+            if (cht != null && cht.Title == "Konsultasi Baru") cht.Title = msg.Length > 40 ? msg[..40] + "..." : msg;
+        }
+        catch (Exception ex) { _messages.Add(new() { Role = "assistant", Content = $"⚠️ Error: {ex.Message}", SentAt = DateTime.UtcNow }); }
+        finally { _isTyping = false; _imageUrl = null; _docUrl = null; _imageName = null; _docName = null; StateHasChanged(); }
+    }
+
+    private async Task SendSuggestion(string text) { _messageInput = text; await SendMessage(); }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task OnProviderChanged() { await ChatService.SetProviderAsync(_selectedProvider); }
+
+    private MarkupString RenderMessage(string content)
+    {
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"\*\*(.*?)\*\*", "<strong>$1</strong>");
+        content = content.Replace("\n\n", "<br/><br/>").Replace("\n", "<br/>");
+        return new MarkupString(content);
+    }
+}

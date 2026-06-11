@@ -1,0 +1,49 @@
+@page "/pharmacy"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.IMedicineService MedicineService
+@inject Services.IOrderService OrderService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">💊 Farmasi</h3><small class="vd-text-muted">Pesan obat & vitamin, antar cepat</small></div><div><button class="vd-btn vd-btn-primary" @onclick="ToggleCart" disabled="@(!_cart.Any())"><i class="bi bi-cart-fill"></i> Keranjang (@_cart.Count)</button></div></div>
+
+<div class="vd-search-bar"><div class="vd-search-input"><input type="text" placeholder="Cari obat..." @bind="_searchQuery" @bind:event="oninput" @bind:after="FilterMedicines" /></div><select class="vd-form-control" style="width:200px;" @bind="_filterCategory" @bind:after="FilterMedicines"><option value="">Semua</option><option value="Obat Bebas">Obat Bebas</option><option value="Obat Keras">Obat Keras</option><option value="Vitamin">Vitamin</option><option value="Suplemen">Suplemen</option></select></div>
+
+@if (_showCart)
+{
+    <div class="vd-card vd-mb-2"><div class="vd-card-header"><span class="vd-card-title">🛒 Keranjang</span><button class="vd-btn vd-btn-sm vd-btn-outline" @onclick="() => _showCart = false">✕</button></div>
+    <table class="vd-table"><thead><tr><th>Obat</th><th>Qty</th><th>Harga</th><th>Total</th><th></th></tr></thead><tbody>@foreach (var item in _cart) { <tr><td>@item.MedicineName</td><td><input type="number" min="1" @bind="item.Quantity" style="width:60px;" /></td><td>Rp@(item.Price.ToString("N0"))</td><td>Rp@((item.Quantity * item.Price).ToString("N0"))</td><td><button class="vd-btn vd-btn-danger vd-btn-sm" @onclick="() => RemoveFromCart(item)">✕</button></td></tr> }</tbody></table>
+    <div class="text-end mt-2"><strong>Total: Rp@(_cart.Sum(i => i.Quantity * i.Price).ToString("N0"))</strong></div>
+    <div class="vd-form-group"><label class="vd-form-label">Alamat Pengiriman</label><input class="vd-form-control" @bind="_deliveryAddress" /></div>
+    <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="PlaceOrder">Pesan Sekarang</button></div>
+}
+
+<div class="vd-grid vd-grid-3">
+    @foreach (var med in _filtered)
+    {
+        <div class="vd-medicine-card">
+            <div class="vd-flex vd-flex-between vd-mb-1"><span class="vd-badge @(med.RequiresPrescription ? "vd-badge-warning" : "vd-badge-success")">@(med.RequiresPrescription ? "Resep" : "Bebas")</span><span>⭐ @med.Rating</span></div>
+            <h6>@med.Name</h6><p class="vd-medicine-price">Rp@(med.Price.ToString("N0"))</p><small>Stok: @med.Stock</small>
+            <button class="vd-btn vd-btn-primary vd-btn-sm vd-w-100 mt-2" @onclick="() => AddToCart(med)">+ Keranjang</button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<VirtualDoctor.Models.Medicine> _all = new(); private List<VirtualDoctor.Models.Medicine> _filtered = new();
+    private List<VirtualDoctor.Models.OrderItem> _cart = new(); private string _searchQuery = ""; private string _filterCategory = "";
+    private string _deliveryAddress = ""; private bool _showCart;
+
+    protected override async Task OnInitializedAsync() { _all = await MedicineService.GetAllAsync(); _filtered = _all; }
+    private void FilterMedicines() { var q = _searchQuery.ToLower(); _filtered = _all.Where(m => m.IsActive && (string.IsNullOrEmpty(q) || m.Name.Contains(q, StringComparison.OrdinalIgnoreCase)) && (string.IsNullOrEmpty(_filterCategory) || m.Category == _filterCategory)).ToList(); }
+    private void AddToCart(VirtualDoctor.Models.Medicine m) { var e = _cart.FirstOrDefault(i => i.MedicineId == m.Id); if (e != null) e.Quantity++; else _cart.Add(new() { MedicineId = m.Id, MedicineName = m.Name, Quantity = 1, Price = m.Price }); }
+    private void RemoveFromCart(VirtualDoctor.Models.OrderItem i) => _cart.Remove(i);
+    private void ToggleCart() => _showCart = !_showCart;
+    private async Task PlaceOrder()
+    {
+        var u = await AuthService.GetCurrentUserAsync(); if (u == null) return;
+        var o = new VirtualDoctor.Models.Order { UserId = u.Id, Subtotal = _cart.Sum(i => i.Quantity * i.Price), DeliveryFee = 15000, Total = _cart.Sum(i => i.Quantity * i.Price) + 15000, DeliveryAddress = _deliveryAddress, PaymentMethod = VirtualDoctor.Models.PaymentMethod.Transfer, Items = _cart.Select(i => new VirtualDoctor.Models.OrderItem { MedicineId = i.MedicineId, MedicineName = i.MedicineName, Quantity = i.Quantity, Price = i.Price, Subtotal = i.Quantity * i.Price }).ToList() };
+        await OrderService.CreateOrderAsync(o); _cart.Clear(); _showCart = false;
+    }
+}

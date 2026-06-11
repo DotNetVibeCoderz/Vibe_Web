@@ -1,0 +1,141 @@
+@page "/admin/articles"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject Services.IArticleService ArticleService
+@inject Services.RAG.IDocumentIndexingService IndexingService
+@inject Services.RAG.IVectorStoreService VectorStore
+@inject Services.Storage.IFileStorageService FileStorage
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+@if (!_isAdmin)
+{
+    <div class="vd-card text-center p-5 mt-5">
+        <i class="bi bi-shield-lock-fill" style="font-size:4rem;color:var(--vd-danger);"></i>
+        <h3 class="mt-3">Akses Ditolak</h3>
+        <p class="vd-text-muted">Halaman ini hanya untuk administrator.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke Beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between">
+        <div>
+            <h3 class="mb-0"><i class="bi bi-journal-medical"></i> Manajemen Artikel Kesehatan</h3>
+            <small class="vd-text-muted">CRUD artikel + upload PDF + indexing RAG langsung</small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/healtharticles?format=csv"><i class="bi bi-filetype-csv"></i> CSV</a>
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/admin/export/healtharticles?format=xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <button class="vd-btn vd-btn-success vd-btn-sm" @onclick="ReindexAll"><i class="bi bi-arrow-repeat"></i> Reindex Semua</button>
+            <button class="vd-btn vd-btn-primary" @onclick="OpenCreateForm"><i class="bi bi-plus-circle"></i> Artikel Baru</button>
+        </div>
+    </div>
+
+    <div class="vd-stats-grid vd-mb-2">
+        <div class="vd-stat-card"><div class="vd-stat-icon blue"><i class="bi bi-journal-medical"></i></div><div><div class="vd-stat-value">@_totalCount</div><div class="vd-stat-label">Total Artikel</div></div></div>
+        <div class="vd-stat-card"><div class="vd-stat-icon green"><i class="bi bi-check-circle-fill"></i></div><div><div class="vd-stat-value">@_indexedCount</div><div class="vd-stat-label">Ter-index RAG</div></div></div>
+        <div class="vd-stat-card"><div class="vd-stat-icon purple"><i class="bi bi-database-fill"></i></div><div><div class="vd-stat-value">@_vectorDocCount</div><div class="vd-stat-label">Dokumen di VectorDB</div></div></div>
+        <div class="vd-stat-card"><div class="vd-stat-icon orange"><i class="bi bi-file-pdf-fill"></i></div><div><div class="vd-stat-value">@_pdfCount</div><div class="vd-stat-label">File PDF</div></div></div>
+    </div>
+
+    <div class="vd-card vd-mb-2">
+        <div class="vd-grid vd-grid-3">
+            <div><label class="vd-form-label"><i class="bi bi-search"></i> Cari</label><input class="vd-form-control" @bind="_filterSearch" @bind:event="oninput" @bind:after="OnFilterChanged" placeholder="Judul / penulis / summary..." /></div>
+            <div><label class="vd-form-label"><i class="bi bi-funnel"></i> Kategori</label><select class="vd-form-control" @bind="_filterCategory" @bind:after="OnFilterChanged"><option value="">Semua</option>@foreach (var c in _categories) { <option value="@c">@c</option> }</select></div>
+            <div><label class="vd-form-label"><i class="bi bi-database"></i> Status RAG</label><select class="vd-form-control" @bind="_filterIndexed" @bind:after="OnFilterChanged"><option value="">Semua</option><option value="true">✅ Sudah Ter-index</option><option value="false">⬜ Belum Ter-index</option></select></div>
+        </div>
+    </div>
+
+    @if (_isLoading) { <div class="text-center p-5"><div class="spinner-border text-primary"></div><p class="mt-2">Memuat data...</p></div> }
+    else if (!_articles.Any()) { <div class="vd-card text-center p-5"><i class="bi bi-journal-x" style="font-size:3rem;color:var(--vd-text-secondary);"></i><h4>Tidak ada artikel</h4><p class="vd-text-muted">Klik "Artikel Baru" untuk menambahkan.</p></div> }
+    else
+    {
+        <div class="vd-card" style="overflow-x:auto;">
+            <table class="vd-table"><thead><tr><th style="width:35%;">Judul</th><th>Kategori</th><th>Penulis</th><th>PDF</th><th>RAG</th><th>Views</th><th>Tanggal</th><th style="width:150px;">Aksi</th></tr></thead>
+                <tbody>@foreach (var a in _articles) { <tr><td><strong>@Truncate(a.Title, 45)</strong>@if (!string.IsNullOrEmpty(a.Summary)) { <br /><small class="vd-text-muted">@Truncate(a.Summary, 70)</small> }</td><td><span class="vd-badge vd-badge-info">@(a.Category ?? "-")</span></td><td>@(a.Author ?? "-")</td><td>@if (!string.IsNullOrEmpty(a.PdfUrl)) { <span class="vd-badge vd-badge-primary"><i class="bi bi-file-pdf"></i> PDF</span> } else { <span class="vd-text-muted">-</span> }</td><td>@if (a.IsIndexed) { <span class="vd-badge vd-badge-success">✅ Indexed</span><br /><small class="vd-text-muted">@(a.IndexedAt?.ToString("dd/MM HH:mm") ?? "")</small> } else { <span class="vd-badge vd-badge-warning">⬜ Belum</span> }</td><td>👁 @a.ViewCount</td><td><small>@a.PublishedAt.ToString("dd/MM/yyyy")</small></td><td><div class="vd-flex vd-gap-1"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => OpenEditForm(a)" title="Edit"><i class="bi bi-pencil"></i></button><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => IndexSingle(a)" title="Index RAG" style="color:var(--vd-accent);"><i class="bi bi-database-add"></i></button><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => ConfirmDelete(a)" title="Hapus" style="color:var(--vd-danger);"><i class="bi bi-trash"></i></button></div></td></tr> }</tbody>
+            </table>
+        </div>
+        <div class="vd-flex vd-flex-between mt-2"><small class="vd-text-muted">Hal @_currentPage/@_totalPages · @_totalCount artikel</small><div class="vd-flex vd-gap-1"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => GoToPage(_currentPage - 1)" disabled="@(_currentPage <= 1)">◀</button>@foreach (var p in GetPageNumbers()) { <button class="vd-btn vd-btn-sm @(p == _currentPage ? "vd-btn-primary" : "vd-btn-outline")" @onclick="() => GoToPage(p)">@p</button> }<button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => GoToPage(_currentPage + 1)" disabled="@(_currentPage >= _totalPages)">▶</button></div></div>
+    }
+
+    @if (_showForm)
+    {
+        <div class="vd-modal-overlay" @onclick="CloseForm"><div class="vd-modal-content" @onclick:stopPropagation="true">
+            <div class="vd-card-header"><span class="vd-card-title">@(_isEdit ? "✏️ Edit Artikel" : "📝 Artikel Baru")</span><button class="btn btn-icon" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button></div>
+            <div class="vd-grid vd-grid-2"><div class="vd-form-group"><label class="vd-form-label">Judul *</label><input class="vd-form-control" @bind="_formTitle" placeholder="Judul artikel..." /></div><div class="vd-form-group"><label class="vd-form-label">Kategori</label><input class="vd-form-control" @bind="_formCategory" placeholder="Kardiologi, Gizi..." list="categoryList" /><datalist id="categoryList">@foreach (var c in _categories) { <option value="@c" /> }</datalist></div></div>
+            <div class="vd-form-group"><label class="vd-form-label">Ringkasan</label><textarea class="vd-form-control" @bind="_formSummary" rows="2" placeholder="Ringkasan singkat..."></textarea></div>
+            <div class="vd-form-group"><label class="vd-form-label">Konten Lengkap * (untuk RAG)</label><textarea class="vd-form-control" @bind="_formContent" rows="6" placeholder="Isi artikel lengkap..."></textarea></div>
+            <div class="vd-grid vd-grid-2"><div class="vd-form-group"><label class="vd-form-label">Penulis</label><input class="vd-form-control" @bind="_formAuthor" placeholder="Nama penulis..." /></div><div class="vd-form-group"><label class="vd-form-label">Tanggal Publikasi</label><input class="vd-form-control" @bind="_formPublishDate" placeholder="yyyy-MM-dd" /></div></div>
+            <div class="vd-grid vd-grid-2"><div class="vd-form-group"><label class="vd-form-label">URL Sumber</label><input class="vd-form-control" @bind="_formSourceUrl" placeholder="https://..." /></div><div class="vd-form-group"><label class="vd-form-label">URL Gambar</label><input class="vd-form-control" @bind="_formImageUrl" placeholder="https://..." /></div></div>
+            <div class="vd-form-group"><label class="vd-form-label"><i class="bi bi-file-pdf"></i> Upload PDF @if (!string.IsNullOrEmpty(_formPdfUrl)) { <span class="vd-badge vd-badge-success ms-2">✅ Terupload</span> }</label><div class="vd-flex vd-gap-1"><InputFile OnChange="OnPdfUploaded" accept=".pdf" />@if (!string.IsNullOrEmpty(_formPdfUrl)) { <button class="vd-btn vd-btn-danger vd-btn-sm" @onclick="() => { _formPdfUrl = null; }">✕ Hapus</button> }</div>@if (_isUploading) { <small class="vd-text-muted">⏳ Mengupload...</small> }</div>
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;"><button class="vd-btn vd-btn-outline" @onclick="CloseForm">Batal</button>@if (_isEdit) { <button class="vd-btn vd-btn-primary" @onclick="SaveArticle" disabled="@_isSaving">@(_isSaving ? "Menyimpan..." : "Update")</button> } else { <button class="vd-btn vd-btn-success" @onclick="SaveArticle" disabled="@_isSaving">@(_isSaving ? "Menyimpan..." : "Simpan")</button> }</div>
+        </div></div>
+    }
+
+    @if (_showDeleteConfirm)
+    {
+        <div class="vd-modal-overlay"><div class="vd-modal-content" style="max-width:400px;"><h5>⚠️ Konfirmasi Hapus</h5><p>Yakin hapus <strong>"@_deleteTarget?.Title"</strong>?</p><p class="vd-text-muted small">Data tidak bisa dikembalikan.</p><div class="vd-flex vd-gap-1" style="justify-content:flex-end;"><button class="vd-btn vd-btn-outline" @onclick="() => _showDeleteConfirm = false">Batal</button><button class="vd-btn vd-btn-danger" @onclick="DeleteArticle" disabled="@_isDeleting">@(_isDeleting ? "Menghapus..." : "Ya, Hapus")</button></div></div></div>
+    }
+
+    @if (_showIndexingToast) { <div class="vd-toast"><i class="bi bi-arrow-repeat spin"></i><span>@_indexingMessage</span></div> }
+}
+
+@code {
+    private bool _isAdmin;
+    private List<HealthArticle> _articles = new(); private List<string> _categories = new();
+    private int _totalCount, _indexedCount, _vectorDocCount, _pdfCount; private bool _isLoading = true;
+    private int _currentPage = 1, _pageSize = 10, _totalPages = 1;
+    private string _filterSearch = "", _filterCategory = "", _filterIndexed = "";
+    private bool _showForm, _isEdit; private string _editId = "";
+    private string _formTitle = "", _formSummary = "", _formContent = "", _formAuthor = "", _formCategory = "", _formPublishDate = "", _formSourceUrl = "", _formImageUrl = ""; private string? _formPdfUrl;
+    private bool _isSaving, _isUploading, _showDeleteConfirm, _isDeleting; private HealthArticle? _deleteTarget;
+    private bool _showIndexingToast; private string _indexingMessage = "";
+
+    protected override async Task OnInitializedAsync() { _isAdmin = AuthService.IsAdmin(); if (!_isAdmin) return; await LoadData(); }
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        try
+        {
+            _categories = await ArticleService.GetCategoriesAsync();
+            bool? idxF = _filterIndexed switch { "true" => true, "false" => false, _ => null };
+            var (items, total) = await ArticleService.GetPagedAsync(_currentPage, _pageSize, string.IsNullOrWhiteSpace(_filterSearch) ? null : _filterSearch, string.IsNullOrWhiteSpace(_filterCategory) ? null : _filterCategory, idxF);
+            _articles = items; _totalCount = total; _totalPages = Math.Max(1, (int)Math.Ceiling((double)_totalCount / _pageSize));
+            _indexedCount = items.Count(a => a.IsIndexed); _vectorDocCount = await VectorStore.GetDocumentCountAsync(); _pdfCount = items.Count(a => !string.IsNullOrEmpty(a.PdfUrl));
+        } catch { } finally { _isLoading = false; }
+    }
+
+    private async Task OnFilterChanged() { _currentPage = 1; await LoadData(); }
+    private async Task GoToPage(int page) { if (page < 1 || page > _totalPages) return; _currentPage = page; await LoadData(); }
+    private List<int> GetPageNumbers() { var p = new List<int>(); for (int i = Math.Max(1, _currentPage - 2); i <= Math.Min(_totalPages, _currentPage + 2); i++) p.Add(i); return p; }
+
+    private void OpenCreateForm() { _isEdit = false; _editId = ""; _formTitle = ""; _formSummary = ""; _formContent = ""; _formAuthor = ""; _formCategory = ""; _formPublishDate = DateTime.Now.ToString("yyyy-MM-dd"); _formSourceUrl = ""; _formImageUrl = ""; _formPdfUrl = null; _showForm = true; }
+    private void OpenEditForm(HealthArticle a) { _isEdit = true; _editId = a.Id; _formTitle = a.Title; _formSummary = a.Summary ?? ""; _formContent = a.Content; _formAuthor = a.Author ?? ""; _formCategory = a.Category ?? ""; _formPublishDate = a.PublishedAt.ToString("yyyy-MM-dd"); _formSourceUrl = a.SourceUrl ?? ""; _formImageUrl = a.ImageUrl ?? ""; _formPdfUrl = a.PdfUrl; _showForm = true; }
+    private void CloseForm() => _showForm = false;
+
+    private async Task SaveArticle()
+    {
+        if (string.IsNullOrWhiteSpace(_formTitle) || string.IsNullOrWhiteSpace(_formContent)) return;
+        _isSaving = true;
+        try
+        {
+            var a = new HealthArticle { Title = _formTitle.Trim(), Summary = string.IsNullOrWhiteSpace(_formSummary) ? null : _formSummary.Trim(), Content = _formContent.Trim(), Author = string.IsNullOrWhiteSpace(_formAuthor) ? null : _formAuthor.Trim(), Category = string.IsNullOrWhiteSpace(_formCategory) ? null : _formCategory.Trim(), ImageUrl = string.IsNullOrWhiteSpace(_formImageUrl) ? null : _formImageUrl.Trim(), PdfUrl = _formPdfUrl, SourceUrl = string.IsNullOrWhiteSpace(_formSourceUrl) ? null : _formSourceUrl.Trim(), PublishedAt = DateTime.TryParse(_formPublishDate, out var dt) ? dt : DateTime.UtcNow };
+            if (_isEdit) { a.Id = _editId; await ArticleService.UpdateAsync(a); } else { await ArticleService.CreateAsync(a); }
+            _showForm = false; await LoadData();
+        } catch { } finally { _isSaving = false; }
+    }
+
+    private void ConfirmDelete(HealthArticle a) { _deleteTarget = a; _showDeleteConfirm = true; }
+    private async Task DeleteArticle() { if (_deleteTarget == null) return; _isDeleting = true; try { await VectorStore.DeleteDocumentAsync(_deleteTarget.Id); await ArticleService.DeleteAsync(_deleteTarget.Id); _showDeleteConfirm = false; _deleteTarget = null; await LoadData(); } catch { } finally { _isDeleting = false; } }
+
+    private async Task OnPdfUploaded(InputFileChangeEventArgs e) { var f = e.File; if (f == null || !f.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) return; _isUploading = true; try { var s = f.OpenReadStream(50 * 1024 * 1024); var fn = await FileStorage.UploadAsync(s, f.Name, "application/pdf"); _formPdfUrl = await FileStorage.GetPublicUrlAsync(fn); } catch { } finally { _isUploading = false; } }
+
+    private async Task IndexSingle(HealthArticle a) { _showIndexingToast = true; _indexingMessage = $"Meng-index: {Truncate(a.Title, 40)}..."; StateHasChanged(); try { var chunks = IndexingService.ChunkText(a.Content); await VectorStore.IndexChunksAsync(a.Id, chunks, new() { ["title"] = a.Title, ["author"] = a.Author ?? "", ["category"] = a.Category ?? "", ["article_id"] = a.Id }); var u = await ArticleService.GetByIdAsync(a.Id); if (u != null) { u.IsIndexed = true; u.IndexedAt = DateTime.UtcNow; await ArticleService.UpdateAsync(u); } } catch (Exception ex) { _indexingMessage = $"❌ Gagal: {ex.Message}"; await Task.Delay(3000); } _showIndexingToast = false; await LoadData(); }
+
+    private async Task ReindexAll() { _showIndexingToast = true; _indexingMessage = "Reindex semua..."; StateHasChanged(); try { var all = await ArticleService.GetAllAsync(); int d = 0; foreach (var a in all) { _indexingMessage = $"Indexing ({++d}/{all.Count}): {Truncate(a.Title, 30)}..."; StateHasChanged(); var chunks = IndexingService.ChunkText(a.Content); await VectorStore.IndexChunksAsync(a.Id, chunks, new() { ["title"] = a.Title, ["author"] = a.Author ?? "", ["category"] = a.Category ?? "", ["article_id"] = a.Id }); a.IsIndexed = true; a.IndexedAt = DateTime.UtcNow; await ArticleService.UpdateAsync(a); } _indexingMessage = $"✅ Selesai! {d} artikel ter-index."; await Task.Delay(2000); } catch (Exception ex) { _indexingMessage = $"❌ Error: {ex.Message}"; await Task.Delay(3000); } _showIndexingToast = false; await LoadData(); }
+
+    private static string Truncate(string t, int m) => string.IsNullOrEmpty(t) ? "" : (t.Length <= m ? t : t[..m] + "...");
+}

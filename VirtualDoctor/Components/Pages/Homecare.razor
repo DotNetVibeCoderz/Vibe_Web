@@ -1,0 +1,42 @@
+@page "/homecare"
+@rendermode InteractiveServer
+@inject Services.IHomecareService HomecareService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">Homecare</h3><small class="vd-text-muted">Layanan kesehatan di rumah</small></div><button class="vd-btn vd-btn-primary" @onclick="ToggleForm">+ Pesan</button></div>
+
+@if (_showForm)
+{
+    <div class="vd-card vd-mb-2"><h5>Form Pemesanan</h5>
+        <div class="vd-grid vd-grid-2"><div><label class="vd-form-label">Layanan</label><select class="vd-form-control" @bind="_svcType"><option value="0">Tes Lab</option><option value="1">Vaksinasi</option><option value="2">Vitamin Booster</option><option value="3">Panggil Dokter</option><option value="4">Kunjungan Perawat</option></select></div><div><label class="vd-form-label">Tanggal (yyyy-MM-dd)</label><input class="vd-form-control" @bind="_schedDateStr" /></div></div>
+        <div class="vd-form-group"><label class="vd-form-label">Alamat</label><textarea class="vd-form-control" @bind="_address" rows="2"></textarea></div>
+        <div class="vd-form-group"><label class="vd-form-label">Catatan</label><textarea class="vd-form-control" @bind="_notes" rows="2"></textarea></div>
+        <p><strong>Biaya:</strong> Rp@(_estFee.ToString("N0"))</p>
+        <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="BookNow">Pesan</button>
+    </div>
+}
+
+<div class="vd-grid vd-grid-3 vd-mb-3">
+    <div class="vd-card text-center" style="cursor:pointer;" @onclick="() => PickSvc(0)"><i class="bi bi-droplet-fill" style="font-size:2.5rem;color:var(--vd-primary);"></i><h5 class="mt-2">Tes Lab</h5><strong>Rp250rb</strong></div>
+    <div class="vd-card text-center" style="cursor:pointer;" @onclick="() => PickSvc(1)"><i class="bi bi-syringe" style="font-size:2.5rem;color:var(--vd-accent);"></i><h5 class="mt-2">Vaksinasi</h5><strong>Rp150rb</strong></div>
+    <div class="vd-card text-center" style="cursor:pointer;" @onclick="() => PickSvc(3)"><i class="bi bi-person-badge" style="font-size:2.5rem;color:#7c3aed;"></i><h5 class="mt-2">Panggil Dokter</h5><strong>Rp300rb</strong></div>
+</div>
+
+<h5 class="vd-mb-2">Riwayat</h5>
+@if (_myServices.Any()) { <table class="vd-table vd-card"><thead><tr><th>Layanan</th><th>Tanggal</th><th>Status</th><th>Biaya</th></tr></thead><tbody>@foreach (var s in _myServices) { <tr><td>@GetLabel(s.ServiceType)</td><td>@s.ScheduledDate.ToString("dd/MM/yyyy")</td><td><span class="vd-badge vd-badge-info">@s.Status</span></td><td>Rp@(s.Fee.ToString("N0"))</td></tr> }</tbody></table> }
+else { <p class="vd-text-muted">Belum ada layanan.</p> }
+
+@code {
+    private bool _showForm; private string _svcType = "0"; private string _schedDateStr = DateTime.Now.AddDays(2).ToString("yyyy-MM-dd");
+    private string _address = ""; private string _notes = ""; private decimal _estFee = 250000;
+    private List<VirtualDoctor.Models.HomecareService> _myServices = new();
+    private readonly string[] _svcNames = { "LabTest", "Vaccination", "VitaminBooster", "DoctorVisit", "NurseVisit" };
+    private readonly decimal[] _svcFees = { 250000, 150000, 200000, 300000, 175000 };
+
+    protected override async Task OnInitializedAsync() { var u = await AuthService.GetCurrentUserAsync(); if (u != null) _myServices = await HomecareService.GetUserServicesAsync(u.Id); }
+    private void ToggleForm() => _showForm = !_showForm;
+    private void PickSvc(int i) { _svcType = i.ToString(); _estFee = _svcFees[i]; _showForm = true; }
+    private async Task BookNow() { var u = await AuthService.GetCurrentUserAsync(); if (u == null) { Navigation.NavigateTo("/auth/login"); return; } var s = new VirtualDoctor.Models.HomecareService { UserId = u.Id, ServiceType = Enum.Parse<VirtualDoctor.Models.HomecareServiceType>(_svcNames[int.Parse(_svcType)]), ScheduledDate = DateTime.Parse(_schedDateStr), Address = _address, Notes = _notes, Fee = _estFee }; await HomecareService.BookAsync(s); _showForm = false; _myServices = await HomecareService.GetUserServicesAsync(u.Id); }
+    private string GetLabel(VirtualDoctor.Models.HomecareServiceType t) => t switch { VirtualDoctor.Models.HomecareServiceType.LabTest => "Tes Lab", VirtualDoctor.Models.HomecareServiceType.Vaccination => "Vaksinasi", VirtualDoctor.Models.HomecareServiceType.VitaminBooster => "Vitamin Booster", VirtualDoctor.Models.HomecareServiceType.DoctorVisit => "Panggil Dokter", _ => "Perawat" };
+}

@@ -1,0 +1,91 @@
+@page "/"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.IDoctorService DoctorService
+@inject Services.IMedicineService MedicineService
+@inject Services.IArticleService ArticleService
+@inject Services.IRecommendationService RecommendationService
+@inject NavigationManager Navigation
+
+<div class="vd-mb-3">
+    <h1 class="mb-1">Selamat Datang di VirtualDoctor 👋</h1>
+    <p class="vd-text-muted">Platform kesehatan digital terintegrasi dengan AI untuk hidup lebih sehat</p>
+</div>
+
+<div class="vd-stats-grid">
+    <div class="vd-stat-card"><div class="vd-stat-icon blue"><i class="bi bi-people-fill"></i></div><div><div class="vd-stat-value">10+</div><div class="vd-stat-label">Dokter Tersedia</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon green"><i class="bi bi-capsule"></i></div><div><div class="vd-stat-value">12+</div><div class="vd-stat-label">Obat & Vitamin</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon purple"><i class="bi bi-hospital"></i></div><div><div class="vd-stat-value">7+</div><div class="vd-stat-label">RS & Klinik</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon orange"><i class="bi bi-journal-medical"></i></div><div><div class="vd-stat-value">8+</div><div class="vd-stat-label">Artikel Kesehatan</div></div></div>
+</div>
+
+<div class="vd-card vd-mb-3" style="background: linear-gradient(135deg, #dbeafe, #ede9fe); border: none;">
+    <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-lightbulb-fill" style="font-size: 2rem; color: #f59e0b;"></i>
+        <div><h5 class="mb-1">💡 Tips Kesehatan Hari Ini</h5><p class="mb-0">@_healthTip</p></div>
+    </div>
+</div>
+
+<div class="vd-grid vd-grid-2 vd-mb-3">
+    <div class="vd-card">
+        <div class="vd-card-header"><span class="vd-card-title">Dokter Unggulan</span><a href="/doctors" class="vd-btn vd-btn-outline vd-btn-sm">Lihat Semua</a></div>
+        @foreach (var doc in _featuredDoctors.Take(4))
+        {
+            <div class="vd-flex vd-flex-between vd-mb-1 p-2" style="border-radius:8px; cursor:pointer;" @onclick="() => GoToDoctor(doc.Id)">
+                <div class="vd-flex vd-gap-1"><div class="vd-chat-avatar bot">@doc.FullName[..1]</div><div><strong>@doc.FullName</strong><br><small class="vd-text-muted">@doc.Specialization</small></div></div>
+                <span class="vd-badge vd-badge-success">⭐ @doc.Rating.ToString("F1")</span>
+            </div>
+        }
+    </div>
+    <div class="vd-card">
+        <div class="vd-card-header"><span class="vd-card-title">Obat Populer</span><a href="/pharmacy" class="vd-btn vd-btn-outline vd-btn-sm">Lihat Semua</a></div>
+        @foreach (var med in _popularMedicines.Take(4))
+        {
+            <div class="vd-flex vd-flex-between vd-mb-1 p-2" style="border-radius:8px;">
+                <div><strong>@med.Name</strong><br><small class="vd-text-muted">@med.Category - Terjual @med.TotalSold</small></div>
+                <div class="vd-medicine-price">Rp@(med.Price.ToString("N0"))</div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="vd-card vd-mb-3">
+    <div class="vd-card-title vd-mb-2">Layanan Cepat</div>
+    <div class="vd-grid vd-grid-3">
+        <a href="/ai-chat" class="vd-card text-center text-decoration-none"><i class="bi bi-robot" style="font-size:2rem;color:var(--vd-primary);"></i><h6 class="mt-2">AI Chat</h6></a>
+        <a href="/doctors" class="vd-card text-center text-decoration-none"><i class="bi bi-person-badge" style="font-size:2rem;color:var(--vd-accent);"></i><h6 class="mt-2">Dokter</h6></a>
+        <a href="/pharmacy" class="vd-card text-center text-decoration-none"><i class="bi bi-basket" style="font-size:2rem;color:#f59e0b;"></i><h6 class="mt-2">Farmasi</h6></a>
+        <a href="/appointments" class="vd-card text-center text-decoration-none"><i class="bi bi-calendar-check" style="font-size:2rem;color:#7c3aed;"></i><h6 class="mt-2">Booking</h6></a>
+        <a href="/homecare" class="vd-card text-center text-decoration-none"><i class="bi bi-house-heart" style="font-size:2rem;color:#ea580c;"></i><h6 class="mt-2">Homecare</h6></a>
+        <a href="/articles" class="vd-card text-center text-decoration-none"><i class="bi bi-journal-richtext" style="font-size:2rem;color:#0891b2;"></i><h6 class="mt-2">Artikel</h6></a>
+    </div>
+</div>
+
+<div class="vd-card">
+    <div class="vd-card-header"><span class="vd-card-title">Artikel Terbaru</span><a href="/articles" class="vd-btn vd-btn-outline vd-btn-sm">Semua Artikel</a></div>
+    <div class="vd-grid vd-grid-2">
+        @foreach (var article in _latestArticles.Take(4))
+        {
+            <div class="p-3" style="border:1px solid var(--vd-border);border-radius:8px;cursor:pointer;" @onclick="() => GoToArticle(article.Id)">
+                <span class="vd-badge vd-badge-info vd-mb-1">@article.Category</span><h6 class="mb-1">@article.Title</h6><small class="vd-text-muted">@article.Author - @article.ViewCount views</small>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _healthTip = "";
+    private List<VirtualDoctor.Models.Doctor> _featuredDoctors = new();
+    private List<VirtualDoctor.Models.Medicine> _popularMedicines = new();
+    private List<VirtualDoctor.Models.HealthArticle> _latestArticles = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var doctors = await DoctorService.GetAllAsync(); _featuredDoctors = doctors.OrderByDescending(d => d.Rating).Take(6).ToList();
+        var medicines = await MedicineService.GetAllAsync(); _popularMedicines = medicines.OrderByDescending(m => m.TotalSold).Take(6).ToList();
+        _latestArticles = (await ArticleService.GetAllAsync()).Take(6).ToList();
+        _healthTip = await RecommendationService.GetHealthTipAsync("");
+    }
+    private void GoToDoctor(string id) => Navigation.NavigateTo("/doctors/" + id);
+    private void GoToArticle(string id) => Navigation.NavigateTo("/articles/" + id);
+}

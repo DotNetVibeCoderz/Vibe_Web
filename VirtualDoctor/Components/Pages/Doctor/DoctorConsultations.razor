@@ -1,0 +1,114 @@
+@page "/doctor/consultations"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject Services.IConsultationService ConsultationService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+@if (_activeConsultation != null)
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between">
+        <div><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="CloseConsult">← Kembali</button></div>
+        <div><span>👨‍⚕️ @_activeConsultation.User?.FullName</span><button class="vd-btn vd-btn-danger vd-btn-sm ms-2" @onclick="EndConsult">Akhiri</button></div>
+    </div>
+    <div class="vd-chat-container">
+        <div class="vd-chat-messages">
+            @foreach (var msg in _messages)
+            {
+                <div class="vd-chat-message @(msg.SenderId == _userId ? "user" : "")">
+                    <div class="vd-chat-avatar @(msg.SenderId == _userId ? "user" : "bot")">
+                        <i class="bi @(msg.SenderId == _userId ? "bi-person-fill" : "bi-heart-pulse-fill")"></i>
+                    </div>
+                    <div><div class="vd-chat-bubble">@msg.Message</div><small class="vd-text-muted">@msg.SenderName · @msg.SentAt.ToString("HH:mm")</small></div>
+                </div>
+            }
+        </div>
+        <div class="vd-chat-input-area">
+            <input class="vd-form-control" @bind="_chatInput" placeholder="Tulis balasan..." style="flex:1;" @onkeydown="HandleChatKey" />
+            <button class="vd-btn vd-btn-primary" @onclick="SendChatMsg" disabled="@(string.IsNullOrWhiteSpace(_chatInput))">Kirim</button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between">
+        <div><h3 class="mb-0">👨‍⚕️ Konsultasi Dokter</h3></div>
+    </div>
+    @if (_consultations.Any())
+    {
+        <div class="vd-grid vd-grid-2">
+            @foreach (var c in _consultations)
+            {
+                <div class="vd-card" style="cursor:pointer;" @onclick="() => OpenConsult(c.Id)">
+                    <div class="vd-flex vd-flex-between">
+                        <div><strong>👤 @c.User?.FullName</strong><br><small class="vd-text-muted">@c.User?.Email</small></div>
+                        <span class="vd-badge @(c.Status == VirtualDoctor.Models.ConsultationStatus.InProgress ? "vd-badge-success" : "vd-badge-info")">@c.Status</span>
+                    </div>
+                    <small>@c.StartedAt.ToString("dd MMM HH:mm")</small>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="vd-card text-center p-5"><h4>Belum ada konsultasi</h4></div>
+    }
+}
+
+@code {
+    private string _userId = string.Empty;
+    private string _doctorId = string.Empty;
+    private string _doctorName = "Dokter";
+    private string _chatInput = string.Empty;
+    private VirtualDoctor.Models.Consultation? _activeConsultation;
+    private List<VirtualDoctor.Models.ConsultationMessage> _messages = new();
+    private List<VirtualDoctor.Models.Consultation> _consultations = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user == null || !user.IsDoctor || string.IsNullOrEmpty(user.DoctorId))
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        _userId = user.Id;
+        _doctorId = user.DoctorId;
+        _doctorName = user.FullName;
+        _consultations = await ConsultationService.GetDoctorConsultationsAsync(_doctorId);
+    }
+
+    private async Task OpenConsult(string id)
+    {
+        _activeConsultation = await ConsultationService.GetByIdAsync(id);
+        if (_activeConsultation != null) _messages = await ConsultationService.GetMessagesAsync(id);
+    }
+
+    private void CloseConsult()
+    {
+        _activeConsultation = null;
+        _messages.Clear();
+    }
+
+    private async Task SendChatMsg()
+    {
+        if (string.IsNullOrWhiteSpace(_chatInput) || _activeConsultation == null) return;
+        await ConsultationService.SendMessageAsync(_activeConsultation.Id, _userId, _doctorName, _chatInput);
+        _messages = await ConsultationService.GetMessagesAsync(_activeConsultation.Id);
+        _chatInput = "";
+    }
+
+    private async Task HandleChatKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SendChatMsg();
+    }
+
+    private async Task EndConsult()
+    {
+        if (_activeConsultation == null) return;
+        await ConsultationService.EndAsync(_activeConsultation.Id);
+        _activeConsultation = null;
+        _messages.Clear();
+        _consultations = await ConsultationService.GetDoctorConsultationsAsync(_doctorId);
+    }
+}

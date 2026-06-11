@@ -1,0 +1,20 @@
+@page "/hospitals"
+@rendermode InteractiveServer
+@inject Services.IHospitalService HospitalService
+
+<div class="vd-mb-2"><h3 class="mb-0">🏥 Rumah Sakit & Klinik</h3><small class="vd-text-muted">Cari fasilitas kesehatan terdekat</small></div>
+<div class="vd-search-bar">
+    <div class="vd-search-input"><input type="text" placeholder="Cari rumah sakit..." @bind="_searchQuery" @bind:event="oninput" @bind:after="FilterHospitals" /></div>
+    <select class="vd-form-control" style="width:200px;" @bind="_filterType" @bind:after="FilterHospitals"><option value="">Semua Tipe</option><option value="Hospital">Rumah Sakit</option><option value="Clinic">Klinik</option><option value="HealthCenter">Puskesmas</option><option value="Pharmacy">Apotek</option></select>
+</div>
+<div class="vd-grid vd-grid-3">
+    @foreach (var h in _filteredHospitals) { <div class="vd-card"><div class="vd-flex vd-flex-between vd-mb-1"><span class="vd-badge vd-badge-info">@GetTypeLabel(h.Type)</span><span>⭐ @h.Rating.ToString("F1")</span></div><h5>@h.Name</h5><small class="vd-text-muted">📍 @h.Address</small><p class="vd-text-muted mt-1">@(h.Description?.Length > 100 ? h.Description[..100] + "..." : h.Description)</p><div class="vd-flex vd-flex-between mt-2"><small>📞 @h.PhoneNumber</small><small>📍 @h.City</small></div>@if (h.AcceptsInsurance) { <span class="vd-badge vd-badge-success mt-1">✓ Terima Asuransi</span> }</div> }
+</div>
+
+@code {
+    private List<VirtualDoctor.Models.Hospital> _allHospitals = new(); private List<VirtualDoctor.Models.Hospital> _filteredHospitals = new();
+    private string _searchQuery = ""; private string _filterType = "";
+    protected override async Task OnInitializedAsync() { _allHospitals = await HospitalService.GetAllAsync(); _filteredHospitals = _allHospitals; }
+    private void FilterHospitals() { var q = _searchQuery.ToLower(); _filteredHospitals = _allHospitals.Where(h => (string.IsNullOrEmpty(q) || h.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || (h.Address?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)) && (string.IsNullOrEmpty(_filterType) || h.Type.ToString() == _filterType)).ToList(); }
+    private string GetTypeLabel(VirtualDoctor.Models.HospitalType t) => t switch { VirtualDoctor.Models.HospitalType.Hospital => "🏥 RS", VirtualDoctor.Models.HospitalType.Clinic => "🏨 Klinik", VirtualDoctor.Models.HospitalType.HealthCenter => "🏪 Puskesmas", _ => "💊 Apotek" };
+}

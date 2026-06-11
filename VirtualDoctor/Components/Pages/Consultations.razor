@@ -1,0 +1,133 @@
+@page "/consultations"
+@page "/consultations/new"
+@rendermode InteractiveServer
+@inject Services.IConsultationService ConsultationService
+@inject Services.IDoctorService DoctorService
+@inject Services.IReviewService ReviewService
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+@if (_isNewConsultation)
+{
+    <div class="vd-mb-2"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => _isNewConsultation = false">Kembali</button></div>
+    <div class="vd-card"><h4>💬 Mulai Konsultasi</h4>
+        <div class="vd-form-group"><label class="vd-form-label">Pilih Dokter</label><select class="vd-form-control" @bind="_selectedDoctorId">@foreach (var doc in _doctors.Where(d => d.IsOnline)) { <option value="@doc.Id">@doc.FullName - @doc.Specialization (Rp@(doc.ConsultationFee.ToString("N0")))</option> }</select></div>
+        <div class="vd-form-group"><label class="vd-form-label">Keluhan Utama</label><textarea class="vd-form-control" @bind="_complaint" rows="3" placeholder="Ceritakan keluhan..."></textarea></div>
+        <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="StartConsult"><i class="bi bi-chat-dots-fill"></i> Mulai Chat</button>
+    </div>
+}
+else if (_activeConsultation != null)
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between"><div><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => { _activeConsultation = null; StateHasChanged(); }">← Kembali</button></div><div><span>👨‍⚕️ @_activeConsultation.Doctor?.FullName</span><button class="vd-btn vd-btn-danger vd-btn-sm ms-2" @onclick="EndConsult">Akhiri</button></div></div>
+    <div class="vd-chat-container"><div class="vd-chat-messages">@foreach (var msg in _messages) { <div class="vd-chat-message @(msg.SenderId == _userId ? "user" : "")"><div class="vd-chat-avatar @(msg.SenderId == _userId ? "user" : "bot")"><i class="bi @(msg.SenderId == _userId ? "bi-person-fill" : "bi-heart-pulse-fill")"></i></div><div><div class="vd-chat-bubble">@msg.Message</div><small class="vd-text-muted">@msg.SenderName · @msg.SentAt.ToString("HH:mm")</small></div></div> }</div>
+    <div class="vd-chat-input-area"><input class="vd-form-control" @bind="_chatInput" placeholder="Tulis pesan..." style="flex:1;" @onkeydown="HandleChatKey" /><button class="vd-btn vd-btn-primary" @onclick="SendChatMsg" disabled="@(string.IsNullOrWhiteSpace(_chatInput))">Kirim</button></div></div>
+}
+else
+{
+    <div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">💬 Konsultasi</h3></div><button class="vd-btn vd-btn-primary" @onclick="() => _isNewConsultation = true">+ Konsultasi Baru</button></div>
+    @if (_consultations.Any())
+    {
+        <div class="vd-grid vd-grid-2">
+            @foreach (var c in _consultations)
+            {
+                var review = _consultationReviews.GetValueOrDefault(c.Id);
+                EnsureConsultReviewState(c.Id);
+                <div class="vd-card" style="cursor:pointer;" @onclick="() => OpenConsult(c.Id)">
+                    <div class="vd-flex vd-flex-between"><div><strong>👨‍⚕️ @c.Doctor?.FullName</strong><br><small class="vd-text-muted">@c.Doctor?.Specialization</small></div><span class="vd-badge @(c.Status == VirtualDoctor.Models.ConsultationStatus.InProgress ? "vd-badge-success" : "vd-badge-info")">@c.Status</span></div>
+                    <small>@c.StartedAt.ToString("dd MMM HH:mm")</small>
+
+                    @if (c.Status == VirtualDoctor.Models.ConsultationStatus.Completed)
+                    {
+                        <div class="vd-review-inline">
+                            @if (review != null)
+                            {
+                                <span class="vd-badge vd-badge-success">⭐ @review.Rating</span>
+                                <small class="vd-text-muted">@review.Comment</small>
+                            }
+                            else
+                            {
+                                <div class="vd-review-form" @onclick:stopPropagation>
+                                    <select class="vd-form-control" style="width:110px;" @bind="_pendingConsultRatings[c.Id]">
+                                        <option value="0">Rating</option>
+                                        @for (var i = 1; i <= 5; i++) { <option value="@i">@i ★</option> }
+                                    </select>
+                                    <input class="vd-form-control" placeholder="Komentar..." @bind="_pendingConsultComments[c.Id]" />
+                                    <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="() => SubmitConsultReview(c.Id)" @onclick:stopPropagation>Rating</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else { <div class="vd-card text-center p-5"><h4>Belum ada konsultasi</h4></div> }
+}
+
+@code {
+    private bool _isNewConsultation; private string _selectedDoctorId = ""; private string _complaint = ""; private string _chatInput = ""; private string _userId = "";
+    private VirtualDoctor.Models.Consultation? _activeConsultation; private List<VirtualDoctor.Models.ConsultationMessage> _messages = new();
+    private List<VirtualDoctor.Models.Consultation> _consultations = new(); private List<VirtualDoctor.Models.Doctor> _doctors = new();
+    private Dictionary<string, VirtualDoctor.Models.DoctorReview> _consultationReviews = new();
+    private Dictionary<string, int> _pendingConsultRatings = new();
+    private Dictionary<string, string> _pendingConsultComments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var u = await AuthService.GetCurrentUserAsync();
+        if (u != null)
+        {
+            _userId = u.Id;
+            _consultations = await ConsultationService.GetUserConsultationsAsync(u.Id);
+            await LoadReviewsAsync(u.Id);
+        }
+        _doctors = await DoctorService.GetAllAsync();
+        var uri = new Uri(Navigation.Uri); var docId = System.Web.HttpUtility.ParseQueryString(uri.Query)["doctorId"]; if (!string.IsNullOrEmpty(docId)) { _isNewConsultation = true; _selectedDoctorId = docId; }
+    }
+
+    private void EnsureConsultReviewState(string consultationId)
+    {
+        if (!_pendingConsultRatings.ContainsKey(consultationId)) _pendingConsultRatings[consultationId] = 0;
+        if (!_pendingConsultComments.ContainsKey(consultationId)) _pendingConsultComments[consultationId] = string.Empty;
+    }
+
+    private async Task LoadReviewsAsync(string userId)
+    {
+        _consultationReviews.Clear();
+        var reviews = await ReviewService.GetReviewsByUserAsync(userId);
+        foreach (var rev in reviews.Where(r => r.ConsultationId != null))
+        {
+            _consultationReviews[rev.ConsultationId!] = rev;
+        }
+    }
+
+    private async Task StartConsult()
+    {
+        if (string.IsNullOrEmpty(_selectedDoctorId)) return;
+        var u = await AuthService.GetCurrentUserAsync();
+        if (u == null) { Navigation.NavigateTo("/auth/login"); return; }
+        var c = await ConsultationService.StartAsync(u.Id, _selectedDoctorId, VirtualDoctor.Models.ConsultationType.Chat);
+        if (c != null) { c.ChiefComplaint = _complaint; _activeConsultation = c; _isNewConsultation = false; _messages = new(); }
+    }
+
+    private async Task OpenConsult(string id) { _activeConsultation = await ConsultationService.GetByIdAsync(id); if (_activeConsultation != null) _messages = await ConsultationService.GetMessagesAsync(id); }
+    private async Task SendChatMsg() { if (string.IsNullOrWhiteSpace(_chatInput) || _activeConsultation == null) return; var u = await AuthService.GetCurrentUserAsync(); if (u == null) return; await ConsultationService.SendMessageAsync(_activeConsultation.Id, u.Id, u.FullName, _chatInput); _messages = await ConsultationService.GetMessagesAsync(_activeConsultation.Id); _chatInput = ""; }
+    private async Task HandleChatKey(KeyboardEventArgs e) { if (e.Key == "Enter") await SendChatMsg(); }
+    private async Task EndConsult() { if (_activeConsultation != null) { await ConsultationService.EndAsync(_activeConsultation.Id); _activeConsultation = null; var u = await AuthService.GetCurrentUserAsync(); if (u != null) { _consultations = await ConsultationService.GetUserConsultationsAsync(u.Id); await LoadReviewsAsync(u.Id); } } }
+
+    private async Task SubmitConsultReview(string consultationId)
+    {
+        var u = await AuthService.GetCurrentUserAsync();
+        if (u == null) return;
+        if (!_pendingConsultRatings.TryGetValue(consultationId, out var rating) || rating < 1) return;
+        _pendingConsultComments.TryGetValue(consultationId, out var comment);
+
+        var review = await ReviewService.CreateReviewForConsultationAsync(consultationId, u.Id, rating, comment ?? "");
+        if (review != null)
+        {
+            _consultationReviews[consultationId] = review;
+            _pendingConsultRatings[consultationId] = 0;
+            _pendingConsultComments[consultationId] = string.Empty;
+        }
+    }
+}
