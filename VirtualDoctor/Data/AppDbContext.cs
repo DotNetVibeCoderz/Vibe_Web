@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<Medicine> Medicines => Set<Medicine>();
     public DbSet<HealthArticle> HealthArticles => Set<HealthArticle>();
     public DbSet<PasswordHash> PasswordHashes => Set<PasswordHash>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<DoctorReview> DoctorReviews => Set<DoctorReview>();
 
     // Transactional entities
@@ -29,14 +30,58 @@ public class AppDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
     public DbSet<HomecareService> HomecareServices => Set<HomecareService>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<InvoiceCounter> InvoiceCounters => Set<InvoiceCounter>();
+    public DbSet<PaymentWebhookEvent> PaymentWebhookEvents => Set<PaymentWebhookEvent>();
 
     // AI Chat
     public DbSet<ChatHistory> ChatHistories => Set<ChatHistory>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
+    // Konfigurasi runtime (override appsettings.json dari halaman Pengaturan)
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<AppSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.Property(s => s.Key).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Payment>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.HasIndex(p => p.InvoiceNumber).IsUnique();
+            e.HasIndex(p => new { p.ReferenceType, p.ReferenceId });
+            e.HasIndex(p => p.State);
+            e.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId);
+        });
+
+        modelBuilder.Entity<InvoiceCounter>(e =>
+        {
+            e.HasKey(c => c.Prefix);
+            e.Property(c => c.Prefix).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<PaymentWebhookEvent>(e =>
+        {
+            e.HasKey(w => w.Id);
+            // Sidik jari dipakai mengenali kiriman ulang, jadi harus unik dan terindeks.
+            e.HasIndex(w => w.Fingerprint).IsUnique();
+            e.HasIndex(w => w.ReceivedAt);
+            e.Property(w => w.Fingerprint).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<UserRole>(e =>
+        {
+            e.HasKey(r => new { r.UserId, r.Role });
+            e.Property(r => r.UserId).HasMaxLength(100);
+            e.Property(r => r.Role).HasMaxLength(50);
+            e.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         // PasswordHash
         modelBuilder.Entity<PasswordHash>(e =>

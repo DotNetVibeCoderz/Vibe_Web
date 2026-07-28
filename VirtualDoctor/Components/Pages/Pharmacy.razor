@@ -4,11 +4,15 @@
 @inject Services.IMedicineService MedicineService
 @inject Services.IOrderService OrderService
 @inject Services.IAuthService AuthService
+@inject Services.Payment.IPaymentService Payments
 @inject NavigationManager Navigation
 
 <div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">💊 Farmasi</h3><small class="vd-text-muted">Pesan obat & vitamin, antar cepat</small></div><div><button class="vd-btn vd-btn-primary" @onclick="ToggleCart" disabled="@(!_cart.Any())"><i class="bi bi-cart-fill"></i> Keranjang (@_cart.Count)</button></div></div>
 
 <div class="vd-search-bar"><div class="vd-search-input"><input type="text" placeholder="Cari obat..." @bind="_searchQuery" @bind:event="oninput" @bind:after="FilterMedicines" /></div><select class="vd-form-control" style="width:200px;" @bind="_filterCategory" @bind:after="FilterMedicines"><option value="">Semua</option><option value="Obat Bebas">Obat Bebas</option><option value="Obat Keras">Obat Keras</option><option value="Vitamin">Vitamin</option><option value="Suplemen">Suplemen</option></select></div>
+
+@if (_notice != null) { <div class="vd-toast-item is-success vd-mb-2" role="status"><div><div class="vd-toast-body">@_notice</div></div><button class="vd-toast-close" @onclick="() => _notice = null" aria-label="Tutup">✕</button></div> }
+@if (!_showCart && _error != null) { <div class="vd-toast-item is-error vd-mb-2" role="alert"><div><div class="vd-toast-body">@_error</div></div><button class="vd-toast-close" @onclick="() => _error = null" aria-label="Tutup">✕</button></div> }
 
 @if (_showCart)
 {
@@ -16,7 +20,12 @@
     <table class="vd-table"><thead><tr><th>Obat</th><th>Qty</th><th>Harga</th><th>Total</th><th></th></tr></thead><tbody>@foreach (var item in _cart) { <tr><td>@item.MedicineName</td><td><input type="number" min="1" @bind="item.Quantity" style="width:60px;" /></td><td>Rp@(item.Price.ToString("N0"))</td><td>Rp@((item.Quantity * item.Price).ToString("N0"))</td><td><button class="vd-btn vd-btn-danger vd-btn-sm" @onclick="() => RemoveFromCart(item)">✕</button></td></tr> }</tbody></table>
     <div class="text-end mt-2"><strong>Total: Rp@(_cart.Sum(i => i.Quantity * i.Price).ToString("N0"))</strong></div>
     <div class="vd-form-group"><label class="vd-form-label">Alamat Pengiriman</label><input class="vd-form-control" @bind="_deliveryAddress" /></div>
-    <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="PlaceOrder">Pesan Sekarang</button></div>
+    @if (Payments.IsEnabled && _channels.Any())
+    {
+        <div class="vd-form-group"><label class="vd-form-label">Cara Pembayaran</label><select class="vd-form-control" @bind="_channel">@foreach (var c in _channels) { <option value="@c">@VirtualDoctor.Models.PaymentLabels.Channel(c)</option> }</select><small class="vd-text-muted">Setelah memesan Anda diarahkan ke halaman pembayaran.</small></div>
+    }
+    @if (_error != null) { <div class="vd-toast-item is-error vd-mb-2" role="alert"><div><div class="vd-toast-body">@_error</div></div></div> }
+    <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="PlaceOrder" disabled="@_placing">@(_placing ? "Memproses..." : "Pesan Sekarang")</button></div>
 }
 
 <div class="vd-grid vd-grid-3">
@@ -33,17 +42,44 @@
 @code {
     private List<VirtualDoctor.Models.Medicine> _all = new(); private List<VirtualDoctor.Models.Medicine> _filtered = new();
     private List<VirtualDoctor.Models.OrderItem> _cart = new(); private string _searchQuery = ""; private string _filterCategory = "";
-    private string _deliveryAddress = ""; private bool _showCart;
+    private string _deliveryAddress = ""; private bool _showCart; private bool _placing; private string? _error; private string? _notice;
+    private IReadOnlyList<VirtualDoctor.Models.PaymentChannel> _channels = Array.Empty<VirtualDoctor.Models.PaymentChannel>();
+    private VirtualDoctor.Models.PaymentChannel _channel = VirtualDoctor.Models.PaymentChannel.Qris;
+    private const decimal DeliveryFee = 15000m;
 
-    protected override async Task OnInitializedAsync() { _all = await MedicineService.GetAllAsync(); _filtered = _all; }
+    protected override async Task OnInitializedAsync() { _all = await MedicineService.GetAllAsync(); _filtered = _all; _channels = Payments.AvailableChannels; if (_channels.Any()) _channel = _channels[0]; }
     private void FilterMedicines() { var q = _searchQuery.ToLower(); _filtered = _all.Where(m => m.IsActive && (string.IsNullOrEmpty(q) || m.Name.Contains(q, StringComparison.OrdinalIgnoreCase)) && (string.IsNullOrEmpty(_filterCategory) || m.Category == _filterCategory)).ToList(); }
     private void AddToCart(VirtualDoctor.Models.Medicine m) { var e = _cart.FirstOrDefault(i => i.MedicineId == m.Id); if (e != null) e.Quantity++; else _cart.Add(new() { MedicineId = m.Id, MedicineName = m.Name, Quantity = 1, Price = m.Price }); }
     private void RemoveFromCart(VirtualDoctor.Models.OrderItem i) => _cart.Remove(i);
     private void ToggleCart() => _showCart = !_showCart;
     private async Task PlaceOrder()
     {
-        var u = await AuthService.GetCurrentUserAsync(); if (u == null) return;
-        var o = new VirtualDoctor.Models.Order { UserId = u.Id, Subtotal = _cart.Sum(i => i.Quantity * i.Price), DeliveryFee = 15000, Total = _cart.Sum(i => i.Quantity * i.Price) + 15000, DeliveryAddress = _deliveryAddress, PaymentMethod = VirtualDoctor.Models.PaymentMethod.Transfer, Items = _cart.Select(i => new VirtualDoctor.Models.OrderItem { MedicineId = i.MedicineId, MedicineName = i.MedicineName, Quantity = i.Quantity, Price = i.Price, Subtotal = i.Quantity * i.Price }).ToList() };
-        await OrderService.CreateOrderAsync(o); _cart.Clear(); _showCart = false;
+        if (_placing || !_cart.Any()) return;
+        _error = null; _notice = null; _placing = true;
+        try
+        {
+            var u = await AuthService.GetCurrentUserAsync(); if (u == null) { _error = "Sesi Anda berakhir, silakan masuk kembali."; return; }
+            var subtotal = _cart.Sum(i => i.Quantity * i.Price);
+            var o = new VirtualDoctor.Models.Order { UserId = u.Id, Subtotal = subtotal, DeliveryFee = DeliveryFee, Total = subtotal + DeliveryFee, DeliveryAddress = _deliveryAddress, PaymentMethod = VirtualDoctor.Models.PaymentMethod.Transfer, Items = _cart.Select(i => new VirtualDoctor.Models.OrderItem { MedicineId = i.MedicineId, MedicineName = i.MedicineName, Quantity = i.Quantity, Price = i.Price, Subtotal = i.Quantity * i.Price }).ToList() };
+            var saved = await OrderService.CreateOrderAsync(o);
+            if (saved == null) { _error = "Pesanan gagal disimpan, silakan coba lagi."; return; }
+            _cart.Clear(); _showCart = false;
+
+            if (!Payments.IsEnabled) { _notice = "Pesanan berhasil dibuat. Pembayaran dilakukan saat obat diantar."; return; }
+
+            // Tagihan dibuat setelah pesanan tersimpan; bila gagal pesanan tetap ada dan bisa dibayar dari /tagihan.
+            try
+            {
+                var itemCount = saved.Items.Sum(i => i.Quantity);
+                var request = new VirtualDoctor.Services.Payment.PaymentRequest(VirtualDoctor.Models.PaymentReferenceType.Order, saved.Id, u.Id, $"Pesanan obat ({itemCount} item) + ongkir", saved.Total);
+                var payment = await Payments.CreateAsync(request, _channel);
+                Navigation.NavigateTo($"/bayar/{payment.Id}");
+            }
+            catch
+            {
+                _error = "Pesanan tersimpan, tetapi tagihan gagal dibuat. Buka menu Tagihan Saya untuk membayar.";
+            }
+        }
+        finally { _placing = false; }
     }
 }

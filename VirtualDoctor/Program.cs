@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +24,8 @@ builder.Configuration.GetSection("Storage").Bind(appConfig.Storage);
 builder.Configuration.GetSection("Indexing").Bind(appConfig.Indexing);
 builder.Configuration.GetSection("GoogleMaps").Bind(appConfig.GoogleMaps);
 builder.Configuration.GetSection("Search").Bind(appConfig.Search);
+builder.Configuration.GetSection("Meeting").Bind(appConfig.Meeting);
+builder.Configuration.GetSection("Payment").Bind(appConfig.Payment);
 
 builder.Services.AddSingleton(appConfig);
 builder.Services.AddSingleton(appConfig.Llm);
@@ -31,6 +33,8 @@ builder.Services.AddSingleton(appConfig.Storage);
 builder.Services.AddSingleton(appConfig.VectorDb);
 builder.Services.AddSingleton(appConfig.Search);
 builder.Services.AddSingleton(appConfig.GoogleMaps);
+builder.Services.AddSingleton(appConfig.Meeting);
+builder.Services.AddSingleton(appConfig.Payment);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -49,7 +53,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     {
         options.LoginPath = "/auth/login";
         options.LogoutPath = "/auth/logout";
-        options.AccessDeniedPath = "/auth/login?error=denied";
+        // Harus berupa path saja. Query string di sini akan ter-escape dan menghasilkan URL rusak.
+        options.AccessDeniedPath = "/akses-ditolak";
         options.ExpireTimeSpan = TimeSpan.FromDays(7);
         options.SlidingExpiration = true;
         options.Cookie.HttpOnly = true;
@@ -68,6 +73,16 @@ builder.Services.AddSignalR();
 builder.Services.AddHttpClient("LlmClient", c =>
 {
     c.Timeout = TimeSpan.FromMinutes(5);
+    c.DefaultRequestHeaders.Add("User-Agent", "VirtualDoctor/1.0");
+});
+builder.Services.AddHttpClient("MeetingClient", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.DefaultRequestHeaders.Add("User-Agent", "VirtualDoctor/1.0");
+});
+builder.Services.AddHttpClient("PaymentClient", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
     c.DefaultRequestHeaders.Add("User-Agent", "VirtualDoctor/1.0");
 });
 builder.Services.AddEmbeddingGenerator<string, Embedding<float>>(sp => new SimpleEmbeddingGenerator());
@@ -96,6 +111,11 @@ builder.Services.AddSingleton<IFileStorageService>(sp => StorageServiceFactory.C
 builder.Services.AddSingleton<ILocationService, LocationService>();
 builder.Services.AddSingleton<ISearchService, SearchService>();
 builder.Services.AddSingleton<IExportService, ExportService>();
+builder.Services.AddSingleton<VirtualDoctor.Services.Meeting.IMeetingService, VirtualDoctor.Services.Meeting.MeetingService>();
+builder.Services.AddScoped<VirtualDoctor.Services.Analytics.IDashboardService, VirtualDoctor.Services.Analytics.DashboardService>();
+builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<VirtualDoctor.Services.Payment.IPaymentService, VirtualDoctor.Services.Payment.PaymentService>();
+builder.Services.AddScoped<VirtualDoctor.Services.Payment.IPaymentWebhookService, VirtualDoctor.Services.Payment.PaymentWebhookService>();
 
 if (appConfig.Indexing.AutoIndex) builder.Services.AddHostedService<PdfIndexingWorker>();
 
@@ -106,7 +126,23 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var storage = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
     await db.Database.EnsureCreatedAsync();
+
+    // EnsureCreated tidak menyentuh database lama, jadi selisih skema ditambal di sini.
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+    await SchemaUpgrader.UpgradeAsync(db, appConfig.Database.Provider, loggerFactory.CreateLogger("Schema"));
+
     await DataSeeder.SeedAsync(db, storage);
+
+    // Peran pengguna: melengkapi akun yang belum punya, termasuk memindahkan
+    // konvensi admin-berdasarkan-email lama menjadi data.
+    await DataSeeder.EnsureRolesAsync(db, loggerFactory.CreateLogger("Roles"));
+
+    // Transaksi contoh hanya untuk Development, dan hanya bila database masih kosong.
+    if (app.Environment.IsDevelopment() && builder.Configuration.GetValue("Seed:DemoTransactions", false))
+        await DemoDataSeeder.SeedAsync(db, loggerFactory.CreateLogger("DemoData"));
+
+    // Override konfigurasi dari halaman Pengaturan menimpa appsettings.json
+    await SettingsService.ApplyStoredOverridesAsync(db, appConfig, loggerFactory.CreateLogger("Settings"));
 
     // Debug: cek user ada
     var userCount = await db.Users.CountAsync();
@@ -163,25 +199,26 @@ app.MapPost("/auth/login-handler", async (HttpContext ctx, AppDbContext db) =>
         }
 
         var storedHash = await db.Set<PasswordHash>().FirstOrDefaultAsync(p => p.UserId == user.Id);
-        var inputHash = AuthHelpers.HashPassword(password);
+        var check = AuthHelpers.VerifyPassword(storedHash?.Hash, password);
 
-        if (storedHash == null || storedHash.Hash != inputHash)
+        if (check == PasswordCheck.Failed)
         {
             Console.WriteLine($"[LOGIN] FAIL - Bad password for: {email}");
             ctx.Response.Redirect("/auth/login?error=invalid");
             return;
         }
 
+        // Hash format lama ditulis ulang dengan PBKDF2 setelah sandi terbukti benar.
+        if (check == PasswordCheck.SuccessNeedsRehash && storedHash != null)
+        {
+            storedHash.Hash = AuthHelpers.HashPassword(password);
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[LOGIN] Hash diperbarui ke format baru untuk {email}");
+        }
+
         Console.WriteLine($"[LOGIN] OK - {email} ({user.FullName})");
 
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id),
-            new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Name, user.FullName)
-        };
-
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = await AuthClaims.BuildAsync(db, user);
         var props = new AuthenticationProperties
         {
             IsPersistent = remember,
@@ -195,7 +232,7 @@ app.MapPost("/auth/login-handler", async (HttpContext ctx, AppDbContext db) =>
 
         await ctx.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(identity),
+            principal,
             props);
 
         ctx.Response.Redirect("/");
@@ -217,7 +254,7 @@ app.MapPost("/auth/register-handler", async (HttpContext ctx, AppDbContext db) =
 
     if (string.IsNullOrWhiteSpace(fullName)) { ctx.Response.Redirect("/auth/register?error=name"); return; }
     if (!AuthHelpers.IsValidEmail(email)) { ctx.Response.Redirect("/auth/register?error=email"); return; }
-    if (password.Length < 8 || password != confirm) { ctx.Response.Redirect("/auth/register?error=password"); return; }
+    if (AuthHelpers.ValidatePasswordRules(password) != null || password != confirm) { ctx.Response.Redirect("/auth/register?error=password"); return; }
     if (await db.Users.AnyAsync(u => u.Email == email)) { ctx.Response.Redirect("/auth/register?error=email"); return; }
 
     var user = new ApplicationUser
@@ -233,6 +270,7 @@ app.MapPost("/auth/register-handler", async (HttpContext ctx, AppDbContext db) =
 
     var hash = AuthHelpers.HashPassword(password);
     db.Set<PasswordHash>().Add(new PasswordHash { UserId = user.Id, Hash = hash });
+    db.UserRoles.Add(new UserRole { UserId = user.Id, Role = AppRoles.Patient });
     await db.SaveChangesAsync();
 
     ctx.Response.Redirect("/auth/register?registered=true");
@@ -252,6 +290,8 @@ app.MapPost("/auth/reset-password-handler", async (HttpContext ctx, AppDbContext
     var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
     if (user == null) { ctx.Response.Redirect("/auth/reset-password?error=notfound"); return; }
 
+    // Catatan: alur reset ini masih menetapkan sandi sementara yang sama untuk semua akun.
+    // Penggantian dengan tautan reset bertoken ada di roadmap.
     var newHash = AuthHelpers.HashPassword("Reset123!");
     var existing = await db.Set<PasswordHash>().FirstOrDefaultAsync(p => p.UserId == user.Id);
     if (existing != null) existing.Hash = newHash;
@@ -268,14 +308,36 @@ app.MapGet("/auth/logout", async (HttpContext ctx) =>
 }).AllowAnonymous();
 
 // ============================================
+// WEBHOOK PENYEDIA PEMBAYARAN
+// Dipanggil server penyedia, bukan browser, jadi tanpa cookie auth.
+// Seluruh pemeriksaan keaslian, pencatatan jejak, dan penolakan kiriman ulang
+// ada di PaymentWebhookService supaya perilakunya sama untuk kiriman yang
+// diproses ulang lewat /admin/webhooks.
+// ============================================
+
+static async Task<IResult> ReceiveWebhookAsync(
+    HttpContext ctx, string provider, VirtualDoctor.Services.Payment.IPaymentWebhookService webhooks)
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var token = ctx.Request.Headers["x-callback-token"].FirstOrDefault();
+
+    var result = await webhooks.ReceiveAsync(provider, body, token, ctx.RequestAborted);
+    return Results.Json(new { message = result.Message, outcome = result.Outcome.ToString() },
+        statusCode: result.StatusCode);
+}
+
+app.MapPost("/api/payments/webhook/midtrans", (HttpContext ctx, VirtualDoctor.Services.Payment.IPaymentWebhookService webhooks) =>
+    ReceiveWebhookAsync(ctx, "Midtrans", webhooks)).AllowAnonymous();
+
+app.MapPost("/api/payments/webhook/xendit", (HttpContext ctx, VirtualDoctor.Services.Payment.IPaymentWebhookService webhooks) =>
+    ReceiveWebhookAsync(ctx, "Xendit", webhooks)).AllowAnonymous();
+
+// ============================================
 // ADMIN EXPORT ENDPOINTS
 // ============================================
 app.MapGet("/admin/export/{entity}", async (HttpContext ctx, string entity, string? format, AppDbContext db, IExportService exporter) =>
 {
-    var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value;
-    if (string.IsNullOrEmpty(email)) return Results.Unauthorized();
-    if (email != "admin@virtualdoctor.com") return Results.Forbid();
-
     format ??= "csv";
     var isExcel = format.Equals("xlsx", StringComparison.OrdinalIgnoreCase) || format.Equals("excel", StringComparison.OrdinalIgnoreCase);
 
@@ -335,7 +397,7 @@ app.MapGet("/admin/export/{entity}", async (HttpContext ctx, string entity, stri
 
     contentType = isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv";
     return Results.File(bytes, contentType, fileName);
-}).RequireAuthorization();
+}).RequireAuthorization(policy => policy.RequireRole(AppRoles.Admin));
 
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapHub<ChatHub>("/hubs/chat");

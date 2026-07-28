@@ -1,0 +1,354 @@
+@page "/admin/payments"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
+@using System.Globalization
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject Services.IAuthService AuthService
+
+<PageTitle>Kelola Pembayaran · VirtualDoctor</PageTitle>
+
+<div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+    <div>
+        <h3 class="mb-0">Kelola Pembayaran</h3>
+        <small class="vd-text-muted">
+            Verifikasi bukti transfer, pantau tagihan, dan terbitkan bukti pembayaran
+            @if (Payments.IsEnabled)
+            {
+                <text> · penyedia aktif @Payments.ActiveProvider</text>
+            }
+        </small>
+    </div>
+    <div class="vd-flex vd-gap-1">
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ExpireOverdueAsync">
+            <i class="bi bi-hourglass-bottom"></i> Tandai kedaluwarsa
+        </button>
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="LoadAsync">
+            <i class="bi bi-arrow-clockwise"></i> Muat ulang
+        </button>
+    </div>
+</div>
+
+<div class="vd-vitals">
+    <article class="vd-vital">
+        <span class="vd-vital-label">Perlu diverifikasi</span>
+        <span class="vd-vital-value">@_all.Count(p => p.State == PaymentState.AwaitingVerification)</span>
+    </article>
+    <article class="vd-vital">
+        <span class="vd-vital-label">Menunggu bayar</span>
+        <span class="vd-vital-value">@_all.Count(p => p.State == PaymentState.Pending)</span>
+    </article>
+    <article class="vd-vital">
+        <span class="vd-vital-label">Kas masuk</span>
+        <span class="vd-vital-value">@FormatShort(_all.Where(p => p.State == PaymentState.Paid).Sum(p => p.Total))</span>
+    </article>
+    <article class="vd-vital">
+        <span class="vd-vital-label">Piutang berjalan</span>
+        <span class="vd-vital-value">@FormatShort(_all.Where(p => p.IsOutstanding).Sum(p => p.Total))</span>
+    </article>
+    <article class="vd-vital">
+        <span class="vd-vital-label">Gagal / kedaluwarsa</span>
+        <span class="vd-vital-value">@_all.Count(p => p.State is PaymentState.Failed or PaymentState.Expired)</span>
+    </article>
+</div>
+
+<section class="vd-toolbar" aria-label="Filter pembayaran">
+    <div class="vd-field" style="flex:1;min-width:220px;">
+        <label class="vd-form-label" for="p-search">Cari</label>
+        <input id="p-search" class="vd-form-control" placeholder="Nomor invoice, pasien, atau uraian"
+               @bind="_search" @bind:event="oninput" @bind:after="ResetPage" />
+    </div>
+    <div class="vd-field">
+        <label class="vd-form-label" for="p-state">Status</label>
+        <select id="p-state" class="vd-form-control" @bind="_stateFilter" @bind:after="ResetPage">
+            <option value="">Semua status</option>
+            @foreach (var s in Enum.GetValues<PaymentState>())
+            {
+                <option value="@s">@PaymentLabels.State(s)</option>
+            }
+        </select>
+    </div>
+    <div class="vd-field">
+        <label class="vd-form-label" for="p-channel">Metode</label>
+        <select id="p-channel" class="vd-form-control" @bind="_channelFilter" @bind:after="ResetPage">
+            <option value="">Semua metode</option>
+            @foreach (var c in Enum.GetValues<PaymentChannel>())
+            {
+                <option value="@c">@PaymentLabels.Channel(c)</option>
+            }
+        </select>
+    </div>
+</section>
+
+@if (_notice != null)
+{
+    <div class="vd-toast-item @_noticeClass vd-mb-2" role="status">
+        <div><div class="vd-toast-body">@_notice</div></div>
+        <button class="vd-toast-close" @onclick="() => _notice = null" aria-label="Tutup">✕</button>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+}
+else if (!Filtered.Any())
+{
+    <div class="vd-panel">
+        <div class="vd-empty">
+            <div class="vd-empty-icon"><i class="bi bi-receipt"></i></div>
+            <h4>Tidak ada tagihan yang cocok</h4>
+            <p>Ubah kata kunci atau lepas filter status untuk melihat tagihan lain.</p>
+        </div>
+    </div>
+}
+else
+{
+    <section class="vd-panel">
+        <div class="vd-table-wrap">
+            <table class="vd-table">
+                <thead>
+                    <tr>
+                        <th>Invoice</th><th>Tanggal</th><th>Pasien</th><th>Uraian</th>
+                        <th>Metode</th><th class="vd-num">Total</th><th>Status</th><th style="width:150px;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in Paged)
+                    {
+                        <tr>
+                            <td><code style="font-family:var(--vd-font-data);font-size:0.76rem;">@p.InvoiceNumber</code></td>
+                            <td>@p.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm", Id)</td>
+                            <td>@(p.User?.FullName ?? "-")</td>
+                            <td>@p.Description</td>
+                            <td>@PaymentLabels.Channel(p.Channel)<br /><small class="vd-text-muted">@p.Provider</small></td>
+                            <td class="vd-num">@FormatMoney(p.Total)</td>
+                            <td><span class="vd-pill @PaymentLabels.StatePill(p.State)">@PaymentLabels.State(p.State)</span></td>
+                            <td>
+                                <div class="vd-flex vd-gap-1">
+                                    <button class="vd-btn vd-btn-outline vd-btn-sm" title="Periksa"
+                                            aria-label="Periksa @p.InvoiceNumber" @onclick="() => Open(p)">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                    <a class="vd-btn vd-btn-outline vd-btn-sm" title="Invoice"
+                                       href="/invoice/@p.Id" target="_blank"><i class="bi bi-file-earmark-text"></i></a>
+                                    @if (p.State == PaymentState.Paid)
+                                    {
+                                        <a class="vd-btn vd-btn-outline vd-btn-sm" title="Bukti pembayaran"
+                                           href="/kuitansi/@p.Id" target="_blank"><i class="bi bi-receipt"></i></a>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="vd-flex vd-flex-between mt-2">
+            <small class="vd-text-muted">Hal @_page/@TotalPages · Total @FilteredCount tagihan</small>
+            <div class="vd-flex vd-gap-1">
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => GoPage(_page - 1)">◀</button>
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= TotalPages)" @onclick="() => GoPage(_page + 1)">▶</button>
+            </div>
+        </div>
+    </section>
+}
+
+@if (_selected != null)
+{
+    <div class="vd-modal-overlay" @onclick="Close">
+        <div class="vd-modal-content" @onclick:stopPropagation="true"
+             role="dialog" aria-modal="true" aria-label="Periksa pembayaran">
+            <div class="vd-card-header">
+                <span class="vd-card-title">@_selected.InvoiceNumber</span>
+                <button class="btn btn-icon" @onclick="Close" aria-label="Tutup"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="vd-grid vd-grid-2 vd-mb-2">
+                <div>
+                    <span class="vd-form-label">Pasien</span>
+                    <p class="mb-0">@(_selected.User?.FullName ?? "-")</p>
+                </div>
+                <div>
+                    <span class="vd-form-label">Total tagihan</span>
+                    <p class="mb-0 vd-mono" style="font-size:1.15rem;font-weight:600;">@FormatMoney(_selected.Total)</p>
+                </div>
+                <div>
+                    <span class="vd-form-label">Metode</span>
+                    <p class="mb-0">@PaymentLabels.Channel(_selected.Channel) · @_selected.Provider</p>
+                </div>
+                <div>
+                    <span class="vd-form-label">Status</span>
+                    <p class="mb-0"><span class="vd-pill @PaymentLabels.StatePill(_selected.State)">@PaymentLabels.State(_selected.State)</span></p>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_selected.PayerNote))
+            {
+                <div class="vd-form-group">
+                    <span class="vd-form-label">Catatan pembayar</span>
+                    <p class="mb-0">@_selected.PayerNote</p>
+                </div>
+            }
+
+            <div class="vd-form-group">
+                <span class="vd-form-label">Bukti pembayaran</span>
+                @if (!string.IsNullOrWhiteSpace(_selected.ProofUrl))
+                {
+                    <a href="@_selected.ProofUrl" target="_blank" rel="noopener">
+                        <img src="@_selected.ProofUrl" alt="Bukti pembayaran @_selected.InvoiceNumber"
+                             style="max-width:100%;max-height:320px;border-radius:12px;border:1px solid var(--vd-border);" />
+                    </a>
+                    <small class="vd-text-muted" style="display:block;margin-top:6px;">
+                        Klik gambar untuk membukanya ukuran penuh.
+                    </small>
+                }
+                else
+                {
+                    <p class="vd-text-muted mb-0">Pasien belum mengunggah bukti.</p>
+                }
+            </div>
+
+            @if (_selected.State != PaymentState.Paid)
+            {
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="verify-note">Catatan verifikasi</label>
+                    <input id="verify-note" class="vd-form-control" @bind="_verifyNote"
+                           placeholder="mis. dana masuk 28/07 pukul 10.14, nominal cocok" />
+                </div>
+
+                <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                    <button class="vd-btn vd-btn-outline" @onclick="Close">Batal</button>
+                    <button class="vd-btn vd-btn-danger" @onclick="() => VerifyAsync(false)" disabled="@_working">
+                        <i class="bi bi-x-circle"></i> Tolak
+                    </button>
+                    <button class="vd-btn vd-btn-success" @onclick="() => VerifyAsync(true)" disabled="@_working">
+                        <i class="bi @(_working ? "bi-arrow-repeat spin" : "bi-check2-circle")"></i> Setujui sebagai lunas
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="vd-toast-item is-success" role="status">
+                    <div>
+                        <div class="vd-toast-title">Sudah lunas</div>
+                        <div class="vd-toast-body">
+                            Diverifikasi @(_selected.VerifiedBy ?? _selected.Provider)
+                            pada @(_selected.PaidAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm", Id) ?? "-").
+                            @_selected.VerificationNote
+                        </div>
+                    </div>
+                </div>
+                <div class="vd-flex vd-gap-1 vd-mt-2" style="justify-content:flex-end;">
+                    <a class="vd-btn vd-btn-primary" href="/kuitansi/@_selected.Id" target="_blank">
+                        <i class="bi bi-printer"></i> Cetak bukti pembayaran
+                    </a>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+
+    private List<Models.Payment> _all = new();
+    private bool _loading = true, _working;
+    private string _search = "", _stateFilter = "", _channelFilter = "";
+    private Models.Payment? _selected;
+    private string? _verifyNote, _notice, _noticeClass;
+    private int _page = 1;
+    private const int PageSize = 25;
+
+    private int FilteredCount => Filtered.Count();
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredCount / (double)PageSize));
+    private IEnumerable<Models.Payment> Paged => Filtered.Skip((_page - 1) * PageSize).Take(PageSize);
+
+    private void GoPage(int p) => _page = Math.Clamp(p, 1, TotalPages);
+    private void ResetPage() => _page = 1;
+
+    private IEnumerable<Models.Payment> Filtered
+    {
+        get
+        {
+            var rows = _all.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var q = _search.Trim();
+                rows = rows.Where(p =>
+                    p.InvoiceNumber.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    p.Description.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (p.User?.FullName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrEmpty(_stateFilter) && Enum.TryParse<PaymentState>(_stateFilter, out var st))
+                rows = rows.Where(p => p.State == st);
+            if (!string.IsNullOrEmpty(_channelFilter) && Enum.TryParse<PaymentChannel>(_channelFilter, out var ch))
+                rows = rows.Where(p => p.Channel == ch);
+
+            // Yang menunggu verifikasi diletakkan paling atas supaya tidak terlewat.
+            return rows
+                .OrderByDescending(p => p.State == PaymentState.AwaitingVerification)
+                .ThenByDescending(p => p.CreatedAt);
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _all = await Payments.GetAllAsync();
+        _loading = false;
+    }
+
+    private void Open(Models.Payment payment)
+    {
+        _selected = payment;
+        _verifyNote = payment.VerificationNote;
+    }
+
+    private void Close() => _selected = null;
+
+    private async Task VerifyAsync(bool approved)
+    {
+        if (_selected == null) return;
+        _working = true;
+        try
+        {
+            var admin = await AuthService.GetCurrentUserAsync();
+            await Payments.VerifyAsync(_selected.Id, approved, admin?.Email ?? "admin", _verifyNote);
+
+            _notice = approved
+                ? $"Tagihan {_selected.InvoiceNumber} ditandai lunas. Bukti pembayaran sudah dapat dicetak."
+                : $"Tagihan {_selected.InvoiceNumber} ditolak. Pasien dapat membuat tagihan baru.";
+            _noticeClass = approved ? "is-success" : "is-warning";
+
+            _selected = null;
+            await LoadAsync();
+        }
+        finally { _working = false; }
+    }
+
+    private async Task ExpireOverdueAsync()
+    {
+        var count = await Payments.ExpireOverdueAsync();
+        _notice = count == 0
+            ? "Tidak ada tagihan yang melewati batas waktu."
+            : $"{count} tagihan ditandai kedaluwarsa.";
+        _noticeClass = "is-warning";
+        await LoadAsync();
+    }
+
+    private static string FormatMoney(decimal v) => "Rp" + v.ToString("N0", Id);
+
+    private static string FormatShort(decimal v)
+    {
+        if (Math.Abs(v) >= 1_000_000_000) return "Rp" + (v / 1_000_000_000).ToString("0.#", Id) + " M";
+        if (Math.Abs(v) >= 1_000_000) return "Rp" + (v / 1_000_000).ToString("0.#", Id) + " jt";
+        if (Math.Abs(v) >= 1_000) return "Rp" + (v / 1_000).ToString("0.#", Id) + " rb";
+        return "Rp" + v.ToString("N0", Id);
+    }
+}

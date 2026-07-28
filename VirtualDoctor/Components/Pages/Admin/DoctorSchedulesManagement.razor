@@ -1,6 +1,6 @@
 @page "/admin/doctor-schedules"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
 @using VirtualDoctor.Models
 @inject Services.IDoctorScheduleService ScheduleService
 @inject Services.IAuthService AuthService

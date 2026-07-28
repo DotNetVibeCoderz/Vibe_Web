@@ -5,6 +5,7 @@
 @inject Services.IMedicineService MedicineService
 @inject Services.IArticleService ArticleService
 @inject Services.IRecommendationService RecommendationService
+@inject Services.IHospitalService HospitalService
 @inject NavigationManager Navigation
 
 <div class="vd-mb-3">
@@ -13,10 +14,10 @@
 </div>
 
 <div class="vd-stats-grid">
-    <div class="vd-stat-card"><div class="vd-stat-icon blue"><i class="bi bi-people-fill"></i></div><div><div class="vd-stat-value">10+</div><div class="vd-stat-label">Dokter Tersedia</div></div></div>
-    <div class="vd-stat-card"><div class="vd-stat-icon green"><i class="bi bi-capsule"></i></div><div><div class="vd-stat-value">12+</div><div class="vd-stat-label">Obat & Vitamin</div></div></div>
-    <div class="vd-stat-card"><div class="vd-stat-icon purple"><i class="bi bi-hospital"></i></div><div><div class="vd-stat-value">7+</div><div class="vd-stat-label">RS & Klinik</div></div></div>
-    <div class="vd-stat-card"><div class="vd-stat-icon orange"><i class="bi bi-journal-medical"></i></div><div><div class="vd-stat-value">8+</div><div class="vd-stat-label">Artikel Kesehatan</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon blue"><i class="bi bi-people-fill"></i></div><div><div class="vd-stat-value">@_doctorCount</div><div class="vd-stat-label">Dokter tersedia</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon green"><i class="bi bi-capsule"></i></div><div><div class="vd-stat-value">@_medicineCount</div><div class="vd-stat-label">Obat & vitamin</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon purple"><i class="bi bi-hospital"></i></div><div><div class="vd-stat-value">@_hospitalCount</div><div class="vd-stat-label">RS & klinik</div></div></div>
+    <div class="vd-stat-card"><div class="vd-stat-icon orange"><i class="bi bi-journal-medical"></i></div><div><div class="vd-stat-value">@_articleCount</div><div class="vd-stat-label">Artikel kesehatan</div></div></div>
 </div>
 
 <div class="vd-card vd-mb-3" style="background: linear-gradient(135deg, #dbeafe, #ede9fe); border: none;">
@@ -78,12 +79,24 @@
     private List<VirtualDoctor.Models.Doctor> _featuredDoctors = new();
     private List<VirtualDoctor.Models.Medicine> _popularMedicines = new();
     private List<VirtualDoctor.Models.HealthArticle> _latestArticles = new();
+    private int _doctorCount, _medicineCount, _hospitalCount, _articleCount;
 
     protected override async Task OnInitializedAsync()
     {
-        var doctors = await DoctorService.GetAllAsync(); _featuredDoctors = doctors.OrderByDescending(d => d.Rating).Take(6).ToList();
-        var medicines = await MedicineService.GetAllAsync(); _popularMedicines = medicines.OrderByDescending(m => m.TotalSold).Take(6).ToList();
-        _latestArticles = (await ArticleService.GetAllAsync()).Take(6).ToList();
+        var doctors = await DoctorService.GetAllAsync();
+        _doctorCount = doctors.Count(d => d.IsAvailable);
+        _featuredDoctors = doctors.OrderByDescending(d => d.Rating).Take(6).ToList();
+
+        var medicines = await MedicineService.GetAllAsync();
+        _medicineCount = medicines.Count(m => m.IsActive);
+        _popularMedicines = medicines.OrderByDescending(m => m.TotalSold).Take(6).ToList();
+
+        _hospitalCount = (await HospitalService.GetAllAsync()).Count;
+
+        var articles = await ArticleService.GetAllAsync();
+        _articleCount = articles.Count;
+        _latestArticles = articles.Take(6).ToList();
+
         _healthTip = await RecommendationService.GetHealthTipAsync("");
     }
     private void GoToDoctor(string id) => Navigation.NavigateTo("/doctors/" + id);

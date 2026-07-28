@@ -16,9 +16,18 @@ namespace VirtualDoctor.Services
         ClaimsPrincipal? GetCurrentUser();
         string? GetCurrentUserId();
         Task<ApplicationUser?> GetCurrentUserAsync();
+
+        /// <summary>Dibaca dari claim peran hasil login.</summary>
         bool IsAdmin();
         bool IsDoctor();
         string? GetDoctorId();
+
+        Task<IReadOnlyList<string>> GetRolesAsync(string userId);
+        /// <summary>Peta userId ke daftar peran, untuk daftar pengguna di backoffice.</summary>
+        Task<Dictionary<string, List<string>>> GetRolesForAllAsync();
+        /// <summary>Menetapkan peran. Gagal bila akan menghapus administrator terakhir.</summary>
+        Task<bool> SetRolesAsync(string userId, IEnumerable<string> roles, string? grantedBy = null);
+        Task<int> CountAdminsAsync();
     }
 
     public interface IUserService
@@ -96,12 +105,16 @@ namespace VirtualDoctor.Services
     public interface IConsultationService
     {
         Task<Consultation?> StartAsync(string uid, string did, ConsultationType t);
+        /// <summary>Buat/ambil ulang tautan video untuk konsultasi. Null jika provider tidak aktif.</summary>
+        Task<Consultation?> EnsureMeetingAsync(string consultationId);
         Task<bool> SendMessageAsync(string cid, string sid, string sn, string msg);
         Task<List<ConsultationMessage>> GetMessagesAsync(string cid);
         Task<List<Consultation>> GetUserConsultationsAsync(string uid);
         Task<List<Consultation>> GetDoctorConsultationsAsync(string did);
         Task<Consultation?> GetByIdAsync(string id);
         Task<bool> EndAsync(string cid);
+        /// <summary>Semua konsultasi untuk pemantauan admin.</summary>
+        Task<List<Consultation>> GetAllAsync();
     }
 
     public interface IOrderService
@@ -111,6 +124,9 @@ namespace VirtualDoctor.Services
         Task<Order?> GetByIdAsync(string id);
         Task<bool> UpdateStatusAsync(string id, OrderStatus s);
         Task<bool> CancelAsync(string id);
+        /// <summary>Semua pesanan untuk backoffice.</summary>
+        Task<List<Order>> GetAllAsync();
+        Task<bool> UpdateFulfilmentAsync(string id, OrderStatus status, PaymentStatus payment, string? courier, string? tracking);
     }
 
     public interface IHomecareService

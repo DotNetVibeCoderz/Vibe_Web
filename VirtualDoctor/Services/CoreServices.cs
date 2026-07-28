@@ -15,34 +15,73 @@ public class AuthService : IAuthService
     public AuthService(AppDbContext db, IHttpContextAccessor http)
     { _db = db; _http = http; }
 
-    public bool IsAdmin()
+    // ============ Peran ============
+    // Otorisasi dibaca dari claim yang dibuat saat login, bukan dari alamat email.
+
+    public bool IsAdmin() => _http.HttpContext?.User.IsInRole(AppRoles.Admin) ?? false;
+
+    public bool IsDoctor() => _http.HttpContext?.User.IsInRole(AppRoles.Doctor) ?? false;
+
+    public string? GetDoctorId() => _http.HttpContext?.User.FindFirst(AuthClaims.DoctorIdClaim)?.Value;
+
+    public async Task<IReadOnlyList<string>> GetRolesAsync(string userId) =>
+        await _db.UserRoles.Where(r => r.UserId == userId).Select(r => r.Role).ToListAsync();
+
+    public async Task<Dictionary<string, List<string>>> GetRolesForAllAsync() =>
+        await _db.UserRoles.AsNoTracking()
+            .GroupBy(r => r.UserId)
+            .ToDictionaryAsync(g => g.Key, g => g.Select(r => r.Role).ToList());
+
+    public async Task<bool> SetRolesAsync(string userId, IEnumerable<string> roles, string? grantedBy = null)
     {
-        var email = _http.HttpContext?.User.FindFirst(ClaimTypes.Email)?.Value;
-        return email == "admin@virtualdoctor.com";
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        var wanted = roles.Where(r => AppRoles.All.Contains(r)).Distinct().ToList();
+
+        // Cegah penghapusan administrator terakhir agar sistem tidak terkunci.
+        if (!wanted.Contains(AppRoles.Admin))
+        {
+            var isCurrentlyAdmin = await _db.UserRoles.AnyAsync(r => r.UserId == userId && r.Role == AppRoles.Admin);
+            if (isCurrentlyAdmin)
+            {
+                var adminCount = await _db.UserRoles.CountAsync(r => r.Role == AppRoles.Admin);
+                if (adminCount <= 1) return false;
+            }
+        }
+
+        var existing = await _db.UserRoles.Where(r => r.UserId == userId).ToListAsync();
+        _db.UserRoles.RemoveRange(existing.Where(r => !wanted.Contains(r.Role)));
+
+        foreach (var role in wanted.Where(r => existing.All(e => e.Role != r)))
+        {
+            _db.UserRoles.Add(new UserRole
+            {
+                UserId = userId,
+                Role = role,
+                GrantedAt = DateTime.UtcNow,
+                GrantedBy = grantedBy
+            });
+        }
+
+        // Jaga agar penanda dokter pada profil tetap selaras dengan perannya.
+        user.IsDoctor = wanted.Contains(AppRoles.Doctor);
+
+        await _db.SaveChangesAsync();
+        return true;
     }
 
-    public bool IsDoctor()
-    {
-        var email = _http.HttpContext?.User.FindFirst(ClaimTypes.Email)?.Value;
-        if (string.IsNullOrEmpty(email)) return false;
-        var user = _db.Users.AsNoTracking().FirstOrDefault(u => u.Email == email);
-        return user?.IsDoctor == true;
-    }
+    public async Task<int> CountAdminsAsync() =>
+        await _db.UserRoles.CountAsync(r => r.Role == AppRoles.Admin);
 
-    public string? GetDoctorId()
-    {
-        var email = _http.HttpContext?.User.FindFirst(ClaimTypes.Email)?.Value;
-        if (string.IsNullOrEmpty(email)) return null;
-        var user = _db.Users.AsNoTracking().FirstOrDefault(u => u.Email == email);
-        return user?.DoctorId;
-    }
+    // ============ Registrasi & login ============
 
     public async Task<bool> RegisterAsync(string email, string password, string fullName)
     {
         var normalizedEmail = AuthHelpers.NormalizeEmail(email);
         if (!AuthHelpers.IsValidEmail(normalizedEmail)) return false;
         if (string.IsNullOrWhiteSpace(fullName)) return false;
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 8) return false;
+        if (AuthHelpers.ValidatePasswordRules(password) != null) return false;
         if (await _db.Users.AnyAsync(u => u.Email == normalizedEmail)) return false;
 
         var user = new ApplicationUser
@@ -56,6 +95,9 @@ public class AuthService : IAuthService
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
         await StorePasswordHashAsync(user.Id, password);
+
+        _db.UserRoles.Add(new UserRole { UserId = user.Id, Role = AppRoles.Patient });
+        await _db.SaveChangesAsync();
         return true;
     }
 
@@ -68,17 +110,14 @@ public class AuthService : IAuthService
         if (user == null) return false;
 
         var storedHash = await GetStoredPasswordHashAsync(user.Id);
-        if (AuthHelpers.HashPassword(password) != storedHash) return false;
+        var check = AuthHelpers.VerifyPassword(storedHash, password);
+        if (check == PasswordCheck.Failed) return false;
 
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id),
-            new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Name, user.FullName)
-        };
+        // Hash lama ditulis ulang dengan algoritma baru begitu sandi terbukti benar.
+        if (check == PasswordCheck.SuccessNeedsRehash)
+            await StorePasswordHashAsync(user.Id, password);
 
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
+        var principal = await AuthClaims.BuildAsync(_db, user);
 
         var ctx = _http.HttpContext;
         if (ctx == null) return false;
@@ -118,8 +157,8 @@ public class AuthService : IAuthService
     public async Task<bool> ChangePasswordAsync(string userId, string oldPassword, string newPassword)
     {
         var storedHash = await GetStoredPasswordHashAsync(userId);
-        if (AuthHelpers.HashPassword(oldPassword) != storedHash) return false;
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8) return false;
+        if (AuthHelpers.VerifyPassword(storedHash, oldPassword) == PasswordCheck.Failed) return false;
+        if (AuthHelpers.ValidatePasswordRules(newPassword) != null) return false;
         await StorePasswordHashAsync(userId, newPassword);
         return true;
     }
@@ -183,6 +222,14 @@ public class UserService : IUserService
 
         var hash = AuthHelpers.HashPassword(password);
         _db.Set<PasswordHash>().Add(new PasswordHash { UserId = user.Id, Hash = hash });
+
+        // Pengguna baru dari backoffice tetap mendapat peran dasar.
+        _db.UserRoles.Add(new UserRole
+        {
+            UserId = user.Id,
+            Role = user.IsDoctor ? AppRoles.Doctor : AppRoles.Patient
+        });
+
         await _db.SaveChangesAsync();
         return user;
     }

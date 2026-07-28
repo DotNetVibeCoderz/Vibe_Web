@@ -1,0 +1,236 @@
+@using System.Globalization
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject IJSRuntime JS
+
+@* Dokumen cetak bersama untuk invoice dan kuitansi.
+   Perbedaannya hanya pada judul, penekanan status, dan blok tanda tangan. *@
+
+<div class="vd-doc-toolbar">
+    <a href="/bayar/@Payment.Id" class="vd-btn vd-btn-outline vd-btn-sm">
+        <i class="bi bi-arrow-left"></i> Kembali
+    </a>
+    <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="PrintAsync">
+        <i class="bi bi-printer"></i> Cetak atau simpan PDF
+    </button>
+</div>
+
+<article class="vd-doc" aria-label="@Title">
+    <header class="vd-doc-head">
+        <div class="vd-doc-issuer">
+            <div class="vd-doc-mark"><i class="bi bi-heart-pulse-fill"></i></div>
+            <div>
+                <strong>@Merchant.Name</strong>
+                @if (!string.IsNullOrWhiteSpace(Merchant.LegalName))
+                {
+                    <span>@Merchant.LegalName</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(Merchant.Address))
+                {
+                    <span>@Merchant.Address</span>
+                }
+                <span>
+                    @Merchant.Phone
+                    @if (!string.IsNullOrWhiteSpace(Merchant.Email))
+                    {
+                        <text> · @Merchant.Email</text>
+                    }
+                </span>
+                @if (!string.IsNullOrWhiteSpace(Merchant.TaxId))
+                {
+                    <span>NPWP @Merchant.TaxId</span>
+                }
+            </div>
+        </div>
+
+        <div class="vd-doc-title">
+            <h1>@Title</h1>
+            <div class="vd-doc-number">@Payment.InvoiceNumber</div>
+            <div class="vd-doc-status @(Payment.State == PaymentState.Paid ? "is-paid" : "is-open")">
+                @PaymentLabels.State(Payment.State)
+            </div>
+        </div>
+    </header>
+
+    <section class="vd-doc-parties">
+        <div>
+            <span class="vd-doc-label">Ditagihkan kepada</span>
+            <strong>@(Payment.User?.FullName ?? "-")</strong>
+            @if (!string.IsNullOrWhiteSpace(Payment.User?.Email))
+            {
+                <span>@Payment.User.Email</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(Payment.User?.PhoneNumber))
+            {
+                <span>@Payment.User.PhoneNumber</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(Payment.User?.Address))
+            {
+                <span>@Payment.User.Address</span>
+            }
+        </div>
+        <div>
+            <span class="vd-doc-label">Rincian</span>
+            <div class="vd-doc-kv"><span>Tanggal terbit</span><span>@Payment.CreatedAt.ToLocalTime().ToString("dd MMMM yyyy", Id)</span></div>
+            @if (IsReceipt && Payment.PaidAt != null)
+            {
+                <div class="vd-doc-kv"><span>Tanggal bayar</span><span>@Payment.PaidAt.Value.ToLocalTime().ToString("dd MMMM yyyy HH:mm", Id)</span></div>
+            }
+            else if (Payment.ExpiresAt != null)
+            {
+                <div class="vd-doc-kv"><span>Jatuh tempo</span><span>@Payment.ExpiresAt.Value.ToLocalTime().ToString("dd MMMM yyyy HH:mm", Id)</span></div>
+            }
+            <div class="vd-doc-kv"><span>Jenis layanan</span><span>@PaymentLabels.Reference(Payment.ReferenceType)</span></div>
+            <div class="vd-doc-kv"><span>Metode</span><span>@PaymentLabels.Channel(Payment.Channel)</span></div>
+            @if (!string.IsNullOrWhiteSpace(Payment.ExternalId))
+            {
+                <div class="vd-doc-kv"><span>Referensi penyedia</span><span class="vd-mono">@Payment.ExternalId</span></div>
+            }
+        </div>
+    </section>
+
+    <table class="vd-doc-table">
+        <thead>
+            <tr>
+                <th>Uraian</th>
+                <th class="vd-num">Jumlah</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>@Payment.Description</td>
+                <td class="vd-num">@FormatMoney(Payment.Amount)</td>
+            </tr>
+            @if (Payment.Discount > 0)
+            {
+                <tr><td>Potongan</td><td class="vd-num">−@FormatMoney(Payment.Discount)</td></tr>
+            }
+            @if (Payment.InsuranceCoverage > 0)
+            {
+                <tr><td>Ditanggung asuransi</td><td class="vd-num">−@FormatMoney(Payment.InsuranceCoverage)</td></tr>
+            }
+            @if (Payment.ServiceFee > 0)
+            {
+                <tr><td>Biaya layanan</td><td class="vd-num">@FormatMoney(Payment.ServiceFee)</td></tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>@(IsReceipt ? "Jumlah dibayar" : "Total tagihan")</td>
+                <td class="vd-num">@FormatMoney(Payment.Total)</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <p class="vd-doc-terbilang">
+        <span class="vd-doc-label">Terbilang</span>
+        @Terbilang(Payment.Total) rupiah
+    </p>
+
+    @if (!IsReceipt && Payment.State != PaymentState.Paid)
+    {
+        <section class="vd-doc-payinfo">
+            <span class="vd-doc-label">Cara pembayaran</span>
+            @if (Payment.Channel == PaymentChannel.Qris && _qrImage != null)
+            {
+                <div class="vd-doc-qr">
+                    <img src="@_qrImage" alt="Kode QRIS" width="150" height="150" />
+                    <span>Pindai dengan aplikasi yang mendukung QRIS</span>
+                </div>
+            }
+            else if (Payments.ManualInstructions is { } manual && !string.IsNullOrWhiteSpace(manual.BankName))
+            {
+                <div class="vd-doc-kv"><span>Bank</span><span>@manual.BankName</span></div>
+                <div class="vd-doc-kv"><span>Nomor rekening</span><span class="vd-mono">@manual.AccountNumber</span></div>
+                <div class="vd-doc-kv"><span>Atas nama</span><span>@manual.AccountHolder</span></div>
+            }
+            @if (!string.IsNullOrEmpty(Payment.VirtualAccountNumber))
+            {
+                <div class="vd-doc-kv"><span>Virtual account</span><span class="vd-mono">@Payment.VirtualAccountNumber</span></div>
+            }
+        </section>
+    }
+
+    @if (IsReceipt)
+    {
+        <section class="vd-doc-sign">
+            <div class="vd-doc-stamp">
+                <i class="bi bi-check-circle"></i>
+                <span>LUNAS</span>
+                <small>@Payment.PaidAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm", Id)</small>
+            </div>
+            <div class="vd-doc-signature">
+                <span class="vd-doc-label">Diverifikasi oleh</span>
+                <div class="vd-doc-signline"></div>
+                <span>@(Payment.VerifiedBy ?? Payment.Provider)</span>
+            </div>
+        </section>
+    }
+
+    <footer class="vd-doc-foot">
+        <p>
+            @if (IsReceipt)
+            {
+                <text>Dokumen ini adalah bukti pembayaran yang sah dan dicetak otomatis oleh sistem, sehingga tidak memerlukan tanda tangan basah.</text>
+            }
+            else
+            {
+                <text>Invoice ini diterbitkan otomatis oleh sistem. Pembayaran dianggap sah setelah dana diterima dan diverifikasi.</text>
+            }
+        </p>
+        <p class="vd-doc-print-note">
+            Dicetak @DateTime.Now.ToString("dd MMMM yyyy HH:mm", Id) · @Merchant.Name
+        </p>
+    </footer>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public Models.Payment Payment { get; set; } = default!;
+    [Parameter] public bool IsReceipt { get; set; }
+
+    private static readonly CultureInfo Id = new("id-ID");
+    private string? _qrImage;
+
+    private MerchantInfo Merchant => Payments.Merchant;
+    private string Title => IsReceipt ? "Bukti Pembayaran" : "Invoice";
+
+    protected override void OnParametersSet()
+    {
+        _qrImage = IsReceipt ? null : Payments.RenderQrImage(Payment.QrPayload, 6);
+    }
+
+    private async Task PrintAsync()
+    {
+        try { await JS.InvokeVoidAsync("vdApp.printPage"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private static string FormatMoney(decimal v) => "Rp" + v.ToString("N0", Id);
+
+    /// <summary>Ubah nominal menjadi kata, seperti lazimnya pada kuitansi Indonesia.</summary>
+    public static string Terbilang(decimal value)
+    {
+        var number = (long)decimal.Truncate(Math.Abs(value));
+        if (number == 0) return "Nol";
+        var words = Spell(number).Trim();
+        return char.ToUpper(words[0]) + words[1..];
+    }
+
+    private static readonly string[] Units =
+        { "", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas" };
+
+    private static string Spell(long n)
+    {
+        if (n < 12) return " " + Units[n];
+        if (n < 20) return Spell(n - 10) + " belas";
+        if (n < 100) return Spell(n / 10) + " puluh" + Spell(n % 10);
+        if (n < 200) return " seratus" + Spell(n - 100);
+        if (n < 1000) return Spell(n / 100) + " ratus" + Spell(n % 100);
+        if (n < 2000) return " seribu" + Spell(n - 1000);
+        if (n < 1_000_000) return Spell(n / 1000) + " ribu" + Spell(n % 1000);
+        if (n < 1_000_000_000) return Spell(n / 1_000_000) + " juta" + Spell(n % 1_000_000);
+        if (n < 1_000_000_000_000) return Spell(n / 1_000_000_000) + " miliar" + Spell(n % 1_000_000_000);
+        return Spell(n / 1_000_000_000_000) + " triliun" + Spell(n % 1_000_000_000_000);
+    }
+}

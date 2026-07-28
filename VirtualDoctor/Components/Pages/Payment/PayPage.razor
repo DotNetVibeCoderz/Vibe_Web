@@ -1,0 +1,481 @@
+@page "/bayar/{PaymentId}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@implements IDisposable
+@using System.Globalization
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject Services.IAuthService AuthService
+@inject Services.Storage.IFileStorageService Storage
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Pembayaran · VirtualDoctor</PageTitle>
+
+@if (_payment == null)
+{
+    <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+}
+else if (!_allowed)
+{
+    <div class="vd-empty">
+        <div class="vd-empty-icon"><i class="bi bi-shield-lock"></i></div>
+        <h4>Tagihan ini bukan milik akun Anda</h4>
+        <p>Periksa kembali tautan yang Anda buka, atau lihat daftar tagihan pada riwayat transaksi.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 class="mb-0">Pembayaran</h3>
+            <small class="vd-text-muted">
+                @PaymentLabels.Reference(_payment.ReferenceType) ·
+                <code style="font-family:var(--vd-font-data);">@_payment.InvoiceNumber</code>
+            </small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <a class="vd-btn vd-btn-outline vd-btn-sm" href="/invoice/@_payment.Id" target="_blank">
+                <i class="bi bi-file-earmark-text"></i> Invoice
+            </a>
+            @if (_payment.State == PaymentState.Paid)
+            {
+                <a class="vd-btn vd-btn-primary vd-btn-sm" href="/kuitansi/@_payment.Id" target="_blank">
+                    <i class="bi bi-receipt"></i> Bukti pembayaran
+                </a>
+            }
+        </div>
+    </div>
+
+    @if (_payment.State == PaymentState.Paid)
+    {
+        <section class="vd-panel vd-mb-3">
+            <div class="vd-empty" style="padding:32px 24px;">
+                <div class="vd-empty-icon" style="background:rgba(47,125,115,0.16);border-color:transparent;color:var(--vd-secondary);">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <h4>Pembayaran diterima</h4>
+                <p>
+                    @FormatMoney(_payment.Total) dibayar pada
+                    @(_payment.PaidAt?.ToLocalTime().ToString("dd MMMM yyyy HH:mm", Id) ?? "-").
+                    Simpan bukti pembayaran untuk keperluan klaim atau arsip.
+                </p>
+                <a class="vd-btn vd-btn-primary" href="/kuitansi/@_payment.Id" target="_blank">
+                    <i class="bi bi-printer"></i> Cetak bukti pembayaran
+                </a>
+            </div>
+        </section>
+    }
+    else if (_payment.State is PaymentState.Expired or PaymentState.Failed)
+    {
+        <section class="vd-panel vd-mb-3">
+            <div class="vd-empty" style="padding:32px 24px;">
+                <div class="vd-empty-icon" style="color:var(--vd-danger);"><i class="bi bi-x-circle"></i></div>
+                <h4>@(_payment.State == PaymentState.Expired ? "Batas waktu pembayaran terlewat" : "Pembayaran tidak berhasil")</h4>
+                <p>
+                    @(_payment.VerificationNote ?? "Buat tagihan baru untuk mengulangi pembayaran, atau hubungi petugas bila dana sudah terlanjur terkirim.")
+                </p>
+                <button class="vd-btn vd-btn-primary" @onclick="RecreateAsync">Buat tagihan baru</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="vd-dash-grid vd-dash-2-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Cara pembayaran</div>
+                        <div class="vd-panel-sub">Pilih salah satu, lalu selesaikan sebelum batas waktu</div>
+                    </div>
+                    @if (_payment.ExpiresAt != null && _payment.State == PaymentState.Pending)
+                    {
+                        <span class="vd-pill @(_remaining.TotalMinutes < 15 ? "vd-pill-danger" : "vd-pill-warning")">
+                            <i class="bi bi-clock"></i> @CountdownText()
+                        </span>
+                    }
+                </header>
+
+                @if (_payment.State == PaymentState.AwaitingVerification)
+                {
+                    <div class="vd-toast-item is-warning vd-mb-2" role="status">
+                        <div>
+                            <div class="vd-toast-title">Bukti sedang diperiksa</div>
+                            <div class="vd-toast-body">
+                                Bukti transfer Anda sudah diterima dan sedang diperiksa petugas.
+                                Status akan berubah menjadi lunas setelah dana tercatat.
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="vd-segment vd-mb-3" role="group" aria-label="Pilih cara pembayaran">
+                    @foreach (var channel in _channels)
+                    {
+                        var c = channel;
+                        <button type="button" class="@(_payment.Channel == c ? "is-active" : "")"
+                                disabled="@(_switching || _payment.State == PaymentState.AwaitingVerification)"
+                                @onclick="() => SwitchChannelAsync(c)">
+                            <i class="bi @ChannelIcon(c)"></i> @PaymentLabels.Channel(c)
+                        </button>
+                    }
+                </div>
+
+                @if (_payment.Channel == PaymentChannel.Qris)
+                {
+                    <div class="vd-pay-qr">
+                        @if (_qrImage != null)
+                        {
+                            <img src="@_qrImage" alt="Kode QRIS untuk tagihan @_payment.InvoiceNumber" width="260" height="260" />
+                            <div class="vd-pay-qr-meta">
+                                <strong>@(_merchantName ?? Payments.Merchant.Name)</strong>
+                                <span>Pindai dengan aplikasi bank atau dompet digital apa pun yang mendukung QRIS</span>
+                                <span class="vd-pay-amount">@FormatMoney(_payment.Total)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="vd-empty">
+                                <div class="vd-empty-icon"><i class="bi bi-qr-code"></i></div>
+                                <h4>Kode QR belum tersedia</h4>
+                                <p>Penyedia QRIS belum dikonfigurasi. Gunakan transfer bank, atau minta administrator melengkapi pengaturan pembayaran.</p>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (_payment.Channel is PaymentChannel.BankTransfer or PaymentChannel.Cash)
+                {
+                    var manual = Payments.ManualInstructions;
+                    <div class="vd-pay-bank">
+                        @if (_payment.Channel == PaymentChannel.BankTransfer && manual != null)
+                        {
+                            <div class="vd-pay-bank-row">
+                                <span>Bank</span><strong>@manual.BankName</strong>
+                            </div>
+                            <div class="vd-pay-bank-row">
+                                <span>Nomor rekening</span>
+                                <strong class="vd-mono">
+                                    @manual.AccountNumber
+                                    <button class="vd-btn vd-btn-outline vd-btn-sm ms-2"
+                                            @onclick="() => CopyAsync(manual.AccountNumber)">Salin</button>
+                                </strong>
+                            </div>
+                            <div class="vd-pay-bank-row">
+                                <span>Atas nama</span><strong>@manual.AccountHolder</strong>
+                            </div>
+                        }
+                        <div class="vd-pay-bank-row">
+                            <span>Nominal</span>
+                            <strong class="vd-mono">
+                                @FormatMoney(_payment.Total)
+                                <button class="vd-btn vd-btn-outline vd-btn-sm ms-2"
+                                        @onclick="() => CopyAsync(((long)_payment.Total).ToString())">Salin</button>
+                            </strong>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(manual?.Instructions))
+                        {
+                            <p class="vd-text-muted" style="font-size:0.86rem;margin:12px 0 0;">@manual.Instructions</p>
+                        }
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(_payment.VirtualAccountNumber))
+                {
+                    <div class="vd-pay-bank">
+                        <div class="vd-pay-bank-row">
+                            <span>Nomor virtual account</span>
+                            <strong class="vd-mono">
+                                @_payment.VirtualAccountNumber
+                                <button class="vd-btn vd-btn-outline vd-btn-sm ms-2"
+                                        @onclick="() => CopyAsync(_payment.VirtualAccountNumber!)">Salin</button>
+                            </strong>
+                        </div>
+                        <div class="vd-pay-bank-row"><span>Nominal</span><strong class="vd-mono">@FormatMoney(_payment.Total)</strong></div>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(_payment.PaymentUrl))
+                {
+                    <div class="vd-empty">
+                        <div class="vd-empty-icon"><i class="bi bi-box-arrow-up-right"></i></div>
+                        <h4>Lanjutkan di halaman penyedia</h4>
+                        <p>Pembayaran diselesaikan di halaman @_payment.Provider. Setelah selesai, kembali ke halaman ini untuk memeriksa status.</p>
+                        <a class="vd-btn vd-btn-primary" href="@_payment.PaymentUrl" target="_blank" rel="noopener">
+                            Buka halaman pembayaran
+                        </a>
+                    </div>
+                }
+
+                @* Unggah bukti hanya relevan untuk pembayaran yang diverifikasi manusia *@
+                @if (_payment.Provider == "Manual" || _payment.Channel == PaymentChannel.Qris)
+                {
+                    <div class="vd-pay-proof">
+                        <div class="vd-panel-title" style="font-size:1rem;">Sudah membayar?</div>
+                        <p class="vd-text-muted" style="font-size:0.86rem;">
+                            Unggah bukti transfer atau tangkapan layar keberhasilan pembayaran agar petugas dapat memverifikasi.
+                        </p>
+
+                        <InputFile OnChange="OnProofSelected" accept="image/*,application/pdf" class="vd-form-control" />
+
+                        <div class="vd-form-group vd-mt-2">
+                            <label class="vd-form-label" for="pay-note">Catatan (opsional)</label>
+                            <input id="pay-note" class="vd-form-control" @bind="_proofNote"
+                                   placeholder="mis. transfer dari rekening a.n. Budi Santoso" />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_proofName))
+                        {
+                            <p class="vd-text-muted" style="font-size:0.84rem;">Berkas terpilih: @_proofName</p>
+                        }
+
+                        <button class="vd-btn vd-btn-primary" @onclick="SubmitProofAsync" disabled="@(_uploading || _proofStream == null)">
+                            <i class="bi @(_uploading ? "bi-arrow-repeat spin" : "bi-upload")"></i>
+                            @(_uploading ? "Mengunggah…" : "Kirim bukti pembayaran")
+                        </button>
+                    </div>
+                }
+
+                @if (_payment.Provider is "Midtrans" or "Xendit")
+                {
+                    <button class="vd-btn vd-btn-outline vd-mt-2" @onclick="RefreshAsync" disabled="@_checking">
+                        <i class="bi @(_checking ? "bi-arrow-repeat spin" : "bi-arrow-clockwise")"></i>
+                        Saya sudah bayar, periksa status
+                    </button>
+                }
+
+                @if (_notice != null)
+                {
+                    <div class="vd-toast-item @_noticeClass vd-mt-2" role="status">
+                        <div><div class="vd-toast-body">@_notice</div></div>
+                        <button class="vd-toast-close" @onclick="() => _notice = null" aria-label="Tutup">✕</button>
+                    </div>
+                }
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div class="vd-panel-title">Rincian tagihan</div>
+                </header>
+
+                <table class="vd-table">
+                    <tbody>
+                        <tr><td>@_payment.Description</td><td class="vd-num">@FormatMoney(_payment.Amount)</td></tr>
+                        @if (_payment.Discount > 0)
+                        {
+                            <tr><td>Potongan</td><td class="vd-num">−@FormatMoney(_payment.Discount)</td></tr>
+                        }
+                        @if (_payment.InsuranceCoverage > 0)
+                        {
+                            <tr><td>Ditanggung asuransi</td><td class="vd-num">−@FormatMoney(_payment.InsuranceCoverage)</td></tr>
+                        }
+                        @if (_payment.ServiceFee > 0)
+                        {
+                            <tr><td>Biaya layanan</td><td class="vd-num">@FormatMoney(_payment.ServiceFee)</td></tr>
+                        }
+                        <tr>
+                            <td><strong>Total tagihan</strong></td>
+                            <td class="vd-num"><strong>@FormatMoney(_payment.Total)</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="vd-mt-2">
+                    <span class="vd-pill @PaymentLabels.StatePill(_payment.State)">@PaymentLabels.State(_payment.State)</span>
+                </div>
+
+                <dl class="vd-pay-meta">
+                    <dt>Diterbitkan</dt><dd>@_payment.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm", Id)</dd>
+                    @if (_payment.ExpiresAt != null)
+                    {
+                        <dt>Berlaku sampai</dt><dd>@_payment.ExpiresAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm", Id)</dd>
+                    }
+                    <dt>Metode</dt><dd>@PaymentLabels.Channel(_payment.Channel) · @_payment.Provider</dd>
+                </dl>
+            </section>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string PaymentId { get; set; } = "";
+
+    private static readonly CultureInfo Id = new("id-ID");
+
+    private Models.Payment? _payment;
+    private bool _allowed = true;
+    private string? _qrImage, _merchantName;
+    private List<PaymentChannel> _channels = new();
+    private TimeSpan _remaining;
+    private System.Threading.Timer? _timer;
+
+    private Stream? _proofStream;
+    private string? _proofName, _proofContentType, _proofNote;
+    private bool _uploading, _checking, _switching;
+    private string? _notice, _noticeClass;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(() =>
+            {
+                UpdateRemaining();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private async Task LoadAsync()
+    {
+        _payment = await Payments.GetAsync(PaymentId);
+        if (_payment == null) return;
+
+        var user = await AuthService.GetCurrentUserAsync();
+        _allowed = user != null && (_payment.UserId == user.Id || AuthService.IsAdmin());
+        if (!_allowed) return;
+
+        _channels = Payments.AvailableChannels.ToList();
+        if (!_channels.Contains(_payment.Channel)) _channels.Insert(0, _payment.Channel);
+
+        _qrImage = Payments.RenderQrImage(_payment.QrPayload);
+        _merchantName = _payment.QrPayload != null && !_payment.QrPayload.StartsWith("http")
+            ? QrisPayload.ReadMerchantName(_payment.QrPayload)
+            : null;
+
+        UpdateRemaining();
+    }
+
+    private void UpdateRemaining()
+    {
+        if (_payment?.ExpiresAt == null) { _remaining = TimeSpan.Zero; return; }
+        var left = _payment.ExpiresAt.Value - DateTime.UtcNow;
+        _remaining = left > TimeSpan.Zero ? left : TimeSpan.Zero;
+    }
+
+    private string CountdownText() =>
+        _remaining <= TimeSpan.Zero
+            ? "Waktu habis"
+            : _remaining.TotalHours >= 1
+                ? $"{(int)_remaining.TotalHours} jam {_remaining.Minutes} menit lagi"
+                : $"{_remaining.Minutes:00}:{_remaining.Seconds:00} lagi";
+
+    private static string ChannelIcon(PaymentChannel c) => c switch
+    {
+        PaymentChannel.Qris => "bi-qr-code",
+        PaymentChannel.BankTransfer => "bi-bank",
+        PaymentChannel.VirtualAccount => "bi-credit-card-2-front",
+        PaymentChannel.EWallet => "bi-wallet2",
+        PaymentChannel.Card => "bi-credit-card",
+        PaymentChannel.Cash => "bi-cash-coin",
+        _ => "bi-shield-plus"
+    };
+
+    private async Task SwitchChannelAsync(PaymentChannel channel)
+    {
+        if (_payment == null || _payment.Channel == channel) return;
+        _switching = true;
+        try
+        {
+            var request = new PaymentRequest(
+                _payment.ReferenceType, _payment.ReferenceId, _payment.UserId,
+                _payment.Description, _payment.Amount, _payment.Discount, _payment.InsuranceCoverage);
+
+            await Payments.CreateAsync(request, channel);
+            await LoadAsync();
+        }
+        finally { _switching = false; }
+    }
+
+    private void OnProofSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            Notify("Ukuran berkas melebihi 5 MB. Perkecil gambar lalu coba lagi.", "is-error");
+            return;
+        }
+
+        _proofStream = file.OpenReadStream(5 * 1024 * 1024);
+        _proofName = file.Name;
+        _proofContentType = file.ContentType;
+        _notice = null;
+    }
+
+    private async Task SubmitProofAsync()
+    {
+        if (_payment == null || _proofStream == null) return;
+        _uploading = true;
+        try
+        {
+            var key = await Storage.UploadAsync(_proofStream, _proofName ?? "bukti.png", _proofContentType ?? "image/png");
+            var url = await Storage.GetPublicUrlAsync(key);
+
+            await Payments.SubmitProofAsync(_payment.Id, url, _proofNote);
+            await _proofStream.DisposeAsync();
+            _proofStream = null;
+            _proofName = null;
+
+            await LoadAsync();
+            Notify("Bukti pembayaran terkirim. Petugas akan memeriksanya.", "is-success");
+        }
+        catch (Exception ex)
+        {
+            Notify($"Bukti gagal diunggah: {ex.Message}", "is-error");
+        }
+        finally { _uploading = false; }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_payment == null) return;
+        _checking = true;
+        try
+        {
+            var state = await Payments.RefreshStatusAsync(_payment.Id);
+            await LoadAsync();
+            Notify(state switch
+            {
+                PaymentState.Paid => "Pembayaran sudah tercatat lunas.",
+                PaymentState.Pending => "Dana belum masuk. Coba lagi beberapa saat setelah membayar.",
+                null => "Penyedia tidak memberi jawaban. Coba lagi nanti atau unggah bukti pembayaran.",
+                _ => $"Status terkini: {PaymentLabels.State(state.Value)}"
+            }, state == PaymentState.Paid ? "is-success" : "is-warning");
+        }
+        finally { _checking = false; }
+    }
+
+    private async Task RecreateAsync()
+    {
+        if (_payment == null) return;
+        var request = new PaymentRequest(
+            _payment.ReferenceType, _payment.ReferenceId, _payment.UserId,
+            _payment.Description, _payment.Amount, _payment.Discount, _payment.InsuranceCoverage);
+
+        var fresh = await Payments.CreateAsync(request, _payment.Channel);
+        Navigation.NavigateTo($"/bayar/{fresh.Id}", forceLoad: true);
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeAsync<bool>("vdApp.copyText", text); Notify("Disalin.", "is-success"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Notify(string message, string cls)
+    {
+        _notice = message;
+        _noticeClass = cls;
+    }
+
+    private static string FormatMoney(decimal v) => "Rp" + v.ToString("N0", Id);
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _proofStream?.Dispose();
+    }
+}

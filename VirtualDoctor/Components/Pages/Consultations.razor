@@ -5,6 +5,8 @@
 @inject Services.IDoctorService DoctorService
 @inject Services.IReviewService ReviewService
 @inject Services.IAuthService AuthService
+@inject Services.Meeting.IMeetingService MeetingService
+@inject IJSRuntime JS
 @inject NavigationManager Navigation
 
 @if (_isNewConsultation)
@@ -12,13 +14,93 @@
     <div class="vd-mb-2"><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => _isNewConsultation = false">Kembali</button></div>
     <div class="vd-card"><h4>💬 Mulai Konsultasi</h4>
         <div class="vd-form-group"><label class="vd-form-label">Pilih Dokter</label><select class="vd-form-control" @bind="_selectedDoctorId">@foreach (var doc in _doctors.Where(d => d.IsOnline)) { <option value="@doc.Id">@doc.FullName - @doc.Specialization (Rp@(doc.ConsultationFee.ToString("N0")))</option> }</select></div>
+
+        <div class="vd-form-group">
+            <label class="vd-form-label" id="lbl-tipe">Cara konsultasi</label>
+            <div class="vd-segment" role="group" aria-labelledby="lbl-tipe">
+                <button type="button" class="@(_consultType == VirtualDoctor.Models.ConsultationType.Chat ? "is-active" : "")"
+                        @onclick="() => _consultType = VirtualDoctor.Models.ConsultationType.Chat">
+                    <i class="bi bi-chat-dots"></i> Chat
+                </button>
+                <button type="button" class="@(_consultType == VirtualDoctor.Models.ConsultationType.Video ? "is-active" : "")"
+                        disabled="@(!MeetingService.IsEnabled)"
+                        @onclick="() => _consultType = VirtualDoctor.Models.ConsultationType.Video">
+                    <i class="bi bi-camera-video"></i> Video
+                </button>
+            </div>
+            @if (MeetingService.IsEnabled)
+            {
+                <small class="vd-text-muted">Video call dibuat lewat @MeetingService.ActiveProvider.</small>
+            }
+            else
+            {
+                <small class="vd-text-muted">Video call belum aktif. Administrator dapat mengaktifkannya di Pengaturan Sistem.</small>
+            }
+        </div>
+
         <div class="vd-form-group"><label class="vd-form-label">Keluhan Utama</label><textarea class="vd-form-control" @bind="_complaint" rows="3" placeholder="Ceritakan keluhan..."></textarea></div>
-        <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="StartConsult"><i class="bi bi-chat-dots-fill"></i> Mulai Chat</button>
+        <button class="vd-btn vd-btn-primary vd-btn-lg vd-w-100" @onclick="StartConsult">
+            <i class="bi @(_consultType == VirtualDoctor.Models.ConsultationType.Video ? "bi-camera-video-fill" : "bi-chat-dots-fill")"></i>
+            @(_consultType == VirtualDoctor.Models.ConsultationType.Video ? "Mulai Video Call" : "Mulai Chat")
+        </button>
     </div>
 }
 else if (_activeConsultation != null)
 {
     <div class="vd-mb-2 vd-flex vd-flex-between"><div><button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => { _activeConsultation = null; StateHasChanged(); }">← Kembali</button></div><div><span>👨‍⚕️ @_activeConsultation.Doctor?.FullName</span><button class="vd-btn vd-btn-danger vd-btn-sm ms-2" @onclick="EndConsult">Akhiri</button></div></div>
+
+    @if (!string.IsNullOrEmpty(_activeConsultation.MeetingUrl))
+    {
+        <div class="vd-meet-banner">
+            <span class="vd-meet-icon"><i class="bi bi-camera-video-fill"></i></span>
+            <div class="vd-meet-meta">
+                <strong>Ruang video @_activeConsultation.MeetingProvider siap</strong>
+                <small>
+                    ID @(_activeConsultation.MeetingId ?? "-")
+                    @if (!string.IsNullOrEmpty(_activeConsultation.MeetingPassword))
+                    {
+                        <text> · sandi @_activeConsultation.MeetingPassword</text>
+                    }
+                </small>
+            </div>
+            <div class="vd-flex vd-gap-1" style="margin-left:auto; flex-wrap:wrap;">
+                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="CopyMeetingLink">
+                    <i class="bi bi-clipboard"></i> Salin tautan
+                </button>
+                <a class="vd-btn vd-btn-primary vd-btn-sm" href="@_activeConsultation.MeetingUrl"
+                   target="_blank" rel="noopener">
+                    <i class="bi bi-box-arrow-up-right"></i> Gabung video
+                </a>
+            </div>
+        </div>
+    }
+    else if (MeetingService.IsEnabled)
+    {
+        <div class="vd-meet-banner">
+            <span class="vd-meet-icon"><i class="bi bi-camera-video"></i></span>
+            <div class="vd-meet-meta">
+                <strong>Lanjutkan ke video call</strong>
+                <small>Ruang dibuat lewat @MeetingService.ActiveProvider</small>
+            </div>
+            <button class="vd-btn vd-btn-primary vd-btn-sm" style="margin-left:auto;"
+                    @onclick="StartVideo" disabled="@_creatingMeeting">
+                <i class="bi @(_creatingMeeting ? "bi-arrow-repeat spin" : "bi-camera-video-fill")"></i>
+                @(_creatingMeeting ? "Menyiapkan…" : "Buat ruang video")
+            </button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_meetingNotice))
+    {
+        <div class="vd-toast-item is-warning vd-mb-2" role="alert">
+            <div>
+                <div class="vd-toast-title">Video call belum tersedia</div>
+                <div class="vd-toast-body">@_meetingNotice</div>
+            </div>
+            <button class="vd-toast-close" @onclick="() => _meetingNotice = null" aria-label="Tutup">✕</button>
+        </div>
+    }
+
     <div class="vd-chat-container"><div class="vd-chat-messages">@foreach (var msg in _messages) { <div class="vd-chat-message @(msg.SenderId == _userId ? "user" : "")"><div class="vd-chat-avatar @(msg.SenderId == _userId ? "user" : "bot")"><i class="bi @(msg.SenderId == _userId ? "bi-person-fill" : "bi-heart-pulse-fill")"></i></div><div><div class="vd-chat-bubble">@msg.Message</div><small class="vd-text-muted">@msg.SenderName · @msg.SentAt.ToString("HH:mm")</small></div></div> }</div>
     <div class="vd-chat-input-area"><input class="vd-form-control" @bind="_chatInput" placeholder="Tulis pesan..." style="flex:1;" @onkeydown="HandleChatKey" /><button class="vd-btn vd-btn-primary" @onclick="SendChatMsg" disabled="@(string.IsNullOrWhiteSpace(_chatInput))">Kirim</button></div></div>
 }
@@ -71,6 +153,9 @@ else
     private Dictionary<string, VirtualDoctor.Models.DoctorReview> _consultationReviews = new();
     private Dictionary<string, int> _pendingConsultRatings = new();
     private Dictionary<string, string> _pendingConsultComments = new();
+    private VirtualDoctor.Models.ConsultationType _consultType = VirtualDoctor.Models.ConsultationType.Chat;
+    private bool _creatingMeeting;
+    private string? _meetingNotice;
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,8 +191,37 @@ else
         if (string.IsNullOrEmpty(_selectedDoctorId)) return;
         var u = await AuthService.GetCurrentUserAsync();
         if (u == null) { Navigation.NavigateTo("/auth/login"); return; }
-        var c = await ConsultationService.StartAsync(u.Id, _selectedDoctorId, VirtualDoctor.Models.ConsultationType.Chat);
-        if (c != null) { c.ChiefComplaint = _complaint; _activeConsultation = c; _isNewConsultation = false; _messages = new(); }
+        var c = await ConsultationService.StartAsync(u.Id, _selectedDoctorId, _consultType);
+        if (c != null)
+        {
+            c.ChiefComplaint = _complaint;
+            _activeConsultation = c;
+            _isNewConsultation = false;
+            _messages = new();
+            if (_consultType == VirtualDoctor.Models.ConsultationType.Video && string.IsNullOrEmpty(c.MeetingUrl))
+                _meetingNotice = "Ruang video gagal dibuat, jadi konsultasi dilanjutkan lewat chat. Periksa kredensial provider di Pengaturan Sistem.";
+        }
+    }
+
+    private async Task StartVideo()
+    {
+        if (_activeConsultation == null) return;
+        _creatingMeeting = true;
+        _meetingNotice = null;
+        try
+        {
+            var updated = await ConsultationService.EnsureMeetingAsync(_activeConsultation.Id);
+            if (updated != null) _activeConsultation = updated;
+            if (string.IsNullOrEmpty(_activeConsultation.MeetingUrl))
+                _meetingNotice = "Provider meeting menolak permintaan. Periksa kredensial di Pengaturan Sistem, lalu coba lagi.";
+        }
+        finally { _creatingMeeting = false; }
+    }
+
+    private async Task CopyMeetingLink()
+    {
+        if (_activeConsultation?.MeetingUrl == null) return;
+        await JS.InvokeAsync<bool>("vdApp.copyText", _activeConsultation.MeetingUrl);
     }
 
     private async Task OpenConsult(string id) { _activeConsultation = await ConsultationService.GetByIdAsync(id); if (_activeConsultation != null) _messages = await ConsultationService.GetMessagesAsync(id); }

@@ -1,0 +1,221 @@
+@page "/admin/consultations"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
+@using System.Globalization
+@using VirtualDoctor.Models
+@inject Services.IConsultationService ConsultationService
+@inject Services.IAuthService AuthService
+@inject Services.Meeting.IMeetingService MeetingService
+
+<PageTitle>Pantau Konsultasi · VirtualDoctor</PageTitle>
+
+@if (!_isAdmin)
+{
+    <div class="vd-empty mt-5">
+        <div class="vd-empty-icon"><i class="bi bi-shield-lock-fill"></i></div>
+        <h4>Halaman khusus administrator</h4>
+        <p>Akun Anda tidak punya akses ke pemantauan konsultasi.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 class="mb-0">Pantau Konsultasi</h3>
+            <small class="vd-text-muted">
+                Konsultasi berjalan dan riwayatnya
+                @if (MeetingService.IsEnabled)
+                {
+                    <text> · video call lewat @MeetingService.ActiveProvider</text>
+                }
+            </small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="LoadAsync">
+                <i class="bi bi-arrow-clockwise"></i> Muat ulang
+            </button>
+        </div>
+    </div>
+
+    <div class="vd-vitals">
+        <article class="vd-vital">
+            <span class="vd-vital-label">Sedang berjalan</span>
+            <span class="vd-vital-value">@_all.Count(c => c.Status == ConsultationStatus.InProgress)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Menunggu dokter</span>
+            <span class="vd-vital-value">@_all.Count(c => c.Status == ConsultationStatus.Waiting)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Selesai hari ini</span>
+            <span class="vd-vital-value">@_all.Count(c => c.Status == ConsultationStatus.Completed && c.EndedAt?.Date == DateTime.UtcNow.Date)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Sesi video</span>
+            <span class="vd-vital-value">@_all.Count(c => !string.IsNullOrEmpty(c.MeetingUrl))</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Nilai konsultasi</span>
+            <span class="vd-vital-value">@FormatMoney(_all.Where(c => c.Status != ConsultationStatus.Cancelled).Sum(c => c.Fee))</span>
+        </article>
+    </div>
+
+    <section class="vd-toolbar" aria-label="Filter konsultasi">
+        <div class="vd-field" style="flex:1;min-width:220px;">
+            <label class="vd-form-label" for="c-search">Cari</label>
+            <input id="c-search" class="vd-form-control" placeholder="Nama pasien atau dokter"
+                   @bind="_search" @bind:event="oninput" />
+        </div>
+        <div class="vd-field">
+            <label class="vd-form-label" for="c-status">Status</label>
+            <select id="c-status" class="vd-form-control" @bind="_statusFilter">
+                <option value="">Semua status</option>
+                @foreach (var s in Enum.GetValues<ConsultationStatus>())
+                {
+                    <option value="@s">@StatusLabel(s)</option>
+                }
+            </select>
+        </div>
+        <div class="vd-field">
+            <label class="vd-form-label" for="c-type">Jenis</label>
+            <select id="c-type" class="vd-form-control" @bind="_typeFilter">
+                <option value="">Semua jenis</option>
+                @foreach (var t in Enum.GetValues<ConsultationType>())
+                {
+                    <option value="@t">@TypeLabel(t)</option>
+                }
+            </select>
+        </div>
+    </section>
+
+    @if (_loading)
+    {
+        <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+    }
+    else if (!Filtered.Any())
+    {
+        <div class="vd-panel">
+            <div class="vd-empty">
+                <div class="vd-empty-icon"><i class="bi bi-chat-square-text"></i></div>
+                <h4>Belum ada konsultasi</h4>
+                <p>Konsultasi yang dimulai pasien akan muncul di sini beserta status dan tautan video-nya.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <section class="vd-panel">
+            <div class="vd-table-wrap">
+                <table class="vd-table">
+                    <thead>
+                        <tr>
+                            <th>Mulai</th><th>Pasien</th><th>Dokter</th><th>Jenis</th>
+                            <th>Durasi</th><th class="vd-num">Biaya</th><th>Status</th><th>Video</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in Filtered.Take(100))
+                        {
+                            <tr>
+                                <td>@c.StartedAt.ToLocalTime().ToString("dd MMM HH:mm", Id)</td>
+                                <td>@(c.User?.FullName ?? "-")</td>
+                                <td>@(c.Doctor?.FullName ?? "-")</td>
+                                <td>@TypeLabel(c.Type)</td>
+                                <td>@Duration(c)</td>
+                                <td class="vd-num">@FormatMoney(c.Fee)</td>
+                                <td><span class="vd-pill @StatusClass(c.Status)">@StatusLabel(c.Status)</span></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(c.MeetingUrl))
+                                    {
+                                        <a class="vd-btn vd-btn-outline vd-btn-sm" href="@c.MeetingUrl" target="_blank" rel="noopener">
+                                            <i class="bi bi-camera-video"></i> @c.MeetingProvider
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="vd-text-muted">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+
+    private bool _isAdmin, _loading = true;
+    private List<Consultation> _all = new();
+    private string _search = "", _statusFilter = "", _typeFilter = "";
+
+    private IEnumerable<Consultation> Filtered
+    {
+        get
+        {
+            var rows = _all.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var q = _search.Trim();
+                rows = rows.Where(c =>
+                    (c.User?.FullName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (c.Doctor?.FullName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<ConsultationStatus>(_statusFilter, out var st))
+                rows = rows.Where(c => c.Status == st);
+            if (!string.IsNullOrEmpty(_typeFilter) && Enum.TryParse<ConsultationType>(_typeFilter, out var tp))
+                rows = rows.Where(c => c.Type == tp);
+            return rows;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        if (_isAdmin) await LoadAsync();
+        else _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _all = await ConsultationService.GetAllAsync();
+        _loading = false;
+    }
+
+    private static string Duration(Consultation c)
+    {
+        if (c.EndedAt == null) return c.Status == ConsultationStatus.InProgress ? "berjalan" : "—";
+        var span = c.EndedAt.Value - c.StartedAt;
+        return span.TotalMinutes < 1 ? "<1 mnt" : $"{(int)span.TotalMinutes} mnt";
+    }
+
+    private static string FormatMoney(decimal v) => "Rp" + v.ToString("N0", Id);
+
+    private static string StatusLabel(ConsultationStatus s) => s switch
+    {
+        ConsultationStatus.Waiting => "Menunggu",
+        ConsultationStatus.InProgress => "Berlangsung",
+        ConsultationStatus.Completed => "Selesai",
+        _ => "Dibatalkan"
+    };
+
+    private static string StatusClass(ConsultationStatus s) => s switch
+    {
+        ConsultationStatus.Completed => "vd-pill-success",
+        ConsultationStatus.Cancelled => "vd-pill-danger",
+        ConsultationStatus.InProgress => "vd-pill-info",
+        _ => "vd-pill-warning"
+    };
+
+    private static string TypeLabel(ConsultationType t) => t switch
+    {
+        ConsultationType.Chat => "Chat",
+        ConsultationType.Phone => "Telepon",
+        _ => "Video"
+    };
+}

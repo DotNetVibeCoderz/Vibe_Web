@@ -19,15 +19,30 @@ public static class StorageServiceFactory
     {
         var config = sp.GetRequiredService<AppConfig>();
         var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger(typeof(StorageServiceFactory));
         var provider = (config.Storage.Provider ?? "FileSystem").Trim().ToLowerInvariant();
 
-        return provider switch
+        if (provider is "filesystem" or "") return new FileStorageService(config);
+
+        // Storage eksternal tidak boleh menjatuhkan aplikasi saat kredensial salah,
+        // akun dinonaktifkan, atau jaringan mati. Turunkan ke penyimpanan lokal.
+        try
         {
-            "s3" => new S3FileStorageService(config, loggerFactory.CreateLogger<S3FileStorageService>()),
-            "minio" => new MinioFileStorageService(config, loggerFactory.CreateLogger<MinioFileStorageService>()),
-            "azureblob" => new AzureBlobFileStorageService(config, loggerFactory.CreateLogger<AzureBlobFileStorageService>()),
-            _ => new FileStorageService(config)
-        };
+            return provider switch
+            {
+                "s3" => new S3FileStorageService(config, loggerFactory.CreateLogger<S3FileStorageService>()),
+                "minio" => new MinioFileStorageService(config, loggerFactory.CreateLogger<MinioFileStorageService>()),
+                "azureblob" => new AzureBlobFileStorageService(config, loggerFactory.CreateLogger<AzureBlobFileStorageService>()),
+                _ => new FileStorageService(config)
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "[Storage] Provider '{Provider}' gagal diinisialisasi. Aplikasi tetap berjalan memakai penyimpanan lokal (wwwroot/{Path}). Perbaiki kredensial di appsettings.json lalu jalankan ulang.",
+                config.Storage.Provider, config.Storage.BasePath);
+            return new FileStorageService(config);
+        }
     }
 }
 

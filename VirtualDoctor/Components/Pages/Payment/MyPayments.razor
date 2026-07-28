@@ -1,0 +1,94 @@
+@page "/tagihan"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Globalization
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject Services.IAuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Tagihan Saya · VirtualDoctor</PageTitle>
+
+<div class="vd-mb-2 vd-flex vd-flex-between"><div><h3 class="mb-0">🧾 Tagihan Saya</h3><small class="vd-text-muted">Riwayat pembayaran, invoice, dan kuitansi</small></div></div>
+
+@if (_loading)
+{
+    <div class="vd-skeleton vd-skeleton-block"></div>
+}
+else
+{
+    <div class="vd-vitals vd-mb-2">
+        <div class="vd-vital"><span class="vd-vital-label">Belum dibayar</span><span class="vd-vital-value">@_outstanding.ToString("N0", Id)</span><span class="vd-vital-unit">tagihan</span></div>
+        <div class="vd-vital"><span class="vd-vital-label">Total belum dibayar</span><span class="vd-vital-value">Rp @_outstandingAmount.ToString("N0", Id)</span></div>
+        <div class="vd-vital"><span class="vd-vital-label">Sudah dibayar</span><span class="vd-vital-value">Rp @_paidAmount.ToString("N0", Id)</span></div>
+    </div>
+
+    @if (!_all.Any())
+    {
+        <div class="vd-empty"><div class="vd-empty-icon"><i class="bi bi-receipt"></i></div><h4>Belum ada tagihan</h4><p>Tagihan muncul di sini setelah Anda memesan obat, konsultasi, atau layanan lain.</p><a href="/pharmacy" class="vd-btn vd-btn-primary">Mulai belanja</a></div>
+    }
+    else
+    {
+        <div class="vd-card"><div class="vd-table-wrap">
+            <table class="vd-table">
+                <thead><tr><th>Nomor</th><th>Keterangan</th><th>Jenis</th><th class="text-end">Total</th><th>Cara bayar</th><th>Status</th><th>Tanggal</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var p in Paged)
+                {
+                    <tr>
+                        <td class="vd-mono">@p.InvoiceNumber</td>
+                        <td>@p.Description</td>
+                        <td><small class="vd-text-muted">@PaymentLabels.Reference(p.ReferenceType)</small></td>
+                        <td class="text-end"><strong>Rp @p.Total.ToString("N0", Id)</strong></td>
+                        <td>@PaymentLabels.Channel(p.Channel)</td>
+                        <td><span class="vd-pill @PaymentLabels.StatePill(p.State)">@PaymentLabels.State(p.State)</span></td>
+                        <td><small>@p.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm", Id)</small></td>
+                        <td class="text-end vd-nowrap">
+                            @if (p.IsOutstanding)
+                            {
+                                <a href="/bayar/@p.Id" class="vd-btn vd-btn-primary vd-btn-sm">Bayar</a>
+                            }
+                            <a href="/invoice/@p.Id" class="vd-btn vd-btn-outline vd-btn-sm" target="_blank">Invoice</a>
+                            @if (p.State == PaymentState.Paid)
+                            {
+                                <a href="/kuitansi/@p.Id" class="vd-btn vd-btn-outline vd-btn-sm" target="_blank">Kuitansi</a>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="vd-flex vd-flex-between mt-2">
+            <small class="vd-text-muted">Hal @_page/@TotalPages · Total @_all.Count tagihan</small>
+            <div class="vd-flex vd-gap-1">
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => GoPage(_page - 1)">◀</button>
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= TotalPages)" @onclick="() => GoPage(_page + 1)">▶</button>
+            </div>
+        </div></div>
+    }
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+    private const int PageSize = 25;
+
+    private List<Models.Payment> _all = new();
+    private bool _loading = true; private int _page = 1;
+    private int _outstanding; private decimal _outstandingAmount; private decimal _paidAmount;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_all.Count / (double)PageSize));
+    private IEnumerable<Models.Payment> Paged => _all.Skip((_page - 1) * PageSize).Take(PageSize);
+    private void GoPage(int p) => _page = Math.Clamp(p, 1, TotalPages);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await AuthService.GetCurrentUserAsync();
+        if (user != null) _all = await Payments.GetForUserAsync(user.Id);
+        _outstanding = _all.Count(p => p.IsOutstanding);
+        _outstandingAmount = _all.Where(p => p.IsOutstanding).Sum(p => p.Total);
+        _paidAmount = _all.Where(p => p.State == PaymentState.Paid).Sum(p => p.Total);
+        _loading = false;
+    }
+}

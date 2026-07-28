@@ -7,14 +7,75 @@ namespace VirtualDoctor.Services;
 public class ConsultationService : IConsultationService
 {
     private readonly AppDbContext _db;
-    public ConsultationService(AppDbContext db) => _db = db;
-    public async Task<Consultation?> StartAsync(string uid, string did, ConsultationType t) { var d = await _db.Doctors.FindAsync(did); if (d == null) return null; var c = new Consultation { UserId = uid, DoctorId = did, Type = t, Fee = d.ConsultationFee, Status = ConsultationStatus.InProgress }; _db.Consultations.Add(c); await _db.SaveChangesAsync(); return c; }
+    private readonly Meeting.IMeetingService _meeting;
+
+    public ConsultationService(AppDbContext db, Meeting.IMeetingService meeting)
+    { _db = db; _meeting = meeting; }
+
+    public async Task<Consultation?> StartAsync(string uid, string did, ConsultationType t)
+    {
+        var d = await _db.Doctors.FindAsync(did);
+        if (d == null) return null;
+
+        var c = new Consultation
+        {
+            UserId = uid,
+            DoctorId = did,
+            Type = t,
+            Fee = d.ConsultationFee,
+            Status = ConsultationStatus.InProgress
+        };
+
+        // Konsultasi video otomatis mendapat tautan meeting bila provider aktif.
+        if (t == ConsultationType.Video && _meeting.IsEnabled)
+        {
+            var info = await _meeting.CreateMeetingAsync($"Konsultasi · {d.FullName}", DateTime.UtcNow);
+            if (info != null)
+            {
+                c.MeetingProvider = info.Provider;
+                c.MeetingId = info.MeetingId;
+                c.MeetingUrl = info.JoinUrl;
+                c.MeetingHostUrl = info.HostUrl;
+                c.MeetingPassword = info.Password;
+            }
+        }
+
+        _db.Consultations.Add(c);
+        await _db.SaveChangesAsync();
+        return c;
+    }
+
+    public async Task<Consultation?> EnsureMeetingAsync(string consultationId)
+    {
+        var c = await _db.Consultations.Include(x => x.Doctor).FirstOrDefaultAsync(x => x.Id == consultationId);
+        if (c == null) return null;
+        if (!string.IsNullOrEmpty(c.MeetingUrl)) return c;
+        if (!_meeting.IsEnabled) return c;
+
+        var info = await _meeting.CreateMeetingAsync($"Konsultasi · {c.Doctor?.FullName}", DateTime.UtcNow);
+        if (info == null) return c;
+
+        c.MeetingProvider = info.Provider;
+        c.MeetingId = info.MeetingId;
+        c.MeetingUrl = info.JoinUrl;
+        c.MeetingHostUrl = info.HostUrl;
+        c.MeetingPassword = info.Password;
+        c.Type = ConsultationType.Video;
+        await _db.SaveChangesAsync();
+        return c;
+    }
     public async Task<bool> SendMessageAsync(string cid, string sid, string sn, string msg) { _db.ConsultationMessages.Add(new ConsultationMessage { ConsultationId = cid, SenderId = sid, SenderName = sn, Message = msg }); return await _db.SaveChangesAsync() > 0; }
     public async Task<List<ConsultationMessage>> GetMessagesAsync(string cid) => await _db.ConsultationMessages.Where(m => m.ConsultationId == cid).OrderBy(m => m.SentAt).ToListAsync();
     public async Task<List<Consultation>> GetUserConsultationsAsync(string uid) => await _db.Consultations.Include(c => c.Doctor).Where(c => c.UserId == uid).OrderByDescending(c => c.StartedAt).ToListAsync();
     public async Task<List<Consultation>> GetDoctorConsultationsAsync(string did) => await _db.Consultations.Include(c => c.User).Where(c => c.DoctorId == did).OrderByDescending(c => c.StartedAt).ToListAsync();
     public async Task<Consultation?> GetByIdAsync(string id) => await _db.Consultations.Include(c => c.Doctor).Include(c => c.User).FirstOrDefaultAsync(c => c.Id == id);
     public async Task<bool> EndAsync(string cid) { var c = await _db.Consultations.FindAsync(cid); if (c == null) return false; c.Status = ConsultationStatus.Completed; c.EndedAt = DateTime.UtcNow; return await _db.SaveChangesAsync() > 0; }
+
+    public async Task<List<Consultation>> GetAllAsync() =>
+        await _db.Consultations.AsNoTracking()
+            .Include(c => c.Doctor).Include(c => c.User)
+            .OrderByDescending(c => c.StartedAt)
+            .ToListAsync();
 }
 
 public class OrderService : IOrderService
@@ -26,6 +87,26 @@ public class OrderService : IOrderService
     public async Task<Order?> GetByIdAsync(string id) => await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Medicine).FirstOrDefaultAsync(o => o.Id == id);
     public async Task<bool> UpdateStatusAsync(string id, OrderStatus s) { var o = await _db.Orders.FindAsync(id); if (o == null) return false; o.Status = s; if (s == OrderStatus.Delivered) o.DeliveredAt = DateTime.UtcNow; return await _db.SaveChangesAsync() > 0; }
     public async Task<bool> CancelAsync(string id) { var o = await _db.Orders.FindAsync(id); if (o == null) return false; o.Status = OrderStatus.Cancelled; return await _db.SaveChangesAsync() > 0; }
+
+    public async Task<List<Order>> GetAllAsync() =>
+        await _db.Orders.AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.User)
+            .Include(o => o.Pharmacy)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+    public async Task<bool> UpdateFulfilmentAsync(string id, OrderStatus status, PaymentStatus payment, string? courier, string? tracking)
+    {
+        var o = await _db.Orders.FindAsync(id);
+        if (o == null) return false;
+        o.Status = status;
+        o.PaymentStatus = payment;
+        o.CourierName = courier;
+        o.TrackingNumber = tracking;
+        if (status == OrderStatus.Delivered && o.DeliveredAt == null) o.DeliveredAt = DateTime.UtcNow;
+        return await _db.SaveChangesAsync() > 0;
+    }
 }
 
 public class HomecareAppService : IHomecareService

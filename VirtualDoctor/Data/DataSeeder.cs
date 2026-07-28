@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using VirtualDoctor.Models;
 using VirtualDoctor.Services;
 using VirtualDoctor.Services.Storage;
@@ -6,6 +7,53 @@ namespace VirtualDoctor.Data;
 
 public static class DataSeeder
 {
+    /// <summary>
+    /// Memberi peran kepada pengguna yang belum punya. Dijalankan setiap start dan bersifat idempoten.
+    ///
+    /// Ini sekaligus memindahkan konvensi lama — administrator ditentukan dari alamat email
+    /// <c>admin@virtualdoctor.com</c> — menjadi data di tabel <c>UserRoles</c>. Setelah dipindahkan,
+    /// peran dikelola lewat backoffice, bukan lewat alamat email.
+    /// </summary>
+    public static async Task EnsureRolesAsync(AppDbContext db, ILogger logger)
+    {
+        const string legacyAdminEmail = "admin@virtualdoctor.com";
+
+        List<string> usersWithRoles;
+        try { usersWithRoles = await db.UserRoles.Select(r => r.UserId).Distinct().ToListAsync(); }
+        catch { return; } // tabel belum ada
+
+        var pending = await db.Users
+            .Where(u => !usersWithRoles.Contains(u.Id))
+            .Select(u => new { u.Id, u.Email, u.IsDoctor })
+            .ToListAsync();
+
+        if (pending.Count == 0) return;
+
+        foreach (var user in pending)
+        {
+            var role = user.Email == legacyAdminEmail ? AppRoles.Admin
+                     : user.IsDoctor ? AppRoles.Doctor
+                     : AppRoles.Patient;
+
+            db.UserRoles.Add(new UserRole
+            {
+                UserId = user.Id,
+                Role = role,
+                GrantedAt = DateTime.UtcNow,
+                GrantedBy = "sistem"
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var adminCount = await db.UserRoles.CountAsync(r => r.Role == AppRoles.Admin);
+        logger.LogInformation("[Roles] {N} pengguna diberi peran awal. Total administrator: {A}",
+            pending.Count, adminCount);
+
+        if (adminCount == 0)
+            logger.LogWarning("[Roles] Tidak ada akun berperan Admin. Berikan peran lewat basis data sebelum backoffice dapat dipakai.");
+    }
+
     public static async Task SeedAsync(AppDbContext db, IFileStorageService storage)
     {
         if (db.Users.Any() || db.Doctors.Any()) return;

@@ -5,8 +5,16 @@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
-            <NotAuthorized>
-                <RedirectToLogin />
+            <NotAuthorized Context="authState">
+                @if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    @* Sudah masuk, tetapi peran tidak mencukupi - jangan lempar ke halaman login. *@
+                    <AccessDenied />
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
             </NotAuthorized>
         </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />

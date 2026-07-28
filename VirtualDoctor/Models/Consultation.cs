@@ -15,7 +15,14 @@ public class Consultation
     public decimal Fee { get; set; }
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EndedAt { get; set; }
-    
+
+    // Video conference (diisi saat Type = Video dan provider meeting aktif)
+    public string? MeetingProvider { get; set; }
+    public string? MeetingId { get; set; }
+    public string? MeetingUrl { get; set; }      // link untuk pasien
+    public string? MeetingHostUrl { get; set; }  // link untuk dokter (start meeting)
+    public string? MeetingPassword { get; set; }
+
     // Navigation
     public ApplicationUser User { get; set; } = null!;
     public Doctor Doctor { get; set; } = null!;

@@ -1,0 +1,231 @@
+@page "/admin/webhooks"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
+@using System.Globalization
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentWebhookService Webhooks
+@inject Services.IAuthService AuthService
+
+<PageTitle>Jejak Webhook · VirtualDoctor</PageTitle>
+
+<div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+    <div>
+        <h3 class="mb-0">Jejak Webhook Pembayaran</h3>
+        <small class="vd-text-muted">Setiap notifikasi penyedia tercatat di sini, termasuk yang ditolak. Kiriman yang gagal dapat diproses ulang tanpa meminta penyedia mengirim lagi.</small>
+    </div>
+    <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="LoadAsync"><i class="bi bi-arrow-clockwise"></i> Muat ulang</button>
+</div>
+
+<div class="vd-vitals">
+    <article class="vd-vital"><span class="vd-vital-label">Diproses</span><span class="vd-vital-value">@_all.Count(e => e.Outcome == WebhookOutcome.Processed)</span></article>
+    <article class="vd-vital"><span class="vd-vital-label">Kiriman ulang</span><span class="vd-vital-value">@_all.Sum(e => e.Attempts - 1)</span></article>
+    <article class="vd-vital"><span class="vd-vital-label">Diabaikan</span><span class="vd-vital-value">@_all.Count(e => e.Outcome == WebhookOutcome.Ignored)</span></article>
+    <article class="vd-vital"><span class="vd-vital-label">Ditolak</span><span class="vd-vital-value">@_all.Count(e => e.Outcome == WebhookOutcome.Rejected)</span></article>
+    <article class="vd-vital"><span class="vd-vital-label">Gagal</span><span class="vd-vital-value">@_all.Count(e => e.Outcome == WebhookOutcome.Failed)</span></article>
+</div>
+
+<section class="vd-toolbar" aria-label="Filter jejak webhook">
+    <div class="vd-field" style="flex:1;min-width:220px;">
+        <label class="vd-form-label" for="w-search">Cari</label>
+        <input id="w-search" class="vd-form-control" placeholder="Nomor invoice, id penyedia, atau status" @bind="_search" @bind:event="oninput" @bind:after="ResetPage" />
+    </div>
+    <div class="vd-field">
+        <label class="vd-form-label" for="w-provider">Penyedia</label>
+        <select id="w-provider" class="vd-form-control" @bind="_providerFilter" @bind:after="ResetPage">
+            <option value="">Semua penyedia</option><option value="Midtrans">Midtrans</option><option value="Xendit">Xendit</option>
+        </select>
+    </div>
+    <div class="vd-field">
+        <label class="vd-form-label" for="w-outcome">Hasil</label>
+        <select id="w-outcome" class="vd-form-control" @bind="_outcomeFilter" @bind:after="ResetPage">
+            <option value="">Semua hasil</option>
+            @foreach (var o in Enum.GetValues<WebhookOutcome>())
+            {
+                <option value="@o">@PaymentLabels.Outcome(o)</option>
+            }
+        </select>
+    </div>
+</section>
+
+@if (_notice != null)
+{
+    <div class="vd-toast-item @_noticeClass vd-mb-2" role="status">
+        <div><div class="vd-toast-body">@_notice</div></div>
+        <button class="vd-toast-close" @onclick="() => _notice = null" aria-label="Tutup">✕</button>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+}
+else if (!Filtered.Any())
+{
+    <div class="vd-panel">
+        <div class="vd-empty">
+            <div class="vd-empty-icon"><i class="bi bi-broadcast"></i></div>
+            <h4>Belum ada notifikasi penyedia</h4>
+            <p>Jejak akan terisi saat Midtrans atau Xendit mengirim notifikasi ke <code>/api/payments/webhook/…</code>. Penyedia manual dan QRIS mandiri tidak mengirim webhook.</p>
+        </div>
+    </div>
+}
+else
+{
+    <section class="vd-panel">
+        <div class="vd-table-wrap">
+            <table class="vd-table">
+                <thead>
+                    <tr><th>Waktu</th><th>Penyedia</th><th>Invoice</th><th>Status penyedia</th><th>Hasil</th><th class="vd-num">Kiriman</th><th>Keterangan</th><th style="width:110px;">Aksi</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in Paged)
+                    {
+                        <tr>
+                            <td class="vd-nowrap">@e.ReceivedAt.ToLocalTime().ToString("dd MMM HH:mm:ss", Id)</td>
+                            <td>@e.Provider</td>
+                            <td><code style="font-family:var(--vd-font-data);font-size:0.76rem;">@(e.InvoiceNumber ?? "-")</code></td>
+                            <td>@(e.RawStatus ?? "-")<br /><small class="vd-text-muted">@(e.MappedState == null ? "tidak dipetakan" : PaymentLabels.State(e.MappedState.Value))</small></td>
+                            <td><span class="vd-pill @PaymentLabels.OutcomePill(e.Outcome)">@PaymentLabels.Outcome(e.Outcome)</span></td>
+                            <td class="vd-num">@e.Attempts</td>
+                            <td><small>@e.Message</small></td>
+                            <td>
+                                <div class="vd-flex vd-gap-1">
+                                    <button class="vd-btn vd-btn-outline vd-btn-sm" title="Lihat isi kiriman" aria-label="Lihat isi kiriman @e.Id" @onclick="() => _selected = e"><i class="bi bi-search"></i></button>
+                                    @if (e.Outcome != WebhookOutcome.Rejected)
+                                    {
+                                        <button class="vd-btn vd-btn-outline vd-btn-sm" title="Proses ulang" aria-label="Proses ulang @e.Id" disabled="@_working" @onclick="() => ReplayAsync(e)"><i class="bi bi-arrow-repeat"></i></button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="vd-flex vd-flex-between mt-2">
+            <small class="vd-text-muted">Hal @_page/@TotalPages · Total @FilteredCount kiriman</small>
+            <div class="vd-flex vd-gap-1">
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => GoPage(_page - 1)">◀</button>
+                <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= TotalPages)" @onclick="() => GoPage(_page + 1)">▶</button>
+            </div>
+        </div>
+    </section>
+}
+
+@if (_selected != null)
+{
+    <div class="vd-modal-overlay" @onclick="() => _selected = null">
+        <div class="vd-modal-content" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Isi kiriman webhook">
+            <div class="vd-card-header">
+                <span class="vd-card-title">@_selected.Provider · @(_selected.InvoiceNumber ?? "tanpa nomor tagihan")</span>
+                <button class="btn btn-icon" @onclick="() => _selected = null" aria-label="Tutup"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="vd-grid vd-grid-2 vd-mb-2">
+                <div><span class="vd-form-label">Hasil</span><p class="mb-0"><span class="vd-pill @PaymentLabels.OutcomePill(_selected.Outcome)">@PaymentLabels.Outcome(_selected.Outcome)</span></p></div>
+                <div><span class="vd-form-label">Keaslian</span><p class="mb-0">@(_selected.SignatureValid ? "Terbukti" : "Tidak terbukti")</p></div>
+                <div><span class="vd-form-label">Id penyedia</span><p class="mb-0 vd-mono" style="font-size:0.82rem;">@(_selected.ExternalId ?? "-")</p></div>
+                <div><span class="vd-form-label">Jumlah kiriman</span><p class="mb-0">@_selected.Attempts kali</p></div>
+                <div><span class="vd-form-label">Diterima</span><p class="mb-0">@_selected.ReceivedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm:ss", Id)</p></div>
+                <div><span class="vd-form-label">Diproses ulang</span><p class="mb-0">@(_selected.ReplayedAt == null ? "-" : $"{_selected.ReplayedAt.Value.ToLocalTime():dd MMM HH:mm} oleh {_selected.ReplayedBy}")</p></div>
+            </div>
+
+            <div class="vd-form-group">
+                <span class="vd-form-label">Keterangan</span>
+                <p class="mb-0">@(_selected.Message ?? "-")</p>
+            </div>
+
+            <div class="vd-form-group">
+                <span class="vd-form-label">Isi kiriman</span>
+                <pre class="vd-mono" style="max-height:280px;overflow:auto;background:var(--vd-surface-2);border:1px solid var(--vd-border);border-radius:12px;padding:12px;font-size:0.76rem;white-space:pre-wrap;word-break:break-all;">@_selected.Payload</pre>
+            </div>
+
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                <button class="vd-btn vd-btn-outline" @onclick="() => _selected = null">Tutup</button>
+                @if (_selected.Outcome != WebhookOutcome.Rejected)
+                {
+                    <button class="vd-btn vd-btn-primary" disabled="@_working" @onclick="() => ReplayAsync(_selected)">
+                        <i class="bi @(_working ? "bi-arrow-repeat spin" : "bi-arrow-repeat")"></i> Proses ulang
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+    private const int PageSize = 25;
+
+    private List<PaymentWebhookEvent> _all = new();
+    private PaymentWebhookEvent? _selected;
+    private bool _loading = true, _working;
+    private string _search = "", _providerFilter = "", _outcomeFilter = "";
+    private string? _notice, _noticeClass;
+    private int _page = 1;
+
+    private int FilteredCount => Filtered.Count();
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredCount / (double)PageSize));
+    private IEnumerable<PaymentWebhookEvent> Paged => Filtered.Skip((_page - 1) * PageSize).Take(PageSize);
+    private void GoPage(int p) => _page = Math.Clamp(p, 1, TotalPages);
+    private void ResetPage() => _page = 1;
+
+    private IEnumerable<PaymentWebhookEvent> Filtered
+    {
+        get
+        {
+            var rows = _all.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var q = _search.Trim();
+                rows = rows.Where(e =>
+                    (e.InvoiceNumber?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.ExternalId?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.RawStatus?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrEmpty(_providerFilter))
+                rows = rows.Where(e => e.Provider.Equals(_providerFilter, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(_outcomeFilter) && Enum.TryParse<WebhookOutcome>(_outcomeFilter, out var o))
+                rows = rows.Where(e => e.Outcome == o);
+
+            // Yang bermasalah diletakkan paling atas supaya tidak terkubur kiriman normal.
+            return rows
+                .OrderByDescending(e => e.Outcome is WebhookOutcome.Failed or WebhookOutcome.Rejected)
+                .ThenByDescending(e => e.ReceivedAt);
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _all = await Webhooks.RecentAsync(500);
+        _loading = false;
+    }
+
+    private async Task ReplayAsync(PaymentWebhookEvent e)
+    {
+        _working = true;
+        try
+        {
+            var admin = await AuthService.GetCurrentUserAsync();
+            var result = await Webhooks.ReplayAsync(e.Id, admin?.Email ?? "admin");
+
+            _notice = $"{e.Provider} · {e.InvoiceNumber}: {result.Message}";
+            _noticeClass = result.Outcome switch
+            {
+                WebhookOutcome.Processed => "is-success",
+                WebhookOutcome.Failed or WebhookOutcome.Rejected => "is-error",
+                _ => "is-warning"
+            };
+
+            _selected = null;
+            await LoadAsync();
+        }
+        finally { _working = false; }
+    }
+}

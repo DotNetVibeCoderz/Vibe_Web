@@ -1,0 +1,854 @@
+@page "/admin/settings"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
+@using VirtualDoctor.Models
+@inject Services.IAuthService AuthService
+@inject Services.ISettingsService Settings
+@inject Services.Meeting.IMeetingService MeetingService
+@inject Services.AI.ILlmProviderFactory LlmFactory
+@inject Services.Payment.IPaymentService PaymentService
+@inject NavigationManager Navigation
+@inject AppConfig Config
+
+<PageTitle>Pengaturan Sistem · VirtualDoctor</PageTitle>
+
+@if (!_isAdmin)
+{
+    <div class="vd-empty mt-5">
+        <div class="vd-empty-icon"><i class="bi bi-shield-lock-fill"></i></div>
+        <h4>Halaman khusus administrator</h4>
+        <p>Akun Anda tidak punya akses ke pengaturan sistem. Hubungi administrator bila perlu perubahan konfigurasi.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 class="mb-0">Pengaturan Sistem</h3>
+            <small class="vd-text-muted">
+                Perubahan di sini disimpan ke database dan menimpa appsettings.json saat aplikasi dijalankan.
+            </small>
+        </div>
+        <div class="vd-flex vd-gap-1">
+            <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ReloadAsync">
+                <i class="bi bi-arrow-clockwise"></i> Muat ulang
+            </button>
+            <button class="vd-btn vd-btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                <i class="bi @(_saving ? "bi-arrow-repeat spin" : "bi-check2")"></i>
+                @(_saving ? "Menyimpan…" : "Simpan perubahan")
+            </button>
+        </div>
+    </div>
+
+    @if (_message != null)
+    {
+        <div class="vd-toast-item @_messageClass vd-mb-2" role="status">
+            <div>
+                <div class="vd-toast-title">@_messageTitle</div>
+                <div class="vd-toast-body">@_message</div>
+            </div>
+            <button class="vd-toast-close" @onclick="() => _message = null" aria-label="Tutup">✕</button>
+        </div>
+    }
+
+    <div class="vd-segment vd-mb-3" role="tablist" aria-label="Bagian pengaturan">
+        @foreach (var tab in _tabs)
+        {
+            <button type="button" role="tab" aria-selected="@(_tab == tab)"
+                    class="@(_tab == tab ? "is-active" : "")" @onclick="() => _tab = tab">@tab</button>
+        }
+    </div>
+
+    @if (_tab == "Kecerdasan Buatan")
+    {
+        <div class="vd-dash-grid vd-dash-1-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Perilaku asisten</div>
+                        <div class="vd-panel-sub">Kepribadian dan gaya jawaban AI</div>
+                    </div>
+                </header>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="s-provider">Provider utama</label>
+                    <select id="s-provider" class="vd-form-control" @bind="_form.DefaultProvider">
+                        @foreach (var p in _allProviders)
+                        {
+                            <option value="@p">@p @(IsProviderReady(p) ? "" : "— belum ada kunci")</option>
+                        }
+                    </select>
+                    <small class="vd-text-muted">Provider yang dipakai bila pengguna tidak memilih sendiri di AI Chat.</small>
+                </div>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="s-botname">Nama asisten</label>
+                    <input id="s-botname" class="vd-form-control" @bind="_form.BotName" />
+                </div>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="s-prompt">Instruksi sistem</label>
+                    <textarea id="s-prompt" class="vd-form-control" rows="6" @bind="_form.SystemPrompt"></textarea>
+                    <small class="vd-text-muted">Menentukan peran, batasan, dan gaya bahasa asisten.</small>
+                </div>
+
+                <div class="vd-grid vd-grid-2">
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="s-temp">Temperature · @_form.Temperature.ToString("0.0")</label>
+                        <input id="s-temp" type="range" min="0" max="1" step="0.1" class="vd-w-100" @bind="_form.Temperature" />
+                        <small class="vd-text-muted">Makin tinggi makin bervariasi. 0,3 untuk jawaban medis yang konsisten.</small>
+                    </div>
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="s-tokens">Batas token</label>
+                        <input id="s-tokens" type="number" class="vd-form-control" @bind="_form.MaxTokens" min="256" max="32000" step="256" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Kredensial provider</div>
+                        <div class="vd-panel-sub">Kosongkan kolom kunci untuk mempertahankan nilai lama</div>
+                    </div>
+                </header>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">OpenAI</legend>
+                    <div class="vd-grid vd-grid-2">
+                        <input class="vd-form-control" placeholder="Model, mis. gpt-4o" @bind="_form.OpenAIModel" aria-label="Model OpenAI" />
+                        <input class="vd-form-control" placeholder="Endpoint" @bind="_form.OpenAIEndpoint" aria-label="Endpoint OpenAI" />
+                    </div>
+                    <input class="vd-form-control mt-1" type="password" placeholder="@KeyPlaceholder(Config.Llm.OpenAI?.ApiKey)"
+                           @bind="_form.OpenAIKey" aria-label="API key OpenAI" autocomplete="off" />
+                </fieldset>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Google Gemini</legend>
+                    <input class="vd-form-control" placeholder="Model, mis. gemini-2.0-flash" @bind="_form.GeminiModel" aria-label="Model Gemini" />
+                    <input class="vd-form-control mt-1" type="password" placeholder="@KeyPlaceholder(Config.Llm.Gemini?.ApiKey)"
+                           @bind="_form.GeminiKey" aria-label="API key Gemini" autocomplete="off" />
+                </fieldset>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Anthropic Claude</legend>
+                    <input class="vd-form-control" placeholder="Model, mis. claude-3-5-sonnet" @bind="_form.AnthropicModel" aria-label="Model Anthropic" />
+                    <input class="vd-form-control mt-1" type="password" placeholder="@KeyPlaceholder(Config.Llm.Anthropic?.ApiKey)"
+                           @bind="_form.AnthropicKey" aria-label="API key Anthropic" autocomplete="off" />
+                </fieldset>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Ollama (lokal)</legend>
+                    <div class="vd-grid vd-grid-2">
+                        <input class="vd-form-control" placeholder="Endpoint, mis. http://localhost:11434" @bind="_form.OllamaEndpoint" aria-label="Endpoint Ollama" />
+                        <input class="vd-form-control" placeholder="Model, mis. llama3.1" @bind="_form.OllamaModel" aria-label="Model Ollama" />
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend class="vd-form-label">OpenAI-compatible</legend>
+                    <div class="vd-grid vd-grid-2">
+                        <input class="vd-form-control" placeholder="Endpoint" @bind="_form.CompatEndpoint" aria-label="Endpoint OpenAI-compatible" />
+                        <input class="vd-form-control" placeholder="Model" @bind="_form.CompatModel" aria-label="Model OpenAI-compatible" />
+                    </div>
+                    <input class="vd-form-control mt-1" type="password" placeholder="@KeyPlaceholder(Config.Llm.OpenAICompatible?.ApiKey)"
+                           @bind="_form.CompatKey" aria-label="API key OpenAI-compatible" autocomplete="off" />
+                </fieldset>
+            </section>
+        </div>
+    }
+    else if (_tab == "Video Call")
+    {
+        <div class="vd-dash-grid vd-dash-1-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Penyedia video call</div>
+                        <div class="vd-panel-sub">Dipakai konsultasi bertipe video dan janji temu online</div>
+                    </div>
+                </header>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="m-provider">Penyedia aktif</label>
+                    <select id="m-provider" class="vd-form-control" @bind="_form.MeetingProvider">
+                        <option value="None">Nonaktif — konsultasi hanya lewat chat</option>
+                        <option value="Jitsi">Jitsi Meet — tanpa kredensial</option>
+                        <option value="Zoom">Zoom — Server-to-Server OAuth</option>
+                        <option value="Teams">Microsoft Teams — Graph API</option>
+                    </select>
+                </div>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="m-dur">Durasi bawaan (menit)</label>
+                    <input id="m-dur" type="number" class="vd-form-control" min="10" max="240" step="5" @bind="_form.MeetingDuration" />
+                </div>
+
+                <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                    <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="TestMeetingAsync" disabled="@_testing">
+                        <i class="bi @(_testing ? "bi-arrow-repeat spin" : "bi-plug")"></i>
+                        @(_testing ? "Menguji…" : "Uji koneksi")
+                    </button>
+                    <span class="vd-text-muted" style="font-size:0.82rem;align-self:center;">
+                        Uji akan membuat satu meeting percobaan.
+                    </span>
+                </div>
+
+                @if (_testResult != null)
+                {
+                    <div class="vd-toast-item @(_testOk ? "is-success" : "is-error") mt-2" role="status">
+                        <div>
+                            <div class="vd-toast-title">@(_testOk ? "Koneksi berhasil" : "Koneksi gagal")</div>
+                            <div class="vd-toast-body" style="word-break:break-all;">@_testResult</div>
+                        </div>
+                    </div>
+                }
+
+                <div class="vd-mt-2">
+                    <span class="vd-form-label">Status kredensial</span>
+                    <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                        @foreach (var p in new[] { "Jitsi", "Zoom", "Teams" })
+                        {
+                            var ready = MeetingService.ConfiguredProviders.Contains(p);
+                            <span class="vd-pill @(ready ? "vd-pill-success" : "vd-pill-neutral")">
+                                @p @(ready ? "siap" : "belum lengkap")
+                            </span>
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Kredensial penyedia</div>
+                        <div class="vd-panel-sub">Kosongkan kolom rahasia untuk mempertahankan nilai lama</div>
+                    </div>
+                </header>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Zoom</legend>
+                    <input class="vd-form-control vd-mb-1" placeholder="Account ID" @bind="_form.ZoomAccountId" aria-label="Zoom Account ID" />
+                    <input class="vd-form-control vd-mb-1" placeholder="Client ID" @bind="_form.ZoomClientId" aria-label="Zoom Client ID" />
+                    <input class="vd-form-control vd-mb-1" type="password" placeholder="@KeyPlaceholder(Config.Meeting.Zoom?.ClientSecret)"
+                           @bind="_form.ZoomClientSecret" aria-label="Zoom Client Secret" autocomplete="off" />
+                    <input class="vd-form-control" placeholder="Host user ID (mis. me)" @bind="_form.ZoomHostUser" aria-label="Zoom host user" />
+                    <small class="vd-text-muted">Buat app bertipe <strong>Server-to-Server OAuth</strong> di Zoom Marketplace, aktifkan scope <code>meeting:write:admin</code>.</small>
+                </fieldset>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Microsoft Teams</legend>
+                    <input class="vd-form-control vd-mb-1" placeholder="Tenant ID" @bind="_form.TeamsTenantId" aria-label="Teams Tenant ID" />
+                    <input class="vd-form-control vd-mb-1" placeholder="Client ID" @bind="_form.TeamsClientId" aria-label="Teams Client ID" />
+                    <input class="vd-form-control vd-mb-1" type="password" placeholder="@KeyPlaceholder(Config.Meeting.Teams?.ClientSecret)"
+                           @bind="_form.TeamsClientSecret" aria-label="Teams Client Secret" autocomplete="off" />
+                    <input class="vd-form-control" placeholder="Organizer user ID / UPN" @bind="_form.TeamsOrganizer" aria-label="Teams organizer" />
+                    <small class="vd-text-muted">Daftarkan app di Entra ID dengan permission aplikasi <code>OnlineMeetings.ReadWrite.All</code> dan kebijakan akses aplikasi untuk user organizer.</small>
+                </fieldset>
+
+                <fieldset>
+                    <legend class="vd-form-label">Jitsi</legend>
+                    <div class="vd-grid vd-grid-2">
+                        <input class="vd-form-control" placeholder="Domain, mis. meet.jit.si" @bind="_form.JitsiDomain" aria-label="Domain Jitsi" />
+                        <input class="vd-form-control" placeholder="Awalan ruang" @bind="_form.JitsiPrefix" aria-label="Awalan ruang Jitsi" />
+                    </div>
+                    <small class="vd-text-muted">Tanpa kredensial. Untuk produksi, pasang Jitsi sendiri agar ruang tidak publik.</small>
+                </fieldset>
+            </section>
+        </div>
+    }
+    else if (_tab == "Pembayaran")
+    {
+        <div class="vd-dash-grid vd-dash-1-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Penyedia pembayaran</div>
+                        <div class="vd-panel-sub">Menentukan cara bayar yang ditawarkan ke pasien</div>
+                    </div>
+                </header>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-enabled">Status</label>
+                    <select id="p-enabled" class="vd-form-control" @bind="_form.PaymentEnabled">
+                        <option value="true">Aktif — tagihan dibuat untuk setiap transaksi</option>
+                        <option value="false">Nonaktif — pembayaran di luar aplikasi</option>
+                    </select>
+                </div>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-provider">Penyedia aktif</label>
+                    <select id="p-provider" class="vd-form-control" @bind="_form.PaymentProvider">
+                        <option value="Manual">Manual — transfer bank + verifikasi petugas</option>
+                        <option value="Qris">QRIS mandiri — QR dinamis dari QR statis merchant</option>
+                        <option value="Midtrans">Midtrans — Core API</option>
+                        <option value="Xendit">Xendit — API v2</option>
+                    </select>
+                    <small class="vd-text-muted">Transfer manual selalu tetap tersedia sebagai cadangan bila penyedia gagal.</small>
+                </div>
+
+                <div class="vd-grid vd-grid-2">
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-expiry">Batas waktu bayar (menit)</label>
+                        <input id="p-expiry" type="number" class="vd-form-control" min="10" max="10080" @bind="_form.PaymentExpiry" />
+                    </div>
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-fee">Biaya penanganan (Rp)</label>
+                        <input id="p-fee" type="number" class="vd-form-control" min="0" step="500" @bind="_form.PaymentServiceFee" />
+                    </div>
+                </div>
+
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-prefix">Awalan nomor invoice</label>
+                    <input id="p-prefix" class="vd-form-control" @bind="_form.InvoicePrefix" />
+                    <small class="vd-text-muted">Menghasilkan nomor seperti <code>@_form.InvoicePrefix/@DateTime.Now.ToString("yyyy/MM")/0001</code>.</small>
+                </div>
+
+                <div class="vd-mt-2">
+                    <span class="vd-form-label">Status kredensial</span>
+                    <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                        @foreach (var p in new[] { "Manual", "Qris", "Midtrans", "Xendit" })
+                        {
+                            var ready = PaymentService.ConfiguredProviders.Contains(p);
+                            <span class="vd-pill @(ready ? "vd-pill-success" : "vd-pill-neutral")">@p @(ready ? "siap" : "belum lengkap")</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="vd-mt-2">
+                    <span class="vd-form-label">Cara bayar aktif saat ini</span>
+                    <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                        @if (!PaymentService.AvailableChannels.Any())
+                        {
+                            <span class="vd-pill vd-pill-danger">Tidak ada — pasien tidak dapat membayar</span>
+                        }
+                        else
+                        {
+                            @foreach (var c in PaymentService.AvailableChannels)
+                            {
+                                <span class="vd-pill vd-pill-info">@VirtualDoctor.Models.PaymentLabels.Channel(c)</span>
+                            }
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Identitas penerbit tagihan</div>
+                        <div class="vd-panel-sub">Tercetak di kepala invoice dan kuitansi</div>
+                    </div>
+                </header>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-mname">Nama tampilan</label>
+                    <input id="p-mname" class="vd-form-control" @bind="_form.MerchantName" />
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-mlegal">Nama badan hukum</label>
+                    <input id="p-mlegal" class="vd-form-control" @bind="_form.MerchantLegalName" />
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-maddr">Alamat</label>
+                    <textarea id="p-maddr" class="vd-form-control" rows="2" @bind="_form.MerchantAddress"></textarea>
+                </div>
+                <div class="vd-grid vd-grid-2">
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-mphone">Telepon</label>
+                        <input id="p-mphone" class="vd-form-control" @bind="_form.MerchantPhone" />
+                    </div>
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-memail">Email</label>
+                        <input id="p-memail" class="vd-form-control" @bind="_form.MerchantEmail" />
+                    </div>
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-mtax">NPWP</label>
+                    <input id="p-mtax" class="vd-form-control" @bind="_form.MerchantTaxId" />
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">QRIS merchant</div>
+                        <div class="vd-panel-sub">Payload QR statis dari bank/PJSP, dijadikan QR dinamis bernominal</div>
+                    </div>
+                </header>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="p-qris">Payload QRIS statis</label>
+                    <textarea id="p-qris" class="vd-form-control" rows="4" style="font-family:var(--vd-font-data);font-size:0.78rem;"
+                              placeholder="00020101021126…6304ABCD" @bind="_form.QrisPayload"></textarea>
+                    <small class="vd-text-muted">Salin utuh hasil pindaian QR cetak merchant. Aplikasi mengubah tag 01 menjadi dinamis, menyisipkan nominal, lalu menghitung ulang checksum.</small>
+                </div>
+                <div class="vd-grid vd-grid-2">
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-qname">Nama merchant (cadangan)</label>
+                        <input id="p-qname" class="vd-form-control" @bind="_form.QrisMerchantName" />
+                    </div>
+                    <div class="vd-form-group">
+                        <label class="vd-form-label" for="p-qcity">Kota merchant</label>
+                        <input id="p-qcity" class="vd-form-control" @bind="_form.QrisMerchantCity" />
+                    </div>
+                </div>
+                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="TestQrisAsync" disabled="@_qrisTesting">
+                    <i class="bi @(_qrisTesting ? "bi-arrow-repeat spin" : "bi-qr-code")"></i>
+                    @(_qrisTesting ? "Menguji…" : "Uji payload QRIS")
+                </button>
+                <small class="vd-text-muted" style="display:block;margin-top:0.4rem;">Menguji nilai yang tersimpan, bukan yang sedang diketik. Simpan dulu lalu uji.</small>
+
+                @if (_qrisResult != null)
+                {
+                    <div class="vd-toast-item @(_qrisOk ? "is-success" : "is-error") mt-2" role="status">
+                        <div>
+                            <div class="vd-toast-title">@(_qrisOk ? "Payload valid" : "Payload bermasalah")</div>
+                            <div class="vd-toast-body">@_qrisResult</div>
+                        </div>
+                    </div>
+                    @if (_qrisOk && _qrisPreview != null)
+                    {
+                        <div class="vd-mt-2 text-center">
+                            <img src="@_qrisPreview" alt="Contoh QRIS nominal Rp10.000" style="width:180px;height:180px;image-rendering:pixelated;" />
+                            <div class="vd-text-muted" style="font-size:0.8rem;">Contoh QR untuk nominal Rp10.000</div>
+                        </div>
+                    }
+                }
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Transfer manual & gateway</div>
+                        <div class="vd-panel-sub">Kosongkan kolom rahasia untuk mempertahankan nilai lama</div>
+                    </div>
+                </header>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Rekening transfer manual</legend>
+                    <div class="vd-grid vd-grid-2">
+                        <input class="vd-form-control vd-mb-1" placeholder="Nama bank" @bind="_form.BankName" aria-label="Nama bank" />
+                        <input class="vd-form-control vd-mb-1" placeholder="Nomor rekening" @bind="_form.BankAccountNumber" aria-label="Nomor rekening" />
+                    </div>
+                    <input class="vd-form-control vd-mb-1" placeholder="Atas nama" @bind="_form.BankAccountHolder" aria-label="Nama pemilik rekening" />
+                    <textarea class="vd-form-control" rows="2" placeholder="Petunjuk tambahan untuk pasien" @bind="_form.BankInstructions" aria-label="Petunjuk transfer"></textarea>
+                </fieldset>
+
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Midtrans</legend>
+                    <input class="vd-form-control vd-mb-1" type="password" placeholder="@KeyPlaceholder(Config.Payment.Midtrans?.ServerKey)"
+                           @bind="_form.MidtransServerKey" aria-label="Midtrans Server Key" autocomplete="off" />
+                    <input class="vd-form-control vd-mb-1" placeholder="Client key" @bind="_form.MidtransClientKey" aria-label="Midtrans Client Key" />
+                    <select class="vd-form-control" @bind="_form.MidtransProduction" aria-label="Lingkungan Midtrans">
+                        <option value="false">Sandbox</option>
+                        <option value="true">Production</option>
+                    </select>
+                    <small class="vd-text-muted">Webhook: <code>@_baseUrl/api/payments/webhook/midtrans</code></small>
+                </fieldset>
+
+                <fieldset>
+                    <legend class="vd-form-label">Xendit</legend>
+                    <input class="vd-form-control vd-mb-1" type="password" placeholder="@KeyPlaceholder(Config.Payment.Xendit?.SecretKey)"
+                           @bind="_form.XenditSecretKey" aria-label="Xendit Secret Key" autocomplete="off" />
+                    <input class="vd-form-control" type="password" placeholder="@KeyPlaceholder(Config.Payment.Xendit?.CallbackToken)"
+                           @bind="_form.XenditCallbackToken" aria-label="Xendit Callback Token" autocomplete="off" />
+                    <small class="vd-text-muted">Webhook: <code>@_baseUrl/api/payments/webhook/xendit</code></small>
+                </fieldset>
+            </section>
+        </div>
+    }
+    else if (_tab == "Integrasi")
+    {
+        <div class="vd-dash-grid vd-dash-1-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Layanan eksternal</div>
+                        <div class="vd-panel-sub">Pencarian internet dan peta</div>
+                    </div>
+                </header>
+                <fieldset class="vd-mb-2">
+                    <legend class="vd-form-label">Pencarian internet</legend>
+                    <select class="vd-form-control vd-mb-1" @bind="_form.SearchProvider" aria-label="Penyedia pencarian">
+                        <option value="Tavily">Tavily</option>
+                        <option value="Perplexity">Perplexity</option>
+                    </select>
+                    <input class="vd-form-control" type="password" placeholder="@KeyPlaceholder(Config.Search.ApiKey)"
+                           @bind="_form.SearchKey" aria-label="API key pencarian" autocomplete="off" />
+                </fieldset>
+                <fieldset>
+                    <legend class="vd-form-label">Google Maps</legend>
+                    <input class="vd-form-control" type="password" placeholder="@KeyPlaceholder(Config.GoogleMaps.ApiKey)"
+                           @bind="_form.MapsKey" aria-label="API key Google Maps" autocomplete="off" />
+                </fieldset>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Basis pengetahuan (RAG)</div>
+                        <div class="vd-panel-sub">Pengindeksan dokumen PDF</div>
+                    </div>
+                </header>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="i-folder">Folder PDF</label>
+                    <input id="i-folder" class="vd-form-control" @bind="_form.PdfFolder" />
+                    <small class="vd-text-muted">Relatif terhadap wwwroot.</small>
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="i-interval">Interval pengindeksan (menit)</label>
+                    <input id="i-interval" type="number" class="vd-form-control" min="5" max="1440" @bind="_form.IndexInterval" />
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="i-collection">Nama koleksi vektor</label>
+                    <input id="i-collection" class="vd-form-control" @bind="_form.VectorCollection" />
+                </div>
+                <p class="vd-text-muted" style="font-size:0.82rem;">
+                    Provider basis data vektor (@Config.VectorDb.Provider) dan basis data utama (@Config.Database.Provider)
+                    hanya bisa diubah lewat appsettings.json karena keduanya dibaca saat aplikasi start.
+                </p>
+            </section>
+        </div>
+    }
+    else
+    {
+        <div class="vd-dash-grid vd-dash-1-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div class="vd-panel-title">Ringkasan sistem</div>
+                </header>
+                <div class="vd-table-wrap">
+                    <table class="vd-table">
+                        <tbody>
+                            <tr><td>Basis data</td><td>@Config.Database.Provider</td></tr>
+                            <tr><td>Basis data vektor</td><td>@Config.VectorDb.Provider · koleksi @Config.VectorDb.CollectionName</td></tr>
+                            <tr><td>Penyimpanan berkas</td><td>@Config.Storage.Provider</td></tr>
+                            <tr><td>Pengindeksan otomatis</td><td>@(Config.Indexing.AutoIndex ? $"Aktif setiap {Config.Indexing.IntervalMinutes} menit" : "Nonaktif")</td></tr>
+                            <tr><td>Provider AI aktif</td><td>@Config.Llm.DefaultProvider</td></tr>
+                            <tr><td>Provider AI siap pakai</td><td>@string.Join(", ", LlmFactory.GetAvailableProviders())</td></tr>
+                            <tr><td>Video call</td><td>@(MeetingService.IsEnabled ? MeetingService.ActiveProvider : "Nonaktif")</td></tr>
+                            <tr><td>Pembayaran</td><td>@(PaymentService.IsEnabled ? $"{PaymentService.ActiveProvider} · {PaymentService.AvailableChannels.Count} cara bayar" : "Nonaktif")</td></tr>
+                            <tr><td>Penyedia bayar siap pakai</td><td>@(PaymentService.ConfiguredProviders.Any() ? string.Join(", ", PaymentService.ConfiguredProviders) : "—")</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Override tersimpan</div>
+                        <div class="vd-panel-sub">Nilai yang menimpa appsettings.json</div>
+                    </div>
+                </header>
+                @if (!_overrides.Any())
+                {
+                    <div class="vd-empty">
+                        <div class="vd-empty-icon"><i class="bi bi-sliders"></i></div>
+                        <h4>Belum ada override</h4>
+                        <p>Semua nilai masih mengikuti appsettings.json.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="vd-table-wrap" style="max-height:340px;overflow-y:auto;">
+                        <table class="vd-table">
+                            <thead><tr><th>Kunci</th><th>Nilai</th></tr></thead>
+                            <tbody>
+                                @foreach (var kv in _overrides.OrderBy(k => k.Key))
+                                {
+                                    <tr>
+                                        <td><code style="font-family:var(--vd-font-data);font-size:0.78rem;">@kv.Key</code></td>
+                                        <td>@(Services.SettingsService.LooksSecret(kv.Key) ? "••••••••" : kv.Value)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <button class="vd-btn vd-btn-outline vd-btn-sm mt-2" @onclick="ResetAllAsync">
+                        <i class="bi bi-arrow-counterclockwise"></i> Kembalikan semua ke appsettings.json
+                    </button>
+                }
+            </section>
+        </div>
+    }
+}
+
+@code {
+    private static readonly string[] _tabs = { "Kecerdasan Buatan", "Video Call", "Pembayaran", "Integrasi", "Ringkasan" };
+    private static readonly string[] _allProviders = { "OpenAI", "Gemini", "Anthropic", "Ollama", "OpenAICompatible" };
+
+    private bool _isAdmin;
+    private string _tab = "Kecerdasan Buatan";
+    private bool _saving, _testing, _testOk;
+    private string? _testResult;
+    private bool _qrisTesting, _qrisOk;
+    private string? _qrisResult, _qrisPreview, _baseUrl;
+    private string? _message, _messageTitle, _messageClass;
+    private Dictionary<string, string?> _overrides = new();
+
+    private FormModel _form = new();
+
+    private class FormModel
+    {
+        public string DefaultProvider = "OpenAI";
+        public string BotName = "";
+        public string SystemPrompt = "";
+        public double Temperature = 0.7;
+        public int MaxTokens = 4096;
+
+        public string OpenAIModel = "", OpenAIEndpoint = "", OpenAIKey = "";
+        public string GeminiModel = "", GeminiKey = "";
+        public string AnthropicModel = "", AnthropicKey = "";
+        public string OllamaEndpoint = "", OllamaModel = "";
+        public string CompatEndpoint = "", CompatModel = "", CompatKey = "";
+
+        public string MeetingProvider = "None";
+        public int MeetingDuration = 30;
+        public string ZoomAccountId = "", ZoomClientId = "", ZoomClientSecret = "", ZoomHostUser = "me";
+        public string TeamsTenantId = "", TeamsClientId = "", TeamsClientSecret = "", TeamsOrganizer = "";
+        public string JitsiDomain = "meet.jit.si", JitsiPrefix = "vdoctor";
+
+        public string PaymentProvider = "Manual";
+        // Disimpan sebagai string: <select> yang di-bind ke bool tidak memilih option apa pun.
+        public string PaymentEnabled = "true";
+        public int PaymentExpiry = 120;
+        public decimal PaymentServiceFee = 0;
+        public string InvoicePrefix = "INV";
+        public string MerchantName = "", MerchantLegalName = "", MerchantAddress = "", MerchantPhone = "", MerchantEmail = "", MerchantTaxId = "";
+        public string QrisPayload = "", QrisMerchantName = "", QrisMerchantCity = "";
+        public string BankName = "", BankAccountNumber = "", BankAccountHolder = "", BankInstructions = "";
+        public string MidtransServerKey = "", MidtransClientKey = "";
+        public string MidtransProduction = "false";
+        public string XenditSecretKey = "", XenditCallbackToken = "";
+
+        public string SearchProvider = "Tavily", SearchKey = "";
+        public string MapsKey = "";
+        public string PdfFolder = "HealthPdfs", VectorCollection = "health-docs";
+        public int IndexInterval = 30;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        _baseUrl = Navigation.BaseUri.TrimEnd('/');
+        if (_isAdmin) await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _overrides = await Settings.GetOverridesAsync();
+        var c = Config;
+
+        _form = new FormModel
+        {
+            DefaultProvider = c.Llm.DefaultProvider,
+            BotName = c.Llm.BotName,
+            SystemPrompt = c.Llm.SystemPrompt,
+            Temperature = c.Llm.Temperature,
+            MaxTokens = c.Llm.MaxTokens,
+
+            OpenAIModel = c.Llm.OpenAI?.Model ?? "",
+            OpenAIEndpoint = c.Llm.OpenAI?.Endpoint ?? "",
+            GeminiModel = c.Llm.Gemini?.Model ?? "",
+            AnthropicModel = c.Llm.Anthropic?.Model ?? "",
+            OllamaEndpoint = c.Llm.Ollama?.Endpoint ?? "",
+            OllamaModel = c.Llm.Ollama?.Model ?? "",
+            CompatEndpoint = c.Llm.OpenAICompatible?.Endpoint ?? "",
+            CompatModel = c.Llm.OpenAICompatible?.Model ?? "",
+
+            MeetingProvider = c.Meeting.Provider,
+            MeetingDuration = c.Meeting.DefaultDurationMinutes,
+            ZoomAccountId = c.Meeting.Zoom?.AccountId ?? "",
+            ZoomClientId = c.Meeting.Zoom?.ClientId ?? "",
+            ZoomHostUser = c.Meeting.Zoom?.HostUserId ?? "me",
+            TeamsTenantId = c.Meeting.Teams?.TenantId ?? "",
+            TeamsClientId = c.Meeting.Teams?.ClientId ?? "",
+            TeamsOrganizer = c.Meeting.Teams?.OrganizerUserId ?? "",
+            JitsiDomain = c.Meeting.Jitsi?.Domain ?? "meet.jit.si",
+            JitsiPrefix = c.Meeting.Jitsi?.RoomPrefix ?? "vdoctor",
+
+            PaymentProvider = c.Payment.Provider,
+            PaymentEnabled = c.Payment.Enabled ? "true" : "false",
+            PaymentExpiry = c.Payment.ExpiryMinutes,
+            PaymentServiceFee = c.Payment.ServiceFee,
+            InvoicePrefix = c.Payment.InvoicePrefix,
+            MerchantName = c.Payment.Merchant.Name,
+            MerchantLegalName = c.Payment.Merchant.LegalName ?? "",
+            MerchantAddress = c.Payment.Merchant.Address ?? "",
+            MerchantPhone = c.Payment.Merchant.Phone ?? "",
+            MerchantEmail = c.Payment.Merchant.Email ?? "",
+            MerchantTaxId = c.Payment.Merchant.TaxId ?? "",
+            QrisPayload = c.Payment.Qris?.StaticPayload ?? "",
+            QrisMerchantName = c.Payment.Qris?.MerchantName ?? "",
+            QrisMerchantCity = c.Payment.Qris?.MerchantCity ?? "",
+            BankName = c.Payment.Manual?.BankName ?? "",
+            BankAccountNumber = c.Payment.Manual?.AccountNumber ?? "",
+            BankAccountHolder = c.Payment.Manual?.AccountHolder ?? "",
+            BankInstructions = c.Payment.Manual?.Instructions ?? "",
+            MidtransClientKey = c.Payment.Midtrans?.ClientKey ?? "",
+            MidtransProduction = (c.Payment.Midtrans?.IsProduction ?? false) ? "true" : "false",
+
+            SearchProvider = c.Search.Provider,
+            PdfFolder = c.Indexing.PdfFolderPath,
+            IndexInterval = c.Indexing.IntervalMinutes,
+            VectorCollection = c.VectorDb.CollectionName ?? "health-docs"
+        };
+    }
+
+    private bool IsProviderReady(string provider) =>
+        LlmFactory.GetAvailableProviders().Contains(provider);
+
+    private static string KeyPlaceholder(string? current) =>
+        string.IsNullOrWhiteSpace(current) || current.StartsWith("YOUR_")
+            ? "Belum diisi"
+            : "•••••••• (biarkan kosong agar tidak berubah)";
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _message = null;
+        try
+        {
+            var values = new Dictionary<string, string?>
+            {
+                ["Llm:DefaultProvider"] = _form.DefaultProvider,
+                ["Llm:BotName"] = _form.BotName,
+                ["Llm:SystemPrompt"] = _form.SystemPrompt,
+                ["Llm:Temperature"] = _form.Temperature.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Llm:MaxTokens"] = _form.MaxTokens.ToString(),
+
+                ["Llm:OpenAI:Model"] = _form.OpenAIModel,
+                ["Llm:OpenAI:Endpoint"] = _form.OpenAIEndpoint,
+                ["Llm:Gemini:Model"] = _form.GeminiModel,
+                ["Llm:Anthropic:Model"] = _form.AnthropicModel,
+                ["Llm:Ollama:Endpoint"] = _form.OllamaEndpoint,
+                ["Llm:Ollama:Model"] = _form.OllamaModel,
+                ["Llm:OpenAICompatible:Endpoint"] = _form.CompatEndpoint,
+                ["Llm:OpenAICompatible:Model"] = _form.CompatModel,
+
+                ["Meeting:Provider"] = _form.MeetingProvider,
+                ["Meeting:DefaultDurationMinutes"] = _form.MeetingDuration.ToString(),
+                ["Meeting:Zoom:AccountId"] = _form.ZoomAccountId,
+                ["Meeting:Zoom:ClientId"] = _form.ZoomClientId,
+                ["Meeting:Zoom:HostUserId"] = _form.ZoomHostUser,
+                ["Meeting:Teams:TenantId"] = _form.TeamsTenantId,
+                ["Meeting:Teams:ClientId"] = _form.TeamsClientId,
+                ["Meeting:Teams:OrganizerUserId"] = _form.TeamsOrganizer,
+                ["Meeting:Jitsi:Domain"] = _form.JitsiDomain,
+                ["Meeting:Jitsi:RoomPrefix"] = _form.JitsiPrefix,
+
+                ["Payment:Provider"] = _form.PaymentProvider,
+                ["Payment:Enabled"] = _form.PaymentEnabled,
+                ["Payment:ExpiryMinutes"] = _form.PaymentExpiry.ToString(),
+                ["Payment:ServiceFee"] = _form.PaymentServiceFee.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Payment:InvoicePrefix"] = _form.InvoicePrefix,
+                ["Payment:Merchant:Name"] = _form.MerchantName,
+                ["Payment:Merchant:LegalName"] = _form.MerchantLegalName,
+                ["Payment:Merchant:Address"] = _form.MerchantAddress,
+                ["Payment:Merchant:Phone"] = _form.MerchantPhone,
+                ["Payment:Merchant:Email"] = _form.MerchantEmail,
+                ["Payment:Merchant:TaxId"] = _form.MerchantTaxId,
+                ["Payment:Qris:StaticPayload"] = _form.QrisPayload.Trim(),
+                ["Payment:Qris:MerchantName"] = _form.QrisMerchantName,
+                ["Payment:Qris:MerchantCity"] = _form.QrisMerchantCity,
+                ["Payment:Manual:BankName"] = _form.BankName,
+                ["Payment:Manual:AccountNumber"] = _form.BankAccountNumber,
+                ["Payment:Manual:AccountHolder"] = _form.BankAccountHolder,
+                ["Payment:Manual:Instructions"] = _form.BankInstructions,
+                ["Payment:Midtrans:ClientKey"] = _form.MidtransClientKey,
+                ["Payment:Midtrans:IsProduction"] = _form.MidtransProduction,
+
+                ["Search:Provider"] = _form.SearchProvider,
+                ["Indexing:PdfFolderPath"] = _form.PdfFolder,
+                ["Indexing:IntervalMinutes"] = _form.IndexInterval.ToString(),
+                ["VectorDb:CollectionName"] = _form.VectorCollection
+            };
+
+            // Rahasia hanya ditulis bila diisi, supaya tidak terhapus tak sengaja.
+            AddIfFilled(values, "Llm:OpenAI:ApiKey", _form.OpenAIKey);
+            AddIfFilled(values, "Llm:Gemini:ApiKey", _form.GeminiKey);
+            AddIfFilled(values, "Llm:Anthropic:ApiKey", _form.AnthropicKey);
+            AddIfFilled(values, "Llm:OpenAICompatible:ApiKey", _form.CompatKey);
+            AddIfFilled(values, "Meeting:Zoom:ClientSecret", _form.ZoomClientSecret);
+            AddIfFilled(values, "Meeting:Teams:ClientSecret", _form.TeamsClientSecret);
+            AddIfFilled(values, "Search:ApiKey", _form.SearchKey);
+            AddIfFilled(values, "GoogleMaps:ApiKey", _form.MapsKey);
+            AddIfFilled(values, "Payment:Midtrans:ServerKey", _form.MidtransServerKey);
+            AddIfFilled(values, "Payment:Xendit:SecretKey", _form.XenditSecretKey);
+            AddIfFilled(values, "Payment:Xendit:CallbackToken", _form.XenditCallbackToken);
+
+            var admin = await AuthService.GetCurrentUserAsync();
+            await Settings.SaveAsync(values, admin?.Email);
+
+            _form.OpenAIKey = _form.GeminiKey = _form.AnthropicKey = _form.CompatKey = "";
+            _form.ZoomClientSecret = _form.TeamsClientSecret = _form.SearchKey = _form.MapsKey = "";
+            _form.MidtransServerKey = _form.XenditSecretKey = _form.XenditCallbackToken = "";
+
+            _overrides = await Settings.GetOverridesAsync();
+            Notify("Pengaturan tersimpan",
+                "Perubahan langsung berlaku. Provider AI yang sudah pernah dipakai memuat ulang kredensial setelah aplikasi di-restart.", "is-success");
+        }
+        catch (Exception ex)
+        {
+            Notify("Gagal menyimpan", ex.Message, "is-error");
+        }
+        finally { _saving = false; }
+    }
+
+    private static void AddIfFilled(Dictionary<string, string?> target, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) target[key] = value.Trim();
+    }
+
+    private async Task TestMeetingAsync()
+    {
+        _testing = true;
+        _testResult = null;
+        try
+        {
+            var (ok, msg) = await MeetingService.TestAsync();
+            _testOk = ok;
+            _testResult = msg;
+        }
+        finally { _testing = false; }
+    }
+
+    private async Task TestQrisAsync()
+    {
+        _qrisTesting = true;
+        _qrisResult = null;
+        _qrisPreview = null;
+        try
+        {
+            await Task.Yield();
+            var (ok, msg) = PaymentService.ValidateQrisConfig();
+            _qrisOk = ok;
+            _qrisResult = msg;
+            if (ok)
+            {
+                var sample = VirtualDoctor.Services.Payment.QrisPayload.WithAmount(Config.Payment.Qris!.StaticPayload, 10000);
+                _qrisPreview = PaymentService.RenderQrImage(sample, 5);
+            }
+        }
+        catch (Exception ex)
+        {
+            _qrisOk = false;
+            _qrisResult = ex.Message;
+        }
+        finally { _qrisTesting = false; }
+    }
+
+    private async Task ResetAllAsync()
+    {
+        await Settings.ResetAsync("");
+        _overrides = await Settings.GetOverridesAsync();
+        Notify("Override dihapus", "Nilai akan kembali mengikuti appsettings.json setelah aplikasi dijalankan ulang.", "is-warning");
+    }
+
+    private void Notify(string title, string body, string cls)
+    {
+        _messageTitle = title;
+        _message = body;
+        _messageClass = cls;
+    }
+}

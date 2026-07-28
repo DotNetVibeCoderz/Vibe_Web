@@ -1,0 +1,348 @@
+@page "/admin/orders"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
+@using System.Globalization
+@using VirtualDoctor.Models
+@inject Services.IOrderService OrderService
+@inject Services.IAuthService AuthService
+
+<PageTitle>Kelola Pesanan · VirtualDoctor</PageTitle>
+
+@if (!_isAdmin)
+{
+    <div class="vd-empty mt-5">
+        <div class="vd-empty-icon"><i class="bi bi-shield-lock-fill"></i></div>
+        <h4>Halaman khusus administrator</h4>
+        <p>Akun Anda tidak punya akses ke manajemen pesanan.</p>
+        <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+    </div>
+}
+else
+{
+    <div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+        <div>
+            <h3 class="mb-0">Kelola Pesanan</h3>
+            <small class="vd-text-muted">Proses pesanan obat, ubah status pengiriman dan pembayaran</small>
+        </div>
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="LoadAsync">
+            <i class="bi bi-arrow-clockwise"></i> Muat ulang
+        </button>
+    </div>
+
+    <div class="vd-vitals">
+        <article class="vd-vital">
+            <span class="vd-vital-label">Perlu diproses</span>
+            <span class="vd-vital-value">@_all.Count(o => o.Status is OrderStatus.Pending or OrderStatus.Confirmed)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Dalam pengiriman</span>
+            <span class="vd-vital-value">@_all.Count(o => o.Status is OrderStatus.Processing or OrderStatus.Shipped)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Selesai</span>
+            <span class="vd-vital-value">@_all.Count(o => o.Status == OrderStatus.Delivered)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Belum dibayar</span>
+            <span class="vd-vital-value">@_all.Count(o => o.PaymentStatus == PaymentStatus.Unpaid)</span>
+        </article>
+        <article class="vd-vital">
+            <span class="vd-vital-label">Nilai total</span>
+            <span class="vd-vital-value">@FormatMoney(_all.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.Total))</span>
+        </article>
+    </div>
+
+    <section class="vd-toolbar" aria-label="Filter pesanan">
+        <div class="vd-field" style="flex:1;min-width:220px;">
+            <label class="vd-form-label" for="o-search">Cari</label>
+            <input id="o-search" class="vd-form-control" placeholder="Nomor pesanan, pasien, atau resi"
+                   @bind="_search" @bind:event="oninput" />
+        </div>
+        <div class="vd-field">
+            <label class="vd-form-label" for="o-status">Status pesanan</label>
+            <select id="o-status" class="vd-form-control" @bind="_statusFilter">
+                <option value="">Semua status</option>
+                @foreach (var s in Enum.GetValues<OrderStatus>())
+                {
+                    <option value="@s">@StatusLabel(s)</option>
+                }
+            </select>
+        </div>
+        <div class="vd-field">
+            <label class="vd-form-label" for="o-pay">Pembayaran</label>
+            <select id="o-pay" class="vd-form-control" @bind="_paymentFilter">
+                <option value="">Semua</option>
+                @foreach (var s in Enum.GetValues<PaymentStatus>())
+                {
+                    <option value="@s">@PaymentLabel(s)</option>
+                }
+            </select>
+        </div>
+        <div class="vd-field">
+            <label class="vd-form-label" for="o-size">Baris</label>
+            <select id="o-size" class="vd-form-control" @bind="_pageSize">
+                <option value="10">10</option><option value="25">25</option><option value="50">50</option>
+            </select>
+        </div>
+    </section>
+
+    @if (_loading)
+    {
+        <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+    }
+    else if (!Filtered.Any())
+    {
+        <div class="vd-panel">
+            <div class="vd-empty">
+                <div class="vd-empty-icon"><i class="bi bi-bag-x"></i></div>
+                <h4>Tidak ada pesanan yang cocok</h4>
+                <p>Ubah kata kunci atau lepas filter status untuk melihat pesanan lain.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <section class="vd-panel">
+            <div class="vd-table-wrap">
+                <table class="vd-table">
+                    <thead>
+                        <tr>
+                            <th>Nomor</th><th>Waktu</th><th>Pasien</th><th>Item</th>
+                            <th class="vd-num">Total</th><th>Pembayaran</th><th>Status</th><th style="width:90px;">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in Paged)
+                        {
+                            <tr>
+                                <td><code style="font-family:var(--vd-font-data);font-size:0.78rem;">@ShortId(o.Id)</code></td>
+                                <td>@o.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm", Id)</td>
+                                <td>@(o.User?.FullName ?? "-")</td>
+                                <td>@o.Items.Count item · @o.Items.Sum(i => i.Quantity) pcs</td>
+                                <td class="vd-num">@FormatMoney(o.Total)</td>
+                                <td><span class="vd-pill @PaymentClass(o.PaymentStatus)">@PaymentLabel(o.PaymentStatus)</span></td>
+                                <td><span class="vd-pill @StatusClass(o.Status)">@StatusLabel(o.Status)</span></td>
+                                <td>
+                                    <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => OpenDetail(o)"
+                                            aria-label="Kelola pesanan @ShortId(o.Id)">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="vd-flex vd-flex-between mt-2">
+                <small class="vd-text-muted">Halaman @_page dari @TotalPages · @Filtered.Count() pesanan</small>
+                <div class="vd-flex vd-gap-1">
+                    <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page <= 1)" @onclick="() => _page--">Sebelumnya</button>
+                    <button class="vd-btn vd-btn-outline vd-btn-sm" disabled="@(_page >= TotalPages)" @onclick="() => _page++">Berikutnya</button>
+                </div>
+            </div>
+        </section>
+    }
+}
+
+@if (_editing != null)
+{
+    <div class="vd-modal-overlay" @onclick="Close">
+        <div class="vd-modal-content" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Detail pesanan">
+            <div class="vd-card-header">
+                <span class="vd-card-title">Pesanan @ShortId(_editing.Id)</span>
+                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="Close" aria-label="Tutup">✕</button>
+            </div>
+
+            <div class="vd-grid vd-grid-2 vd-mb-2">
+                <div>
+                    <span class="vd-form-label">Pasien</span>
+                    <p class="mb-0">@(_editing.User?.FullName ?? "-")</p>
+                </div>
+                <div>
+                    <span class="vd-form-label">Dibuat</span>
+                    <p class="mb-0">@_editing.CreatedAt.ToLocalTime().ToString("dd MMMM yyyy HH:mm", Id)</p>
+                </div>
+            </div>
+
+            <div class="vd-form-group">
+                <span class="vd-form-label">Alamat pengiriman</span>
+                <p class="mb-0">@(string.IsNullOrWhiteSpace(_editing.DeliveryAddress) ? "Belum diisi" : _editing.DeliveryAddress)</p>
+            </div>
+
+            <div class="vd-table-wrap vd-mb-2">
+                <table class="vd-table">
+                    <thead><tr><th>Obat</th><th class="vd-num">Qty</th><th class="vd-num">Harga</th><th class="vd-num">Subtotal</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in _editing.Items)
+                        {
+                            <tr>
+                                <td>@i.MedicineName</td>
+                                <td class="vd-num">@i.Quantity</td>
+                                <td class="vd-num">@FormatMoney(i.Price)</td>
+                                <td class="vd-num">@FormatMoney(i.Subtotal)</td>
+                            </tr>
+                        }
+                        <tr>
+                            <td colspan="3" class="vd-num"><strong>Ongkir</strong></td>
+                            <td class="vd-num">@FormatMoney(_editing.DeliveryFee)</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" class="vd-num"><strong>Total</strong></td>
+                            <td class="vd-num"><strong>@FormatMoney(_editing.Total)</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="vd-grid vd-grid-2">
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="e-status">Status pesanan</label>
+                    <select id="e-status" class="vd-form-control" @bind="_editStatus">
+                        @foreach (var s in Enum.GetValues<OrderStatus>())
+                        {
+                            <option value="@s">@StatusLabel(s)</option>
+                        }
+                    </select>
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="e-pay">Status pembayaran</label>
+                    <select id="e-pay" class="vd-form-control" @bind="_editPayment">
+                        @foreach (var s in Enum.GetValues<PaymentStatus>())
+                        {
+                            <option value="@s">@PaymentLabel(s)</option>
+                        }
+                    </select>
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="e-courier">Kurir</label>
+                    <input id="e-courier" class="vd-form-control" @bind="_editCourier" placeholder="mis. JNE, SiCepat" />
+                </div>
+                <div class="vd-form-group">
+                    <label class="vd-form-label" for="e-track">Nomor resi</label>
+                    <input id="e-track" class="vd-form-control" @bind="_editTracking" />
+                </div>
+            </div>
+
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                <button class="vd-btn vd-btn-outline" @onclick="Close">Batal</button>
+                <button class="vd-btn vd-btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                    <i class="bi @(_saving ? "bi-arrow-repeat spin" : "bi-check2")"></i> Simpan perubahan
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+
+    private bool _isAdmin, _loading = true, _saving;
+    private List<Order> _all = new();
+    private string _search = "";
+    private string _statusFilter = "", _paymentFilter = "";
+    private int _pageSize = 10, _page = 1;
+
+    private Order? _editing;
+    private OrderStatus _editStatus;
+    private PaymentStatus _editPayment;
+    private string? _editCourier, _editTracking;
+
+    private IEnumerable<Order> Filtered
+    {
+        get
+        {
+            var rows = _all.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var q = _search.Trim();
+                rows = rows.Where(o =>
+                    o.Id.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (o.User?.FullName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (o.TrackingNumber?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<OrderStatus>(_statusFilter, out var st))
+                rows = rows.Where(o => o.Status == st);
+            if (!string.IsNullOrEmpty(_paymentFilter) && Enum.TryParse<PaymentStatus>(_paymentFilter, out var pay))
+                rows = rows.Where(o => o.PaymentStatus == pay);
+            return rows;
+        }
+    }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(Filtered.Count() / (double)_pageSize));
+    private IEnumerable<Order> Paged => Filtered.Skip((Math.Min(_page, TotalPages) - 1) * _pageSize).Take(_pageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        if (_isAdmin) await LoadAsync();
+        else _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _all = await OrderService.GetAllAsync();
+        _loading = false;
+    }
+
+    private void OpenDetail(Order o)
+    {
+        _editing = o;
+        _editStatus = o.Status;
+        _editPayment = o.PaymentStatus;
+        _editCourier = o.CourierName;
+        _editTracking = o.TrackingNumber;
+    }
+
+    private void Close() => _editing = null;
+
+    private async Task SaveAsync()
+    {
+        if (_editing == null) return;
+        _saving = true;
+        try
+        {
+            await OrderService.UpdateFulfilmentAsync(_editing.Id, _editStatus, _editPayment, _editCourier, _editTracking);
+            await LoadAsync();
+            _editing = null;
+        }
+        finally { _saving = false; }
+    }
+
+    private static string ShortId(string id) => id.Length > 8 ? id[..8].ToUpperInvariant() : id.ToUpperInvariant();
+
+    private static string FormatMoney(decimal v) => "Rp" + v.ToString("N0", Id);
+
+    private static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Pending => "Menunggu",
+        OrderStatus.Confirmed => "Dikonfirmasi",
+        OrderStatus.Processing => "Diproses",
+        OrderStatus.Shipped => "Dikirim",
+        OrderStatus.Delivered => "Diterima",
+        _ => "Dibatalkan"
+    };
+
+    private static string StatusClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Delivered => "vd-pill-success",
+        OrderStatus.Cancelled => "vd-pill-danger",
+        OrderStatus.Shipped or OrderStatus.Processing => "vd-pill-info",
+        _ => "vd-pill-warning"
+    };
+
+    private static string PaymentLabel(PaymentStatus s) => s switch
+    {
+        PaymentStatus.Paid => "Lunas",
+        PaymentStatus.Refunded => "Dikembalikan",
+        _ => "Belum dibayar"
+    };
+
+    private static string PaymentClass(PaymentStatus s) => s switch
+    {
+        PaymentStatus.Paid => "vd-pill-success",
+        PaymentStatus.Refunded => "vd-pill-neutral",
+        _ => "vd-pill-warning"
+    };
+}

@@ -1,0 +1,61 @@
+@page "/kuitansi/{PaymentId}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@layout Layout.MinimalLayout
+@using VirtualDoctor.Models
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject Services.IAuthService AuthService
+
+<PageTitle>Bukti Pembayaran · VirtualDoctor</PageTitle>
+
+@if (_payment == null)
+{
+    <div class="vd-doc-shell"><div class="vd-skeleton vd-skeleton-block"></div></div>
+}
+else if (!_allowed)
+{
+    <div class="vd-doc-shell">
+        <div class="vd-empty">
+            <div class="vd-empty-icon"><i class="bi bi-shield-lock"></i></div>
+            <h4>Dokumen ini bukan milik akun Anda</h4>
+            <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+        </div>
+    </div>
+}
+else if (_payment.State != PaymentState.Paid)
+{
+    <div class="vd-doc-shell">
+        <div class="vd-empty">
+            <div class="vd-empty-icon"><i class="bi bi-hourglass-split"></i></div>
+            <h4>Bukti pembayaran belum dapat diterbitkan</h4>
+            <p>
+                Tagihan @_payment.InvoiceNumber berstatus @PaymentLabels.State(_payment.State).
+                Kuitansi terbit setelah dana diterima dan diverifikasi.
+            </p>
+            <a href="/bayar/@_payment.Id" class="vd-btn vd-btn-primary">Buka halaman pembayaran</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="vd-doc-shell">
+        <PrintableDocument Payment="_payment" IsReceipt="true" />
+    </div>
+}
+
+@code {
+    [Parameter] public string PaymentId { get; set; } = "";
+
+    private Models.Payment? _payment;
+    private bool _allowed = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _payment = await Payments.GetAsync(PaymentId);
+        if (_payment == null) return;
+
+        var user = await AuthService.GetCurrentUserAsync();
+        _allowed = user != null && (_payment.UserId == user.Id || AuthService.IsAdmin());
+    }
+}

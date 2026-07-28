@@ -1,13 +1,885 @@
 @page "/dashboard"
 @rendermode InteractiveServer
-@inject Services.IDoctorService DoctorService
-@inject Services.IMedicineService MedicineService
+@attribute [Authorize]
+@implements IAsyncDisposable
+@using System.Globalization
+@using System.Text
+@using VirtualDoctor.Services.Analytics
+@inject IDashboardService DashboardSvc
+@inject IJSRuntime JS
 
-<div class="vd-mb-2"><h3 class="mb-0">📊 Dashboard</h3><small class="vd-text-muted">Overview data platform</small></div>
-<div class="vd-stats-grid"><div class="vd-stat-card"><div class="vd-stat-icon blue"><i class="bi bi-people-fill"></i></div><div><div class="vd-stat-value">10</div><div class="vd-stat-label">Dokter</div></div></div><div class="vd-stat-card"><div class="vd-stat-icon green"><i class="bi bi-capsule"></i></div><div><div class="vd-stat-value">12</div><div class="vd-stat-label">Obat</div></div></div><div class="vd-stat-card"><div class="vd-stat-icon purple"><i class="bi bi-calendar-check"></i></div><div><div class="vd-stat-value">3</div><div class="vd-stat-label">Appts</div></div></div><div class="vd-stat-card"><div class="vd-stat-icon orange"><i class="bi bi-cart-fill"></i></div><div><div class="vd-stat-value">1</div><div class="vd-stat-label">Orders</div></div></div></div>
-<div class="vd-grid vd-grid-2">
-    <div class="vd-card"><h5>👨‍⚕️ Dokter</h5><table class="vd-table"><thead><tr><th>Spesialisasi</th><th>Jumlah</th></tr></thead><tbody><tr><td>Dokter Umum</td><td>2</td></tr><tr><td>Spesialis Penyakit Dalam</td><td>1</td></tr><tr><td>Spesialis Anak</td><td>1</td></tr><tr><td>Spesialis Jantung</td><td>1</td></tr><tr><td>Spesialis Kulit</td><td>1</td></tr><tr><td>Spesialis Obgin</td><td>1</td></tr><tr><td>Psikolog</td><td>1</td></tr><tr><td>Geriatri</td><td>1</td></tr><tr><td>Gizi Klinik</td><td>1</td></tr></tbody></table></div>
-    <div class="vd-card"><h5>💊 Obat Populer</h5><table class="vd-table"><thead><tr><th>Obat</th><th>Terjual</th><th>Rating</th></tr></thead><tbody><tr><td>Antangin Herbal</td><td>30.000</td><td>⭐4.2</td></tr><tr><td>Vitamin C 1000mg</td><td>25.000</td><td>⭐4.7</td></tr><tr><td>Curcuma Plus</td><td>20.000</td><td>⭐4.8</td></tr><tr><td>Cetirizine 10mg</td><td>18.000</td><td>⭐4.4</td></tr><tr><td>Paracetamol 500mg</td><td>15.000</td><td>⭐4.5</td></tr></tbody></table></div>
-    <div class="vd-card"><h5>📈 Platform</h5><div class="vd-grid vd-grid-2"><div class="p-3 text-center" style="border:1px solid var(--vd-border);border-radius:8px;"><div style="font-size:2rem;font-weight:700;color:var(--vd-primary);">7</div><small>RS/Klinik</small></div><div class="p-3 text-center" style="border:1px solid var(--vd-border);border-radius:8px;"><div style="font-size:2rem;font-weight:700;color:var(--vd-accent);">8</div><small>Artikel</small></div><div class="p-3 text-center" style="border:1px solid var(--vd-border);border-radius:8px;"><div style="font-size:2rem;font-weight:700;color:#7c3aed;">8</div><small>Users</small></div><div class="p-3 text-center" style="border:1px solid var(--vd-border);border-radius:8px;"><div style="font-size:2rem;font-weight:700;color:#ea580c;">5</div><small>LLM</small></div></div></div>
-    <div class="vd-card"><h5>🤖 AI Status</h5><table class="vd-table"><tbody><tr><td><strong>Default</strong></td><td>OpenAI (GPT-4o)</td></tr><tr><td><strong>LLMs</strong></td><td>5 providers</td></tr><tr><td><strong>Vector DB</strong></td><td>InMemory</td></tr><tr><td><strong>Functions</strong></td><td>11 kernel</td></tr><tr><td><strong>Bot</strong></td><td>dr. Markonah</td></tr></tbody></table></div>
+<PageTitle>Dashboard · VirtualDoctor</PageTitle>
+
+<div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap; gap:12px;">
+    <div>
+        <h3 class="mb-0">Dashboard Operasional</h3>
+        <small class="vd-text-muted">
+            Ringkasan @_filter.From.ToString("dd MMM yyyy", Id) – @_filter.To.ToString("dd MMM yyyy", Id)
+            @if (_data != null)
+            {
+                <span> · diperbarui @_data.GeneratedAt.ToString("HH:mm:ss")</span>
+            }
+        </small>
+    </div>
+    <div class="vd-flex vd-gap-1" style="align-items:center; flex-wrap:wrap;">
+        @if (_autoRefresh)
+        {
+            <span class="vd-live-dot">Perbarui otomatis 30 dtk</span>
+        }
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ToggleAutoRefresh"
+                aria-pressed="@_autoRefresh">
+            <i class="bi @(_autoRefresh ? "bi-pause-circle" : "bi-play-circle")"></i>
+            @(_autoRefresh ? "Hentikan" : "Otomatis")
+        </button>
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => LoadAsync(true)" disabled="@_loading">
+            <i class="bi bi-arrow-clockwise @(_loading ? "spin" : "")"></i> Muat ulang
+        </button>
+        <button class="vd-btn vd-btn-primary vd-btn-sm" @onclick="ExportCsv" disabled="@(_data == null)">
+            <i class="bi bi-download"></i> Unduh CSV
+        </button>
+    </div>
 </div>
+
+<!-- ============ Filter ============ -->
+<section class="vd-toolbar" aria-label="Filter dashboard">
+    <div class="vd-field">
+        <label class="vd-form-label" id="lbl-range">Rentang</label>
+        <div class="vd-segment" role="group" aria-labelledby="lbl-range">
+            @foreach (var (label, days) in _presets)
+            {
+                <button type="button" class="@(_activePreset == days ? "is-active" : "")"
+                        @onclick="() => ApplyPreset(days)">@label</button>
+            }
+        </div>
+    </div>
+
+    <div class="vd-field">
+        <label class="vd-form-label" for="f-from">Dari</label>
+        <input id="f-from" type="date" class="vd-form-control" value="@_filter.From.ToString("yyyy-MM-dd")"
+               @onchange="OnFromChanged" />
+    </div>
+    <div class="vd-field">
+        <label class="vd-form-label" for="f-to">Sampai</label>
+        <input id="f-to" type="date" class="vd-form-control" value="@_filter.To.ToString("yyyy-MM-dd")"
+               @onchange="OnToChanged" />
+    </div>
+
+    <div class="vd-field">
+        <label class="vd-form-label" id="lbl-gran">Skala</label>
+        <div class="vd-segment" role="group" aria-labelledby="lbl-gran">
+            <button type="button" class="@(_filter.Granularity == Granularity.Day ? "is-active" : "")"
+                    @onclick="() => SetGranularity(Granularity.Day)">Harian</button>
+            <button type="button" class="@(_filter.Granularity == Granularity.Week ? "is-active" : "")"
+                    @onclick="() => SetGranularity(Granularity.Week)">Mingguan</button>
+            <button type="button" class="@(_filter.Granularity == Granularity.Month ? "is-active" : "")"
+                    @onclick="() => SetGranularity(Granularity.Month)">Bulanan</button>
+        </div>
+    </div>
+
+    <div class="vd-field">
+        <label class="vd-form-label" for="f-spec">Spesialisasi</label>
+        <select id="f-spec" class="vd-form-control" @bind="_filter.Specialization" @bind:after="ReloadAsync">
+            <option value="">Semua spesialisasi</option>
+            @foreach (var s in _data?.Specializations ?? new())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+    </div>
+
+    <div class="vd-field">
+        <label class="vd-form-label" for="f-city">Kota</label>
+        <select id="f-city" class="vd-form-control" @bind="_filter.City" @bind:after="ReloadAsync">
+            <option value="">Semua kota</option>
+            @foreach (var c in _data?.Cities ?? new())
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+    </div>
+
+    <div class="vd-field">
+        <label class="vd-form-label" for="f-channel">Kanal</label>
+        <select id="f-channel" class="vd-form-control" @bind="_filter.Channel" @bind:after="ReloadAsync">
+            @foreach (var c in _channels)
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+    </div>
+
+    <div class="vd-toolbar-spacer"></div>
+    <div class="vd-field">
+        <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ResetFilter">
+            <i class="bi bi-x-circle"></i> Reset
+        </button>
+    </div>
+</section>
+
+@if (_data == null)
+{
+    <div class="vd-vitals" aria-hidden="true">
+        @for (var i = 0; i < 5; i++)
+        {
+            <div class="vd-vital">
+                <div class="vd-skeleton vd-skeleton-line short"></div>
+                <div class="vd-skeleton vd-skeleton-line" style="height:26px;width:70%;"></div>
+                <div class="vd-skeleton" style="height:46px;margin:6px -16px 0;"></div>
+            </div>
+        }
+    </div>
+    <div class="vd-dash-grid vd-dash-2-1">
+        <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+        <div class="vd-panel"><div class="vd-skeleton vd-skeleton-block"></div></div>
+    </div>
+}
+else
+{
+    <!-- ============ KPI ============ -->
+    <section class="vd-vitals" aria-label="Indikator utama">
+        @foreach (var kpi in _data.Kpis)
+        {
+            <article class="vd-vital">
+                <span class="vd-vital-label">@kpi.Label</span>
+                <span class="vd-vital-value">@FormatValue(kpi)</span>
+                <span class="vd-vital-delta @DeltaClass(kpi)">
+                    <i class="bi @DeltaIcon(kpi)"></i>
+                    @Math.Abs(kpi.DeltaPct).ToString("F1", Id)%
+                    <span>vs periode lalu</span>
+                </span>
+                <div class="vd-vital-spark" id="spark-@kpi.Key"></div>
+            </article>
+        }
+    </section>
+
+    <!-- ============ Aktivitas & komposisi ============ -->
+    <div class="vd-dash-grid vd-dash-2-1">
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Aktivitas layanan</div>
+                    <div class="vd-panel-sub">Jumlah transaksi per @GranularityLabel()</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-activity" style="height:300px;"></div>
+            <div class="vd-legend">
+                @for (var i = 0; i < _data.Activity.Count; i++)
+                {
+                    var idx = i;
+                    <span class="vd-legend-item">
+                        <span class="vd-legend-swatch" style="background:var(--vd-chart-@(idx + 1));"></span>
+                        @_data.Activity[idx].Name
+                    </span>
+                }
+            </div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Komposisi pendapatan</div>
+                    <div class="vd-panel-sub">Berdasarkan lini layanan</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-mix" style="height:250px;"></div>
+            <div class="vd-legend">
+                @for (var i = 0; i < _data.RevenueMix.Count; i++)
+                {
+                    var idx = i;
+                    <span class="vd-legend-item">
+                        <span class="vd-legend-swatch" style="background:var(--vd-chart-@(idx + 1));"></span>
+                        @_data.RevenueMix[idx].Label
+                    </span>
+                }
+            </div>
+        </section>
+    </div>
+
+    <!-- ============ Peringkat & kepadatan ============ -->
+    <div class="vd-dash-grid vd-dash-3">
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Dokter tersibuk</div>
+                    <div class="vd-panel-sub">Jumlah konsultasi</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-doctors"></div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Obat terlaris</div>
+                    <div class="vd-panel-sub">Kuantitas terjual</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-medicines"></div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Kepadatan layanan</div>
+                    <div class="vd-panel-sub">Hari × jam</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-heat"></div>
+        </section>
+    </div>
+
+    <!-- ============ Status ============ -->
+    <div class="vd-dash-grid vd-dash-1-1">
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Status janji temu</div>
+                    <div class="vd-panel-sub">@_data.AppointmentStatus.Sum(s => s.Value).ToString("N0", Id) janji temu</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-appt-status" style="height:210px;"></div>
+        </section>
+        <section class="vd-panel">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Status pesanan obat</div>
+                    <div class="vd-panel-sub">@_data.OrderStatus.Sum(s => s.Value).ToString("N0", Id) pesanan</div>
+                </div>
+            </header>
+            <div class="vd-chart" id="chart-order-status" style="height:210px;"></div>
+        </section>
+    </div>
+
+    <!-- ============ Laporan keuangan ============ -->
+    <div class="vd-section-head vd-mt-3">
+        <h4 class="mb-0">Laporan Keuangan</h4>
+        <small class="vd-text-muted">
+            Berdasarkan tagihan yang diterbitkan sistem pembayaran — berbeda dari nilai transaksi di atas,
+            di sini yang dihitung adalah uang yang benar-benar tertagih.
+        </small>
+    </div>
+
+    @if (!_data.Finance.HasData)
+    {
+        <section class="vd-panel">
+            <div class="vd-empty">
+                <div class="vd-empty-icon"><i class="bi bi-cash-coin"></i></div>
+                <h4>Belum ada tagihan</h4>
+                <p>Laporan keuangan terisi setelah ada transaksi yang menerbitkan tagihan. Pastikan pembayaran aktif di Pengaturan Sistem.</p>
+                <a href="/admin/settings" class="vd-btn vd-btn-outline">Buka pengaturan pembayaran</a>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="vd-vitals" aria-label="Indikator keuangan">
+            @foreach (var kpi in _data.Finance.Kpis)
+            {
+                <article class="vd-vital">
+                    <span class="vd-vital-label">@kpi.Label</span>
+                    <span class="vd-vital-value">@FormatValue(kpi)</span>
+                    <span class="vd-vital-delta @DeltaClass(kpi)">
+                        <i class="bi @DeltaIcon(kpi)"></i>
+                        @Math.Abs(kpi.DeltaPct).ToString("F1", Id)%
+                        <span>vs periode lalu</span>
+                    </span>
+                    <div class="vd-vital-spark" id="spark-@kpi.Key"></div>
+                </article>
+            }
+        </section>
+
+        <div class="vd-dash-grid vd-dash-2-1">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Arus kas</div>
+                        <div class="vd-panel-sub">Tagihan terbit vs kas masuk per @GranularityLabel()</div>
+                    </div>
+                </header>
+                <div class="vd-chart" id="chart-cashflow" style="height:280px;"></div>
+                <div class="vd-legend">
+                    @for (var i = 0; i < _data.Finance.CashFlow.Count; i++)
+                    {
+                        var idx = i;
+                        <span class="vd-legend-item">
+                            <span class="vd-legend-swatch" style="background:var(--vd-chart-@(idx + 1));"></span>
+                            @_data.Finance.CashFlow[idx].Name
+                        </span>
+                    }
+                </div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Cara pembayaran</div>
+                        <div class="vd-panel-sub">Dari @_data.Finance.PaidCount.ToString("N0", Id) tagihan lunas</div>
+                    </div>
+                </header>
+                <div class="vd-chart" id="chart-paymix" style="height:250px;"></div>
+                <div class="vd-legend">
+                    @for (var i = 0; i < _data.Finance.ChannelMix.Count; i++)
+                    {
+                        var idx = i;
+                        <span class="vd-legend-item">
+                            <span class="vd-legend-swatch" style="background:var(--vd-chart-@(idx + 1));"></span>
+                            @_data.Finance.ChannelMix[idx].Label
+                        </span>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <div class="vd-dash-grid vd-dash-3">
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Umur piutang</div>
+                        <div class="vd-panel-sub">Nilai tagihan yang belum lunas</div>
+                    </div>
+                </header>
+                <div class="vd-chart" id="chart-aging"></div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Kas masuk per layanan</div>
+                        <div class="vd-panel-sub">Lini yang membiayai operasional</div>
+                    </div>
+                </header>
+                <div class="vd-chart" id="chart-servicemix" style="height:250px;"></div>
+            </section>
+
+            <section class="vd-panel">
+                <header class="vd-panel-head">
+                    <div>
+                        <div class="vd-panel-title">Ringkasan pembukuan</div>
+                        <div class="vd-panel-sub">Periode berjalan</div>
+                    </div>
+                </header>
+                <div class="vd-table-wrap">
+                    <table class="vd-table">
+                        <tbody>
+                            <tr><td>Tagihan diterbitkan</td><td class="vd-num">@FormatRupiah(_data.Finance.Billed)</td></tr>
+                            <tr><td>Kas masuk</td><td class="vd-num"><strong>@FormatRupiah(_data.Finance.Collected)</strong></td></tr>
+                            <tr><td>Piutang berjalan</td><td class="vd-num">@FormatRupiah(_data.Finance.Outstanding)</td></tr>
+                            <tr><td>Menunggu verifikasi</td><td class="vd-num">@_data.Finance.AwaitingVerificationCount.ToString("N0", Id) tagihan</td></tr>
+                            <tr><td>Lewat batas waktu</td><td class="vd-num">@_data.Finance.OverdueCount.ToString("N0", Id) tagihan</td></tr>
+                            <tr><td>Gagal / kedaluwarsa</td><td class="vd-num">@FormatRupiah(_data.Finance.Uncollectible)</td></tr>
+                            <tr><td>Dana dikembalikan</td><td class="vd-num">@FormatRupiah(_data.Finance.Refunded)</td></tr>
+                            <tr><td>Biaya penanganan diterima</td><td class="vd-num">@FormatRupiah(_data.Finance.ServiceFeeEarned)</td></tr>
+                            <tr><td>Diskon diberikan</td><td class="vd-num">@FormatRupiah(_data.Finance.DiscountGiven)</td></tr>
+                            <tr><td>Ditanggung asuransi</td><td class="vd-num">@FormatRupiah(_data.Finance.InsuranceCovered)</td></tr>
+                            <tr><td>Tingkat penagihan</td><td class="vd-num">@_data.Finance.CollectionRate.ToString("F1", Id)%</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                @if (_data.Finance.ProviderMix.Any())
+                {
+                    <div class="vd-mt-2">
+                        <span class="vd-form-label">Kas masuk per penyedia</span>
+                        <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                            @foreach (var p in _data.Finance.ProviderMix)
+                            {
+                                <span class="vd-pill vd-pill-neutral">@p.Label · @FormatMoney(p.Value)</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        </div>
+
+        <section class="vd-panel vd-mb-3">
+            <header class="vd-panel-head">
+                <div>
+                    <div class="vd-panel-title">Buku tagihan</div>
+                    <div class="vd-panel-sub">
+                        Menampilkan @Math.Min(50, FinanceRows.Count()) dari @FinanceRows.Count() tagihan ·
+                        klik nomor untuk membuka invoice, tombol unduh mengambil semuanya
+                    </div>
+                </div>
+                <div class="vd-flex vd-gap-1" style="flex-wrap:wrap;">
+                    <div class="vd-segment" role="group" aria-label="Saring status tagihan">
+                        @foreach (var s in _finStates)
+                        {
+                            <button type="button" class="@(_finFilter == s ? "is-active" : "")"
+                                    @onclick="() => _finFilter = s">@s</button>
+                        }
+                    </div>
+                    <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="ExportFinanceCsv">
+                        <i class="bi bi-download"></i> Unduh
+                    </button>
+                </div>
+            </header>
+            @if (!FinanceRows.Any())
+            {
+                <div class="vd-empty">
+                    <div class="vd-empty-icon"><i class="bi bi-journal-text"></i></div>
+                    <h4>Tidak ada tagihan yang cocok</h4>
+                    <p>Ubah saringan status atau perlebar rentang tanggal.</p>
+                </div>
+            }
+            else
+            {
+                <div class="vd-table-wrap" style="max-height:420px; overflow-y:auto;">
+                    <table class="vd-table">
+                        <thead>
+                            <tr>
+                                <th>Terbit</th><th>Nomor</th><th>Pasien</th><th>Jenis</th>
+                                <th>Cara bayar</th><th>Penyedia</th><th>Status</th>
+                                <th>Lunas</th><th class="vd-num">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in FinanceRows.Take(50))
+                            {
+                                <tr>
+                                    <td>@r.Date.ToLocalTime().ToString("dd MMM HH:mm", Id)</td>
+                                    <td><a href="/invoice/@r.PaymentId" target="_blank" class="vd-mono" style="font-size:0.78rem;">@r.Invoice</a></td>
+                                    <td>@r.Patient</td>
+                                    <td>@r.Reference</td>
+                                    <td>@r.Channel</td>
+                                    <td>@r.Provider</td>
+                                    <td><span class="vd-pill @FinanceStatusClass(r.Status)">@r.Status</span></td>
+                                    <td>@(r.PaidAt?.ToLocalTime().ToString("dd MMM HH:mm", Id) ?? "—")</td>
+                                    <td class="vd-num">@FormatMoney((double)r.Total)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+
+    <!-- ============ Tabel performa dokter ============ -->
+    <section class="vd-panel vd-mb-3">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Performa dokter</div>
+                <div class="vd-panel-sub">Klik judul kolom untuk mengurutkan</div>
+            </div>
+            <input class="vd-form-control" style="max-width:220px;" placeholder="Cari dokter…"
+                   @bind="_doctorSearch" @bind:event="oninput" aria-label="Cari dokter" />
+        </header>
+        @if (!DoctorRows.Any())
+        {
+            <div class="vd-empty">
+                <div class="vd-empty-icon"><i class="bi bi-person-badge"></i></div>
+                <h4>Tidak ada dokter yang cocok</h4>
+                <p>Ubah kata kunci pencarian atau lepas filter spesialisasi.</p>
+            </div>
+        }
+        else
+        {
+            <div class="vd-table-wrap">
+                <table class="vd-table">
+                    <thead>
+                        <tr>
+                            <th style="cursor:pointer" @onclick='() => SortDoctors("name")'>Dokter @SortArrow("name")</th>
+                            <th>Spesialisasi</th>
+                            <th class="vd-num" style="cursor:pointer" @onclick='() => SortDoctors("cons")'>Konsultasi @SortArrow("cons")</th>
+                            <th class="vd-num" style="cursor:pointer" @onclick='() => SortDoctors("appt")'>Janji Temu @SortArrow("appt")</th>
+                            <th class="vd-num" style="cursor:pointer" @onclick='() => SortDoctors("rating")'>Rating @SortArrow("rating")</th>
+                            <th class="vd-num">Ulasan</th>
+                            <th class="vd-num" style="cursor:pointer" @onclick='() => SortDoctors("revenue")'>Pendapatan @SortArrow("revenue")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in DoctorRows)
+                        {
+                            <tr>
+                                <td>@d.Name</td>
+                                <td><span class="vd-pill vd-pill-neutral">@d.Specialization</span></td>
+                                <td class="vd-num">@d.Consultations.ToString("N0", Id)</td>
+                                <td class="vd-num">@d.Appointments.ToString("N0", Id)</td>
+                                <td class="vd-num">@d.Rating.ToString("F2", Id)</td>
+                                <td class="vd-num">@d.Reviews.ToString("N0", Id)</td>
+                                <td class="vd-num">@FormatMoney((double)d.Revenue)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <!-- ============ Tabel transaksi ============ -->
+    <section class="vd-panel">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Transaksi terbaru</div>
+                <div class="vd-panel-sub">@_data.Transactions.Count transaksi pada rentang ini</div>
+            </div>
+            <div class="vd-segment" role="group" aria-label="Saring jenis transaksi">
+                @foreach (var t in _txTypes)
+                {
+                    <button type="button" class="@(_txFilter == t ? "is-active" : "")"
+                            @onclick="() => _txFilter = t">@t</button>
+                }
+            </div>
+        </header>
+        @if (!TxRows.Any())
+        {
+            <div class="vd-empty">
+                <div class="vd-empty-icon"><i class="bi bi-receipt"></i></div>
+                <h4>Belum ada transaksi</h4>
+                <p>Belum ada aktivitas pada rentang tanggal ini. Coba perlebar rentang di filter atas.</p>
+            </div>
+        }
+        else
+        {
+            <div class="vd-table-wrap" style="max-height:420px; overflow-y:auto;">
+                <table class="vd-table">
+                    <thead>
+                        <tr>
+                            <th>Waktu</th><th>Jenis</th><th>Ref</th><th>Pasien</th>
+                            <th>Detail</th><th>Status</th><th class="vd-num">Nilai</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in TxRows.Take(50))
+                        {
+                            <tr>
+                                <td>@t.Date.ToString("dd MMM HH:mm", Id)</td>
+                                <td>@t.Type</td>
+                                <td><code style="font-family:var(--vd-font-data);font-size:0.78rem;">@t.Reference</code></td>
+                                <td>@t.Patient</td>
+                                <td>@t.Detail</td>
+                                <td><span class="vd-pill @StatusClass(t.Status)">@t.Status</span></td>
+                                <td class="vd-num">@FormatMoney((double)t.Amount)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private static readonly CultureInfo Id = new("id-ID");
+    private static readonly (string Label, int Days)[] _presets =
+        { ("7 hari", 7), ("30 hari", 30), ("90 hari", 90), ("1 tahun", 365) };
+    private static readonly string[] _channels = { "Semua", "Konsultasi", "Appointment", "Farmasi", "Homecare" };
+    private static readonly string[] _txTypes = { "Semua", "Konsultasi", "Janji Temu", "Farmasi", "Homecare" };
+    private static readonly string[] _finStates = { "Semua", "Lunas", "Menunggu pembayaran", "Menunggu verifikasi" };
+
+    private DashboardFilter _filter = new() { Channel = "Semua" };
+    private DashboardData? _data;
+    private bool _loading;
+    private int _activePreset = 30;
+    private bool _autoRefresh;
+    private Timer? _timer;
+    private bool _chartsDirty;
+
+    private string _doctorSearch = "";
+    private string _sortKey = "cons";
+    private bool _sortDesc = true;
+    private string _txFilter = "Semua";
+    private string _finFilter = "Semua";
+
+    private IEnumerable<DoctorPerformance> DoctorRows
+    {
+        get
+        {
+            if (_data == null) return Enumerable.Empty<DoctorPerformance>();
+            var rows = _data.DoctorTable.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_doctorSearch))
+                rows = rows.Where(d => d.Name.Contains(_doctorSearch, StringComparison.OrdinalIgnoreCase)
+                                    || d.Specialization.Contains(_doctorSearch, StringComparison.OrdinalIgnoreCase));
+            rows = _sortKey switch
+            {
+                "name" => _sortDesc ? rows.OrderByDescending(d => d.Name) : rows.OrderBy(d => d.Name),
+                "appt" => _sortDesc ? rows.OrderByDescending(d => d.Appointments) : rows.OrderBy(d => d.Appointments),
+                "rating" => _sortDesc ? rows.OrderByDescending(d => d.Rating) : rows.OrderBy(d => d.Rating),
+                "revenue" => _sortDesc ? rows.OrderByDescending(d => d.Revenue) : rows.OrderBy(d => d.Revenue),
+                _ => _sortDesc ? rows.OrderByDescending(d => d.Consultations) : rows.OrderBy(d => d.Consultations)
+            };
+            return rows;
+        }
+    }
+
+    private IEnumerable<TransactionRow> TxRows =>
+        _data == null
+            ? Enumerable.Empty<TransactionRow>()
+            : _txFilter == "Semua" ? _data.Transactions : _data.Transactions.Where(t => t.Type == _txFilter);
+
+    private IEnumerable<FinanceRow> FinanceRows =>
+        _data == null
+            ? Enumerable.Empty<FinanceRow>()
+            : _finFilter == "Semua" ? _data.Finance.Recent : _data.Finance.Recent.Where(r => r.Status == _finFilter);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_data == null || !_chartsDirty) return;
+        _chartsDirty = false;
+        await DrawChartsAsync();
+    }
+
+    private async Task LoadAsync(bool showSpinner = false)
+    {
+        if (showSpinner) { _loading = true; StateHasChanged(); }
+        try
+        {
+            _data = await DashboardSvc.GetAsync(_filter);
+            _chartsDirty = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadAsync() => await LoadAsync(true);
+
+    private async Task DrawChartsAsync()
+    {
+        if (_data == null) return;
+        try
+        {
+            foreach (var kpi in _data.Kpis)
+            {
+                await JS.InvokeVoidAsync("vdCharts.render", $"spark-{kpi.Key}", "ecg", kpi.Series,
+                    new { color = SparkColor(kpi.Key) });
+            }
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-activity", "area",
+                _data.Activity, new { ariaLabel = "Aktivitas layanan per periode" });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-mix", "donut",
+                _data.RevenueMix, new { money = true, centerLabel = "Pendapatan" });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-doctors", "bars",
+                _data.TopDoctors, new { unit = "Konsultasi" });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-medicines", "bars",
+                _data.TopMedicines, new { unit = "Terjual" });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-heat", "heat", _data.Heatmap, new { });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-appt-status", "donut",
+                _data.AppointmentStatus, new { centerLabel = "Janji temu" });
+
+            await JS.InvokeVoidAsync("vdCharts.render", "chart-order-status", "donut",
+                _data.OrderStatus, new { centerLabel = "Pesanan" });
+
+            if (_data.Finance.HasData)
+            {
+                foreach (var kpi in _data.Finance.Kpis)
+                {
+                    await JS.InvokeVoidAsync("vdCharts.render", $"spark-{kpi.Key}", "ecg", kpi.Series,
+                        new { color = SparkColor(kpi.Key) });
+                }
+
+                await JS.InvokeVoidAsync("vdCharts.render", "chart-cashflow", "area",
+                    _data.Finance.CashFlow, new { money = true, stack = false, ariaLabel = "Tagihan terbit dan kas masuk" });
+
+                await JS.InvokeVoidAsync("vdCharts.render", "chart-paymix", "donut",
+                    _data.Finance.ChannelMix, new { money = true, centerLabel = "Kas masuk" });
+
+                await JS.InvokeVoidAsync("vdCharts.render", "chart-servicemix", "donut",
+                    _data.Finance.ServiceMix, new { money = true, centerLabel = "Per layanan" });
+
+                await JS.InvokeVoidAsync("vdCharts.render", "chart-aging", "bars",
+                    _data.Finance.Aging, new { money = true, unit = "Piutang", secondaryLabel = "Tagihan" });
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { /* prerender: abaikan */ }
+    }
+
+    private static bool IsFlat(KpiCard k) => Math.Abs(k.DeltaPct) < 0.05;
+
+    private static string DeltaClass(KpiCard k) => IsFlat(k) ? "is-flat" : k.IsUp ? "is-up" : "is-down";
+
+    private static string DeltaIcon(KpiCard k) =>
+        IsFlat(k) ? "bi-dash" : k.IsUp ? "bi-arrow-up-right" : "bi-arrow-down-right";
+
+    private static string SparkColor(string key) => key switch
+    {
+        "consultations" => "var(--vd-chart-1)",
+        "appointments" => "var(--vd-chart-2)",
+        "orders" => "var(--vd-chart-3)",
+        "revenue" or "cash_in" => "var(--vd-chart-4)",
+        "billed" => "var(--vd-chart-1)",
+        "collection_rate" => "var(--vd-chart-2)",
+        "avg_ticket" => "var(--vd-chart-3)",
+        "receivable" => "var(--vd-chart-5)",
+        _ => "var(--vd-chart-6)"
+    };
+
+    private async Task ApplyPreset(int days)
+    {
+        _activePreset = days;
+        _filter.To = DateTime.Now.Date;
+        _filter.From = _filter.To.AddDays(-(days - 1));
+        _filter.Granularity = days switch { <= 31 => Granularity.Day, <= 120 => Granularity.Week, _ => Granularity.Month };
+        await LoadAsync(true);
+    }
+
+    private async Task OnFromChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d))
+        {
+            _filter.From = d.Date;
+            if (_filter.From > _filter.To) _filter.To = _filter.From;
+            _activePreset = 0;
+            await LoadAsync(true);
+        }
+    }
+
+    private async Task OnToChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d))
+        {
+            _filter.To = d.Date;
+            if (_filter.To < _filter.From) _filter.From = _filter.To;
+            _activePreset = 0;
+            await LoadAsync(true);
+        }
+    }
+
+    private async Task SetGranularity(Granularity g)
+    {
+        _filter.Granularity = g;
+        await LoadAsync(true);
+    }
+
+    private async Task ResetFilter()
+    {
+        _filter = new DashboardFilter { Channel = "Semua" };
+        _activePreset = 30;
+        _doctorSearch = "";
+        _txFilter = "Semua";
+        await LoadAsync(true);
+    }
+
+    private void SortDoctors(string key)
+    {
+        if (_sortKey == key) _sortDesc = !_sortDesc;
+        else { _sortKey = key; _sortDesc = true; }
+    }
+
+    private string SortArrow(string key) => _sortKey != key ? "" : _sortDesc ? "▾" : "▴";
+
+    private string GranularityLabel() => _filter.Granularity switch
+    {
+        Granularity.Day => "hari",
+        Granularity.Week => "minggu",
+        _ => "bulan"
+    };
+
+    private async Task ToggleAutoRefresh()
+    {
+        _autoRefresh = !_autoRefresh;
+        if (_autoRefresh)
+        {
+            _timer = new Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }
+        else
+        {
+            if (_timer != null) { await _timer.DisposeAsync(); _timer = null; }
+        }
+    }
+
+    private string FormatValue(KpiCard kpi) => kpi.Format switch
+    {
+        "money" => FormatMoney(kpi.Value),
+        "percent" => kpi.Value.ToString("F1", Id) + "%",
+        _ => kpi.Value.ToString("N0", Id)
+    };
+
+    /// <summary>Rupiah utuh — dipakai tabel pembukuan yang tidak boleh dibulatkan.</summary>
+    private static string FormatRupiah(decimal v) => "Rp " + v.ToString("N0", Id);
+
+    private static string FinanceStatusClass(string status) => status switch
+    {
+        "Lunas" => "vd-pill-success",
+        "Gagal" or "Kedaluwarsa" => "vd-pill-danger",
+        "Menunggu verifikasi" => "vd-pill-info",
+        "Menunggu pembayaran" => "vd-pill-warning",
+        _ => "vd-pill-neutral"
+    };
+
+    private static string FormatMoney(double v)
+    {
+        if (Math.Abs(v) >= 1_000_000_000) return "Rp" + (v / 1_000_000_000).ToString("0.#", Id) + " M";
+        if (Math.Abs(v) >= 1_000_000) return "Rp" + (v / 1_000_000).ToString("0.#", Id) + " jt";
+        if (Math.Abs(v) >= 1_000) return "Rp" + (v / 1_000).ToString("0.#", Id) + " rb";
+        return "Rp" + v.ToString("N0", Id);
+    }
+
+    private static string StatusClass(string status) => status switch
+    {
+        "Selesai" or "Diterima" or "Dikonfirmasi" => "vd-pill-success",
+        "Dibatalkan" => "vd-pill-danger",
+        "Berlangsung" or "Diproses" or "Dikirim" => "vd-pill-info",
+        "Menunggu" or "Terjadwal" or "Diminta" => "vd-pill-warning",
+        _ => "vd-pill-neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        if (_data == null) return;
+        var sb = new StringBuilder();
+        sb.AppendLine("Waktu;Jenis;Referensi;Pasien;Detail;Status;Nilai");
+        foreach (var t in TxRows)
+        {
+            sb.AppendLine(string.Join(';', new[]
+            {
+                t.Date.ToString("yyyy-MM-dd HH:mm"),
+                Escape(t.Type), Escape(t.Reference), Escape(t.Patient),
+                Escape(t.Detail), Escape(t.Status),
+                t.Amount.ToString("0", CultureInfo.InvariantCulture)
+            }));
+        }
+        var name = $"virtualdoctor-transaksi-{_filter.From:yyyyMMdd}-{_filter.To:yyyyMMdd}.csv";
+        await JS.InvokeVoidAsync("vdApp.downloadText", name, sb.ToString(), "text/csv;charset=utf-8;");
+    }
+
+    private async Task ExportFinanceCsv()
+    {
+        if (_data == null) return;
+        var sb = new StringBuilder();
+        sb.AppendLine("Terbit;Nomor;Pasien;Jenis;Cara bayar;Penyedia;Status;Lunas;Total");
+        foreach (var r in FinanceRows)
+        {
+            sb.AppendLine(string.Join(';', new[]
+            {
+                r.Date.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                Escape(r.Invoice), Escape(r.Patient), Escape(r.Reference),
+                Escape(r.Channel), Escape(r.Provider), Escape(r.Status),
+                r.PaidAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "",
+                r.Total.ToString("0", CultureInfo.InvariantCulture)
+            }));
+        }
+        var name = $"virtualdoctor-keuangan-{_filter.From:yyyyMMdd}-{_filter.To:yyyyMMdd}.csv";
+        await JS.InvokeVoidAsync("vdApp.downloadText", name, sb.ToString(), "text/csv;charset=utf-8;");
+    }
+
+    private static string Escape(string? s) => (s ?? "").Replace(';', ',').Replace('\n', ' ');
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_timer != null) await _timer.DisposeAsync();
+        try
+        {
+            foreach (var id in new[] { "chart-activity", "chart-mix", "chart-doctors", "chart-medicines",
+                                       "chart-heat", "chart-appt-status", "chart-order-status",
+                                       "chart-cashflow", "chart-paymix", "chart-servicemix", "chart-aging" })
+                await JS.InvokeVoidAsync("vdCharts.dispose", id);
+        }
+        catch { /* sirkuit sudah tertutup */ }
+    }
+}

@@ -1,6 +1,6 @@
 @page "/admin/medicines"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
 @inject Services.IMedicineService MedicineService
 @inject Services.IAuthService AuthService
 

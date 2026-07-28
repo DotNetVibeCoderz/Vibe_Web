@@ -1,23 +1,217 @@
 @page "/settings"
 @rendermode InteractiveServer
+@attribute [Authorize]
+@using VirtualDoctor.Models
 @inject Services.AI.IAiChatService AiChatService
+@inject Services.AI.ILlmProviderFactory LlmFactory
+@inject Services.Meeting.IMeetingService MeetingService
+@inject Services.IAuthService AuthService
+@inject AppConfig Config
+@inject IJSRuntime JS
 
-<div class="vd-mb-2"><h3 class="mb-0">⚙️ Pengaturan</h3><small class="vd-text-muted">Konfigurasi AI, bot, dan preferensi</small></div>
-<div class="vd-grid vd-grid-2">
-    <div class="vd-card"><h5>🤖 Pengaturan Bot AI</h5>
-        <div class="vd-form-group"><label class="vd-form-label">Nama Bot</label><input class="vd-form-control" @bind="_botName" /></div>
-        <div class="vd-form-group"><label class="vd-form-label">System Prompt</label><textarea class="vd-form-control" @bind="_systemPrompt" rows="4"></textarea></div>
-        <div class="vd-form-group"><label class="vd-form-label">Temperature: @_temperature</label><input type="range" min="0" max="1" step="0.1" class="vd-w-100" @bind="_temperature" /></div>
-        <button class="vd-btn vd-btn-primary" @onclick="SaveBot">💾 Simpan</button>
+<PageTitle>Pengaturan · VirtualDoctor</PageTitle>
+
+<div class="vd-flex vd-flex-between vd-mb-2" style="flex-wrap:wrap;gap:12px;">
+    <div>
+        <h3 class="mb-0">Pengaturan</h3>
+        <small class="vd-text-muted">Preferensi tampilan dan asisten AI</small>
     </div>
-    <div class="vd-card"><h5>🔌 LLM Providers</h5><p class="vd-text-muted">Konfigurasi via appsettings.json</p>
-        <table class="vd-table"><thead><tr><th>Provider</th><th>Model</th><th>Status</th></tr></thead><tbody><tr><td>OpenAI</td><td>gpt-4o</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Gemini</td><td>gemini-2.0-flash</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Anthropic</td><td>claude-3-5-sonnet</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr><tr><td>Ollama</td><td>llama3.1</td><td><span class="vd-badge vd-badge-info">Ready</span></td></tr></tbody></table>
-    </div>
-    <div class="vd-card"><h5>📋 Sistem</h5><table class="vd-table"><tbody><tr><td><strong>Framework</strong></td><td>.NET Blazor Server</td></tr><tr><td><strong>Database</strong></td><td>SQLite</td></tr><tr><td><strong>Vector DB</strong></td><td>InMemory</td></tr></tbody></table></div>
-    <div class="vd-card"><h5>🎨 Tampilan</h5><p class="vd-text-muted">Light/Dark toggle di top bar ☀️/🌙</p></div>
+    @if (_isAdmin)
+    {
+        <a href="/admin/settings" class="vd-btn vd-btn-primary vd-btn-sm">
+            <i class="bi bi-sliders"></i> Pengaturan sistem
+        </a>
+    }
 </div>
 
-@code { private string _botName = ""; private string _systemPrompt = ""; private double _temperature = 0.7;
-    protected override async Task OnInitializedAsync() { _botName = await AiChatService.GetBotNameAsync(); }
-    private async Task SaveBot() { await AiChatService.SetBotNameAsync(_botName); await AiChatService.UpdateSystemPromptAsync(_systemPrompt); await AiChatService.UpdateTemperatureAsync(_temperature); }
+<div class="vd-dash-grid vd-dash-1-1">
+    <section class="vd-panel">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Tampilan</div>
+                <div class="vd-panel-sub">Pilihan tema tersimpan di perangkat ini</div>
+            </div>
+        </header>
+
+        <div class="vd-form-group">
+            <span class="vd-form-label" id="lbl-theme">Tema</span>
+            <div class="vd-segment" role="group" aria-labelledby="lbl-theme">
+                <button type="button" class="@(_theme == "light" ? "is-active" : "")" @onclick='() => SetTheme("light")'>
+                    <i class="bi bi-sun"></i> Terang
+                </button>
+                <button type="button" class="@(_theme == "dark" ? "is-active" : "")" @onclick='() => SetTheme("dark")'>
+                    <i class="bi bi-moon-stars"></i> Gelap
+                </button>
+            </div>
+            <small class="vd-text-muted">Tanpa pilihan manual, tema mengikuti pengaturan sistem operasi.</small>
+        </div>
+    </section>
+
+    <section class="vd-panel">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Asisten AI</div>
+                <div class="vd-panel-sub">@(_isAdmin ? "Berlaku untuk seluruh pengguna" : "Hanya administrator yang dapat mengubah")</div>
+            </div>
+        </header>
+
+        <div class="vd-form-group">
+            <label class="vd-form-label" for="p-bot">Nama asisten</label>
+            <input id="p-bot" class="vd-form-control" @bind="_botName" disabled="@(!_isAdmin)" />
+        </div>
+
+        <div class="vd-form-group">
+            <label class="vd-form-label" for="p-prompt">Instruksi sistem</label>
+            <textarea id="p-prompt" class="vd-form-control" rows="5" @bind="_systemPrompt" disabled="@(!_isAdmin)"></textarea>
+        </div>
+
+        <div class="vd-form-group">
+            <label class="vd-form-label" for="p-temp">Temperature · @_temperature.ToString("0.0")</label>
+            <input id="p-temp" type="range" min="0" max="1" step="0.1" class="vd-w-100"
+                   @bind="_temperature" disabled="@(!_isAdmin)" />
+        </div>
+
+        @if (_isAdmin)
+        {
+            <div class="vd-flex vd-gap-1">
+                <button class="vd-btn vd-btn-primary" @onclick="SaveBot" disabled="@_saving">
+                    <i class="bi @(_saving ? "bi-arrow-repeat spin" : "bi-check2")"></i>
+                    @(_saving ? "Menyimpan…" : "Simpan")
+                </button>
+                @if (_saved)
+                {
+                    <span class="vd-pill vd-pill-success" role="status">Tersimpan untuk sesi ini</span>
+                }
+            </div>
+            <small class="vd-text-muted vd-mt-1" style="display:block;">
+                Perubahan di sini berlaku sampai aplikasi di-restart. Untuk menyimpan permanen, gunakan
+                <a href="/admin/settings">Pengaturan Sistem</a>.
+            </small>
+        }
+    </section>
+</div>
+
+<div class="vd-dash-grid vd-dash-1-1">
+    <section class="vd-panel">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Penyedia AI</div>
+                <div class="vd-panel-sub">Status kredensial saat ini</div>
+            </div>
+        </header>
+        <div class="vd-table-wrap">
+            <table class="vd-table">
+                <thead><tr><th>Penyedia</th><th>Model</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var row in ProviderRows())
+                    {
+                        <tr>
+                            <td>@row.Name @(row.Name == Config.Llm.DefaultProvider ? "· utama" : "")</td>
+                            <td><code style="font-family:var(--vd-font-data);font-size:0.78rem;">@row.Model</code></td>
+                            <td>
+                                <span class="vd-pill @(row.Ready ? "vd-pill-success" : "vd-pill-neutral")">
+                                    @(row.Ready ? "Siap" : "Belum dikonfigurasi")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="vd-panel">
+        <header class="vd-panel-head">
+            <div>
+                <div class="vd-panel-title">Kemampuan platform</div>
+                <div class="vd-panel-sub">Konfigurasi yang sedang berjalan</div>
+            </div>
+        </header>
+        <div class="vd-table-wrap">
+            <table class="vd-table">
+                <tbody>
+                    <tr><td>Basis data</td><td>@Config.Database.Provider</td></tr>
+                    <tr><td>Basis data vektor</td><td>@Config.VectorDb.Provider</td></tr>
+                    <tr><td>Penyimpanan berkas</td><td>@Config.Storage.Provider</td></tr>
+                    <tr>
+                        <td>Video call</td>
+                        <td>
+                            @if (MeetingService.IsEnabled)
+                            {
+                                <span class="vd-pill vd-pill-success">@MeetingService.ActiveProvider</span>
+                            }
+                            else
+                            {
+                                <span class="vd-pill vd-pill-neutral">Nonaktif</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Pengindeksan dokumen</td>
+                        <td>@(Config.Indexing.AutoIndex ? $"Setiap {Config.Indexing.IntervalMinutes} menit" : "Nonaktif")</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@code {
+    private string _botName = "", _systemPrompt = "";
+    private double _temperature = 0.7;
+    private bool _isAdmin, _saving, _saved;
+    private string _theme = "light";
+
+    private record ProviderRow(string Name, string Model, bool Ready);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdmin = AuthService.IsAdmin();
+        _botName = await AiChatService.GetBotNameAsync();
+        _systemPrompt = Config.Llm.SystemPrompt;
+        _temperature = Config.Llm.Temperature;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _theme = await JS.InvokeAsync<string>("vdApp.getTheme");
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private IEnumerable<ProviderRow> ProviderRows()
+    {
+        var ready = LlmFactory.GetAvailableProviders();
+        yield return new("OpenAI", Config.Llm.OpenAI?.Model ?? "-", ready.Contains("OpenAI"));
+        yield return new("Gemini", Config.Llm.Gemini?.Model ?? "-", ready.Contains("Gemini"));
+        yield return new("Anthropic", Config.Llm.Anthropic?.Model ?? "-", ready.Contains("Anthropic"));
+        yield return new("Ollama", Config.Llm.Ollama?.Model ?? "-", ready.Contains("Ollama"));
+        yield return new("OpenAI-compatible", Config.Llm.OpenAICompatible?.Model ?? "-", ready.Contains("OpenAICompatible"));
+    }
+
+    private async Task SetTheme(string theme)
+    {
+        _theme = theme;
+        try { await JS.InvokeAsync<string>("vdApp.setTheme", theme); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task SaveBot()
+    {
+        if (!_isAdmin) return;
+        _saving = true;
+        _saved = false;
+        try
+        {
+            await AiChatService.SetBotNameAsync(_botName);
+            await AiChatService.UpdateSystemPromptAsync(_systemPrompt);
+            await AiChatService.UpdateTemperatureAsync(_temperature);
+            _saved = true;
+        }
+        finally { _saving = false; }
+    }
 }

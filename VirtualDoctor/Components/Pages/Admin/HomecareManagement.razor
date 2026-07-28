@@ -1,6 +1,6 @@
 @page "/admin/homecare"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
 @using VirtualDoctor.Models
 @inject Services.IHomecareService HomecareServiceApi
 @inject Services.IAuthService AuthService

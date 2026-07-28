@@ -1,0 +1,46 @@
+@page "/invoice/{PaymentId}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@layout Layout.MinimalLayout
+@using VirtualDoctor.Services.Payment
+@inject IPaymentService Payments
+@inject Services.IAuthService AuthService
+
+<PageTitle>Invoice · VirtualDoctor</PageTitle>
+
+@if (_payment == null)
+{
+    <div class="vd-doc-shell"><div class="vd-skeleton vd-skeleton-block"></div></div>
+}
+else if (!_allowed)
+{
+    <div class="vd-doc-shell">
+        <div class="vd-empty">
+            <div class="vd-empty-icon"><i class="bi bi-shield-lock"></i></div>
+            <h4>Invoice ini bukan milik akun Anda</h4>
+            <a href="/" class="vd-btn vd-btn-primary">Kembali ke beranda</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="vd-doc-shell">
+        <PrintableDocument Payment="_payment" IsReceipt="false" />
+    </div>
+}
+
+@code {
+    [Parameter] public string PaymentId { get; set; } = "";
+
+    private Models.Payment? _payment;
+    private bool _allowed = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _payment = await Payments.GetAsync(PaymentId);
+        if (_payment == null) return;
+
+        var user = await AuthService.GetCurrentUserAsync();
+        _allowed = user != null && (_payment.UserId == user.Id || AuthService.IsAdmin());
+    }
+}

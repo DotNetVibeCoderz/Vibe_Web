@@ -1,6 +1,6 @@
 @page "/admin/users"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = VirtualDoctor.Models.AppRoles.Admin)]
 @inject Services.IUserService UserService
 @inject Services.IAuthService AuthService
 
@@ -59,9 +59,10 @@ else
                     <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.ApplicationUser.FullName))" style="cursor:pointer;">Nama <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.ApplicationUser.FullName))</span></th>
                     <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.ApplicationUser.Email))" style="cursor:pointer;">Email <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.ApplicationUser.Email))</span></th>
                     <th>Telepon</th>
+                    <th>Peran</th>
                     <th>Status</th>
                     <th @onclick="() => SortBy(nameof(VirtualDoctor.Models.ApplicationUser.CreatedAt))" style="cursor:pointer;">Created <span class="ms-1">@SortIcon(nameof(VirtualDoctor.Models.ApplicationUser.CreatedAt))</span></th>
-                    <th style="width:120px;">Aksi</th>
+                    <th style="width:160px;">Aksi</th>
                 </tr>
             </thead>
             <tbody>
@@ -71,12 +72,24 @@ else
                         <td>@u.FullName</td>
                         <td>@u.Email</td>
                         <td>@(u.PhoneNumber ?? "-")</td>
+                        <td>
+                            @foreach (var role in RolesOf(u.Id))
+                            {
+                                <span class="vd-pill @RolePillClass(role)">@VirtualDoctor.Models.AppRoles.Label(role)</span>
+                            }
+                        </td>
                         <td>@(u.IsActive ? "Aktif" : "Nonaktif")</td>
                         <td>@u.CreatedAt.ToString("dd/MM/yyyy")</td>
                         <td>
                             <div class="vd-flex vd-gap-1">
-                                <button class="vd-btn vd-btn-outline vd-btn-sm" @onclick="() => OpenEditForm(u)"><i class="bi bi-pencil"></i></button>
-                                <button class="vd-btn vd-btn-outline vd-btn-sm" style="color:var(--vd-danger);" @onclick="() => Delete(u)"><i class="bi bi-trash"></i></button>
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" title="Ubah peran"
+                                        aria-label="Ubah peran @u.FullName" @onclick="() => OpenRoleForm(u)">
+                                    <i class="bi bi-person-gear"></i>
+                                </button>
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" title="Ubah data"
+                                        aria-label="Ubah data @u.FullName" @onclick="() => OpenEditForm(u)"><i class="bi bi-pencil"></i></button>
+                                <button class="vd-btn vd-btn-outline vd-btn-sm" style="color:var(--vd-danger);" title="Nonaktifkan"
+                                        aria-label="Nonaktifkan @u.FullName" @onclick="() => Delete(u)"><i class="bi bi-trash"></i></button>
                             </div>
                         </td>
                     </tr>
@@ -122,8 +135,58 @@ else
     </div>
 }
 
+@if (_roleUser != null)
+{
+    <div class="vd-modal-overlay" @onclick="CloseRoleForm">
+        <div class="vd-modal-content" @onclick:stopPropagation="true" style="max-width:520px;"
+             role="dialog" aria-modal="true" aria-label="Ubah peran pengguna">
+            <div class="vd-card-header">
+                <span class="vd-card-title">Peran · @_roleUser.FullName</span>
+                <button class="btn btn-icon" @onclick="CloseRoleForm" aria-label="Tutup"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <p class="vd-text-muted" style="font-size:0.86rem;">
+                Peran menentukan halaman yang dapat dibuka. Perubahan berlaku saat pengguna
+                masuk berikutnya, karena peran disimpan di dalam cookie sesi.
+            </p>
+
+            @foreach (var role in VirtualDoctor.Models.AppRoles.All)
+            {
+                var current = role;
+                <label class="vd-flex vd-gap-1 vd-mb-1" style="align-items:flex-start;cursor:pointer;">
+                    <input type="checkbox" checked="@_roleSelection.Contains(current)"
+                           @onchange="e => ToggleRole(current, e)" style="margin-top:4px;" />
+                    <span>
+                        <strong>@VirtualDoctor.Models.AppRoles.Label(current)</strong><br />
+                        <small class="vd-text-muted">@RoleDescription(current)</small>
+                    </span>
+                </label>
+            }
+
+            @if (!string.IsNullOrEmpty(_roleMsg))
+            {
+                <div class="vd-toast-item is-error vd-mb-2" role="alert">
+                    <div><div class="vd-toast-body">@_roleMsg</div></div>
+                </div>
+            }
+
+            <div class="vd-flex vd-gap-1" style="justify-content:flex-end;">
+                <button class="vd-btn vd-btn-outline" @onclick="CloseRoleForm">Batal</button>
+                <button class="vd-btn vd-btn-primary" @onclick="SaveRoles" disabled="@_savingRoles">
+                    <i class="bi @(_savingRoles ? "bi-arrow-repeat spin" : "bi-check2")"></i> Simpan peran
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private bool _isAdmin;
+    private Dictionary<string, List<string>> _roles = new();
+    private VirtualDoctor.Models.ApplicationUser? _roleUser;
+    private HashSet<string> _roleSelection = new();
+    private bool _savingRoles;
+    private string? _roleMsg;
     private List<VirtualDoctor.Models.ApplicationUser> _all = new();
     private List<VirtualDoctor.Models.ApplicationUser> _filtered = new();
     private int _page = 1;
@@ -155,7 +218,76 @@ else
     private async Task LoadData()
     {
         _all = await UserService.GetAllAsync();
+        _roles = await AuthService.GetRolesForAllAsync();
         ApplyFilter();
+    }
+
+    // ============ Peran ============
+
+    private IEnumerable<string> RolesOf(string userId) =>
+        _roles.TryGetValue(userId, out var list) && list.Count > 0
+            ? list.OrderBy(r => r)
+            : new[] { VirtualDoctor.Models.AppRoles.Patient };
+
+    private static string RolePillClass(string role) => role switch
+    {
+        VirtualDoctor.Models.AppRoles.Admin => "vd-pill-danger",
+        VirtualDoctor.Models.AppRoles.Doctor => "vd-pill-info",
+        _ => "vd-pill-neutral"
+    };
+
+    private static string RoleDescription(string role) => role switch
+    {
+        VirtualDoctor.Models.AppRoles.Admin => "Akses penuh ke seluruh backoffice dan pengaturan sistem.",
+        VirtualDoctor.Models.AppRoles.Doctor => "Membuka antrean konsultasi dan janji temu miliknya sendiri.",
+        _ => "Akses layanan pasien: konsultasi, farmasi, homecare, dan janji temu."
+    };
+
+    private void OpenRoleForm(VirtualDoctor.Models.ApplicationUser user)
+    {
+        _roleUser = user;
+        _roleSelection = RolesOf(user.Id).ToHashSet();
+        _roleMsg = null;
+    }
+
+    private void CloseRoleForm()
+    {
+        _roleUser = null;
+        _roleMsg = null;
+    }
+
+    private void ToggleRole(string role, ChangeEventArgs e)
+    {
+        if (e.Value is bool on && on) _roleSelection.Add(role);
+        else _roleSelection.Remove(role);
+    }
+
+    private async Task SaveRoles()
+    {
+        if (_roleUser == null) return;
+        _savingRoles = true;
+        _roleMsg = null;
+        try
+        {
+            if (_roleSelection.Count == 0)
+            {
+                _roleMsg = "Pilih minimal satu peran.";
+                return;
+            }
+
+            var actor = await AuthService.GetCurrentUserAsync();
+            var ok = await AuthService.SetRolesAsync(_roleUser.Id, _roleSelection, actor?.Email);
+
+            if (!ok)
+            {
+                _roleMsg = "Peran administrator terakhir tidak dapat dicabut. Tunjuk administrator lain lebih dulu.";
+                return;
+            }
+
+            await LoadData();
+            _roleUser = null;
+        }
+        finally { _savingRoles = false; }
     }
 
     private void ApplyFilter()

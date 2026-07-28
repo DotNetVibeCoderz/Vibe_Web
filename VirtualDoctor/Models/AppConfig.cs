@@ -118,6 +118,120 @@ public class SearchConfig
 }
 
 /// <summary>
+/// Konfigurasi video conference untuk konsultasi (opsional).
+/// Provider: None, Jitsi (tanpa API key), Zoom (Server-to-Server OAuth), Teams (Microsoft Graph).
+/// Bisa diubah lewat appsettings.json maupun halaman Pengaturan.
+/// </summary>
+public class MeetingConfig
+{
+    public string Provider { get; set; } = "None";
+    public int DefaultDurationMinutes { get; set; } = 30;
+    public ZoomConfig? Zoom { get; set; } = new();
+    public TeamsConfig? Teams { get; set; } = new();
+    public JitsiConfig? Jitsi { get; set; } = new();
+}
+
+/// <summary>Zoom Server-to-Server OAuth (Account ID + Client ID + Client Secret).</summary>
+public class ZoomConfig
+{
+    public string AccountId { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    /// <summary>User pemilik meeting. "me" = user pemilik app credential.</summary>
+    public string HostUserId { get; set; } = "me";
+}
+
+/// <summary>Microsoft Teams via Graph API (client credentials).</summary>
+public class TeamsConfig
+{
+    public string TenantId { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    /// <summary>Object ID / UPN user yang menjadi organizer meeting.</summary>
+    public string OrganizerUserId { get; set; } = string.Empty;
+}
+
+/// <summary>Jitsi Meet - tanpa kredensial, cocok untuk pilot / on-premise.</summary>
+public class JitsiConfig
+{
+    public string Domain { get; set; } = "meet.jit.si";
+    public string RoomPrefix { get; set; } = "vdoctor";
+}
+
+/// <summary>
+/// Konfigurasi pembayaran. Provider: Manual (transfer + unggah bukti),
+/// Qris (QRIS statis milik merchant diubah jadi dinamis), Midtrans, Xendit.
+/// Dapat diubah lewat appsettings.json maupun halaman Pengaturan Sistem.
+/// </summary>
+public class PaymentConfig
+{
+    public string Provider { get; set; } = "Manual";
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Batas waktu pembayaran dalam menit.</summary>
+    public int ExpiryMinutes { get; set; } = 120;
+
+    /// <summary>Biaya penanganan yang dibebankan ke pasien (rupiah, bukan persen).</summary>
+    public decimal ServiceFee { get; set; } = 0;
+
+    /// <summary>Awalan nomor invoice.</summary>
+    public string InvoicePrefix { get; set; } = "INV";
+
+    public MerchantInfo Merchant { get; set; } = new();
+    public QrisConfig? Qris { get; set; } = new();
+    public ManualPaymentConfig? Manual { get; set; } = new();
+    public MidtransConfig? Midtrans { get; set; } = new();
+    public XenditConfig? Xendit { get; set; } = new();
+}
+
+/// <summary>Identitas penerbit tagihan yang tercetak di invoice.</summary>
+public class MerchantInfo
+{
+    public string Name { get; set; } = "VirtualDoctor";
+    public string? LegalName { get; set; }
+    public string? Address { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? TaxId { get; set; }
+    public string? LogoUrl { get; set; }
+}
+
+/// <summary>
+/// QRIS statis milik merchant. Payload diambil dari QR cetak yang diberikan
+/// penyedia (bank/PJSP), lalu aplikasi menyisipkan nominal agar menjadi QRIS dinamis.
+/// </summary>
+public class QrisConfig
+{
+    /// <summary>Payload EMVCo dari QR statis merchant (diawali "00020101...").</summary>
+    public string StaticPayload { get; set; } = string.Empty;
+    public string? MerchantName { get; set; }
+    public string? MerchantCity { get; set; }
+}
+
+public class ManualPaymentConfig
+{
+    public string BankName { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
+    public string AccountHolder { get; set; } = string.Empty;
+    public string? Instructions { get; set; }
+}
+
+/// <summary>Midtrans Snap / Core API.</summary>
+public class MidtransConfig
+{
+    public string ServerKey { get; set; } = string.Empty;
+    public string ClientKey { get; set; } = string.Empty;
+    public bool IsProduction { get; set; }
+}
+
+/// <summary>Xendit API v2.</summary>
+public class XenditConfig
+{
+    public string SecretKey { get; set; } = string.Empty;
+    public string? CallbackToken { get; set; }
+}
+
+/// <summary>
 /// Root app configuration
 /// </summary>
 public class AppConfig
@@ -129,4 +243,6 @@ public class AppConfig
     public IndexingConfig Indexing { get; set; } = new();
     public GoogleMapsConfig GoogleMaps { get; set; } = new();
     public SearchConfig Search { get; set; } = new();
+    public MeetingConfig Meeting { get; set; } = new();
+    public PaymentConfig Payment { get; set; } = new();
 }
