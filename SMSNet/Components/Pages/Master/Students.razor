@@ -1,273 +1,243 @@
 @page "/master/students"
 @attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
-@inject ApplicationDbContext Db
-@inject IJSRuntime JSRuntime
+@inherits CrudPageBase<Student>
 
-<h1 class="text-2xl font-semibold mb-6">Master Data - Siswa</h1>
+<PageTitle>Master Data Siswa — SMSNet</PageTitle>
 
-<div class="sms-card space-y-6">
-    <div class="grid gap-4 md:grid-cols-4">
-        <div>
-            <label class="text-sm font-medium">Free Text Search</label>
-            <InputText class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" />
-        </div>
-        <div>
-            <label class="text-sm font-medium">Filter Kelas</label>
-            <InputText class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="ClassFilter" />
-        </div>
-        <div>
-            <label class="text-sm font-medium">Status</label>
-            <InputSelect class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="StatusFilter">
-                <option value="">Semua</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-            </InputSelect>
-        </div>
-        <div class="flex items-end gap-2">
-            <button class="w-full px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
-        </div>
-    </div>
+<PageHeader Eyebrow="Master Data" Title="Siswa"
+            Subtitle="Data induk peserta didik: identitas, kelas, wali, dan status keaktifan.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Siswa</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-    <div class="flex justify-end">
-        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Siswa</button>
-    </div>
-
-    <div class="overflow-auto">
-        <table class="min-w-full text-sm">
-            <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                    <th class="py-2 cursor-pointer" @onclick="() => SortBy(nameof(Student.FullName))">Nama</th>
-                    <th class="py-2 cursor-pointer" @onclick="() => SortBy(nameof(Student.ClassName))">Kelas</th>
-                    <th class="py-2">Tanggal Lahir</th>
-                    <th class="py-2">Gender</th>
-                    <th class="py-2 cursor-pointer" @onclick="() => SortBy(nameof(Student.Status))">Status</th>
-                    <th class="py-2">Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var student in PagedStudents)
-                {
-                    <tr class="border-b border-slate-100 dark:border-slate-800">
-                        <td class="py-2">@student.FullName</td>
-                        <td class="py-2">@student.ClassName</td>
-                        <td class="py-2">@student.DateOfBirth.ToString("dd MMM yyyy")</td>
-                        <td class="py-2">@student.Gender</td>
-                        <td class="py-2"><span class="sms-badge">@student.Status</span></td>
-                        <td class="py-2 flex gap-2">
-                            <button class="text-indigo-600" @onclick="() => StartEdit(student)">Edit</button>
-                            <button class="text-rose-600" @onclick="() => DeleteStudent(student.Id)">Hapus</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    <div class="flex items-center justify-between text-sm">
-        <p>Menampilkan @PagedStudents.Count dari @FilteredStudents.Count siswa</p>
-        <div class="flex items-center gap-2">
-            <button class="px-2 py-1 rounded border border-slate-200 dark:border-slate-600" @onclick="PreviousPage">Prev</button>
-            <span>Page @CurrentPage</span>
-            <button class="px-2 py-1 rounded border border-slate-200 dark:border-slate-600" @onclick="NextPage">Next</button>
-        </div>
-    </div>
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Siswa" Value="@Items.Count.ToString()" Icon="users" Tone="brand" />
+    <StatTile Label="Aktif" Value="@Items.Count(s => s.Status == "Active").ToString()" Icon="check" Tone="good" />
+    <StatTile Label="Tidak Aktif" Value="@Items.Count(s => s.Status != "Active").ToString()" Icon="warning" Tone="warn" />
+    <StatTile Label="Jumlah Kelas" Value="@Items.Select(s => s.ClassName).Distinct().Count(c => !string.IsNullOrWhiteSpace(c)).ToString()" Icon="grid" />
 </div>
 
-@if (ShowForm)
-{
-    <div class="sms-card mt-6 max-w-2xl">
-        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
-        <EditForm Model="FormModel" OnValidSubmit="SaveStudent">
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama atau kelas…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="filter-kelas">Kelas</label>
+            <select id="filter-kelas" class="sms-select" @bind="ClassFilter" @bind:after="ResetPage">
+                <option value="">Semua kelas</option>
+                @foreach (var kelas in Items.Select(s => s.ClassName).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c))
+                {
+                    <option value="@kelas">@kelas</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="filter-status">Status</label>
+            <select id="filter-status" class="sms-select" @bind="StatusFilter" @bind:after="ResetPage">
+                <option value="">Semua status</option>
+                <option value="Active">Aktif</option>
+                <option value="Inactive">Tidak aktif</option>
+            </select>
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">
+            @for (var i = 0; i < 6; i++)
+            {
+                <div class="sms-skeleton h-10"></div>
+            }
+        </div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="users"
+                    Title="Tidak ada siswa yang cocok"
+                    Hint="Ubah kata kunci atau filter, atau tambahkan siswa baru.">
+            <Action>
+                <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+                    <Icon Name="plus" /><span>Tambah Siswa</span>
+                </button>
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Nama <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("kelas")'>Kelas <span class="sort-caret">@SortCaret("kelas")</span></th>
+                        <th>Tanggal Lahir</th>
+                        <th>Gender</th>
+                        <th>Orang Tua</th>
+                        <th class="is-sortable" @onclick='() => SortBy("status")'>Status <span class="sort-caret">@SortCaret("status")</span></th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var siswa in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@siswa.FullName</td>
+                            <td>@(siswa.ClassName ?? "—")</td>
+                            <td class="tabular">@siswa.DateOfBirth.ToString("dd MMM yyyy")</td>
+                            <td>@(siswa.Gender ?? "—")</td>
+                            <td>@(siswa.ParentName ?? "—")</td>
+                            <td>
+                                <span class="sms-badge @(siswa.Status == "Active" ? "sms-badge--good" : "")">
+                                    @(siswa.Status == "Active" ? "Aktif" : "Tidak aktif")
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(siswa)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)"
+                                            @onclick="() => AskDelete(siswa)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="siswa" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
+</div>
+
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()" Wide="true"
+       Title="@(IdOf(Form) == 0 ? "Tambah Siswa" : "Ubah Data Siswa")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-siswa">
             <DataAnnotationsValidator />
-            <ValidationSummary />
+            <ValidationSummary class="validation-errors" />
 
             <div class="grid gap-4 md:grid-cols-2">
-                <div>
-                    <label class="text-sm font-medium">Nama Lengkap</label>
-                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.FullName" />
+                <div class="sms-field">
+                    <label class="sms-label">Nama lengkap</label>
+                    <InputText class="sms-input" @bind-Value="Form.FullName" />
+                    <ValidationMessage For="() => Form.FullName" />
                 </div>
-                <div>
-                    <label class="text-sm font-medium">Kelas</label>
-                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.ClassName" />
+                <div class="sms-field">
+                    <label class="sms-label">Kelas</label>
+                    <InputText class="sms-input" @bind-Value="Form.ClassName" placeholder="contoh: 8A" />
                 </div>
-                <div>
-                    <label class="text-sm font-medium">Tanggal Lahir</label>
-                    <InputDate class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.DateOfBirth" />
+                <div class="sms-field">
+                    <label class="sms-label">Tanggal lahir</label>
+                    <InputDate class="sms-input" @bind-Value="Form.DateOfBirth" />
                 </div>
-                <div>
-                    <label class="text-sm font-medium">Gender</label>
-                    <InputSelect class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Gender">
+                <div class="sms-field">
+                    <label class="sms-label">Gender</label>
+                    <InputSelect class="sms-select" @bind-Value="Form.Gender">
                         <option value="Laki-laki">Laki-laki</option>
                         <option value="Perempuan">Perempuan</option>
                     </InputSelect>
                 </div>
-                <div>
-                    <label class="text-sm font-medium">Status</label>
-                    <InputSelect class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
+                <div class="sms-field">
+                    <label class="sms-label">Nama orang tua</label>
+                    <InputText class="sms-input" @bind-Value="Form.ParentName" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Telepon</label>
+                    <InputText class="sms-input" @bind-Value="Form.Phone" placeholder="0812-…" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Status</label>
+                    <InputSelect class="sms-select" @bind-Value="Form.Status">
+                        <option value="Active">Aktif</option>
+                        <option value="Inactive">Tidak aktif</option>
                     </InputSelect>
                 </div>
             </div>
-
-            <div class="mt-4 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
         </EditForm>
-    </div>
-}
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-siswa" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen"
+               Title="Hapus data siswa"
+               Message="Data siswa ini akan dihapus permanen dari basis data."
+               Detail="@PendingDeleteLabel"
+               OnConfirm="ConfirmDeleteAsync" />
 
 @code {
-    private List<Student> StudentItems { get; set; } = new();
-    private string SearchText { get; set; } = string.Empty;
-    private string ClassFilter { get; set; } = string.Empty;
-    private string StatusFilter { get; set; } = string.Empty;
-    private string SortColumn { get; set; } = nameof(Student.FullName);
-    private bool SortAscending { get; set; } = true;
-    private int CurrentPage { get; set; } = 1;
-    private const int PageSize = 10;
+    private string ClassFilter = string.Empty;
+    private string StatusFilter = string.Empty;
 
-    private Student FormModel { get; set; } = new() { DateOfBirth = DateTime.Today.AddYears(-13) };
-    private string FormTitle => FormModel.Id == 0 ? "Tambah Siswa" : "Edit Siswa";
-    private bool ShowForm { get; set; }
+    protected override string EntityLabel => "siswa";
 
-    private List<Student> FilteredStudents => ApplyFilters(StudentItems.AsQueryable()).ToList();
+    protected override DbSet<Student> Table(ApplicationDbContext db) => db.Students;
 
-    private List<Student> PagedStudents => FilteredStudents
-        .Skip((CurrentPage - 1) * PageSize)
-        .Take(PageSize)
-        .ToList();
+    protected override IEnumerable<string?> SearchableText(Student s) =>
+        new[] { s.FullName, s.ClassName, s.ParentName, s.Phone };
 
-    protected override Task OnInitializedAsync()
+    protected override string Describe(Student s) => s.FullName;
+
+    protected override int IdOf(Student s) => s.Id;
+
+    protected override Student NewEntity() => new()
     {
-        LoadStudents();
-        return Task.CompletedTask;
-    }
+        DateOfBirth = SchoolClock.Today.AddYears(-13),
+        Gender = "Laki-laki",
+        Status = "Active"
+    };
 
-    private void LoadStudents()
+    protected override Student CloneForEdit(Student s) => new()
     {
-        StudentItems = Db.Students.AsNoTracking().ToList();
-    }
+        Id = s.Id,
+        FullName = s.FullName,
+        ClassName = s.ClassName,
+        DateOfBirth = s.DateOfBirth,
+        Gender = s.Gender,
+        ParentName = s.ParentName,
+        Phone = s.Phone,
+        Status = s.Status
+    };
 
-    private IQueryable<Student> ApplyFilters(IQueryable<Student> query)
+    protected override IEnumerable<Student> ApplyFilters(IEnumerable<Student> items)
     {
-        if (!string.IsNullOrWhiteSpace(SearchText))
-        {
-            query = query.Where(s => s.FullName.Contains(SearchText) || s.ClassName!.Contains(SearchText));
-        }
-
         if (!string.IsNullOrWhiteSpace(ClassFilter))
         {
-            query = query.Where(s => s.ClassName!.Contains(ClassFilter));
+            items = items.Where(s => s.ClassName == ClassFilter);
         }
 
         if (!string.IsNullOrWhiteSpace(StatusFilter))
         {
-            query = query.Where(s => s.Status == StatusFilter);
+            items = items.Where(s => s.Status == StatusFilter);
         }
 
-        query = SortColumn switch
-        {
-            nameof(Student.ClassName) => SortAscending ? query.OrderBy(s => s.ClassName) : query.OrderByDescending(s => s.ClassName),
-            nameof(Student.Status) => SortAscending ? query.OrderBy(s => s.Status) : query.OrderByDescending(s => s.Status),
-            _ => SortAscending ? query.OrderBy(s => s.FullName) : query.OrderByDescending(s => s.FullName)
-        };
-
-        return query;
+        return items;
     }
 
-    private void SortBy(string column)
+    protected override IEnumerable<Student> ApplySort(IEnumerable<Student> items) => SortColumn switch
     {
-        if (SortColumn == column)
-        {
-            SortAscending = !SortAscending;
-        }
-        else
-        {
-            SortColumn = column;
-            SortAscending = true;
-        }
-    }
+        "kelas" => SortAscending ? items.OrderBy(s => s.ClassName) : items.OrderByDescending(s => s.ClassName),
+        "status" => SortAscending ? items.OrderBy(s => s.Status) : items.OrderByDescending(s => s.Status),
+        _ => SortAscending ? items.OrderBy(s => s.FullName) : items.OrderByDescending(s => s.FullName)
+    };
 
-    private void NextPage()
-    {
-        if (CurrentPage * PageSize < FilteredStudents.Count)
-        {
-            CurrentPage++;
-        }
-    }
+    protected override string CsvHeader => "Id,Nama,Kelas,TanggalLahir,Gender,OrangTua,Telepon,Status";
 
-    private void PreviousPage()
-    {
-        if (CurrentPage > 1)
-        {
-            CurrentPage--;
-        }
-    }
+    protected override string CsvRow(Student s) =>
+        $"{s.Id},{Csv(s.FullName)},{Csv(s.ClassName)},{s.DateOfBirth:yyyy-MM-dd},{Csv(s.Gender)},{Csv(s.ParentName)},{Csv(s.Phone)},{Csv(s.Status)}";
 
-    private void ShowAdd()
-    {
-        FormModel = new Student { DateOfBirth = DateTime.Today.AddYears(-13) };
-        ShowForm = true;
-    }
-
-    private void StartEdit(Student student)
-    {
-        FormModel = new Student
-        {
-            Id = student.Id,
-            FullName = student.FullName,
-            ClassName = student.ClassName,
-            DateOfBirth = student.DateOfBirth,
-            Gender = student.Gender,
-            Status = student.Status
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveStudent()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Students.Add(FormModel);
-        }
-        else
-        {
-            Db.Students.Update(FormModel);
-        }
-
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadStudents();
-    }
-
-    private async Task DeleteStudent(int id)
-    {
-        var student = await Db.Students.FindAsync(id);
-        if (student != null)
-        {
-            Db.Students.Remove(student);
-            await Db.SaveChangesAsync();
-            LoadStudents();
-        }
-    }
-
-    private void Cancel()
-    {
-        FormModel = new Student { DateOfBirth = DateTime.Today.AddYears(-13) };
-        ShowForm = false;
-    }
-
-    private async Task ExportCsv()
-    {
-        var rows = new List<string> { "Id,FullName,ClassName,DateOfBirth,Gender,Status" };
-        foreach (var student in FilteredStudents)
-        {
-            rows.Add($"{student.Id},\"{student.FullName}\",{student.ClassName},{student.DateOfBirth:yyyy-MM-dd},{student.Gender},{student.Status}");
-        }
-
-        var csv = string.Join("\n", rows);
-        await JSRuntime.InvokeVoidAsync("smsnetDownload", "students.csv", csv);
-    }
+    private void ResetPage() => CurrentPage = 1;
 }

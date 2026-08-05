@@ -1,116 +1,276 @@
 @page "/teacher/communication"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inherits CrudPageBase<ForumPost>
+@inject AuthenticationStateProviderAccessor UserAccessor
+@inject CommentService Comments
+@inject HtmlContentSanitizer Sanitizer
 
-<h1 class="text-2xl font-semibold mb-6">Komunikasi Internal</h1>
+<PageTitle>Komunikasi Internal — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Forum diskusi, chat, dan pengumuman antar guru/staff</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Buat Topik</button>
+<PageHeader Eyebrow="Guru & Staff" Title="Komunikasi Internal"
+            Subtitle="Forum diskusi dan pengumuman antar guru dan staff.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tulis Topik</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Topik" Value="@Items.Count.ToString()" Icon="message" Tone="brand" />
+    <StatTile Label="Minggu Ini"
+              Value="@Items.Count(p => p.PostedAt >= SchoolClock.Today.AddDays(-7)).ToString()" Icon="activity" Tone="good" />
+    <StatTile Label="Komentar" Value="@_commentCounts.Values.Sum().ToString()" Icon="chat" />
+    <StatTile Label="Kontributor" Value="@Items.Select(p => p.Author).Distinct().Count().ToString()" Icon="users" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Topik, penulis, atau isi…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
     </div>
 
-    <ul class="space-y-4">
-        @foreach (var post in Posts)
-        {
-            <li class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <p class="font-medium">@post.Topic</p>
-                        <p class="text-xs text-slate-500">@post.Author • @post.PostedAt.ToString("dd MMM yyyy")</p>
-                        <p class="text-sm mt-2">@post.Content</p>
-                    </div>
-                    <div class="flex gap-2 text-sm">
-                        <button class="text-indigo-600" @onclick="() => EditPost(post)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeletePost(post.Id)">Hapus</button>
-                    </div>
-                </div>
-            </li>
-        }
-    </ul>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SavePost">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Topik" @bind-Value="FormModel.Topic" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Author" @bind-Value="FormModel.Author" />
-                <InputTextArea class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Konten" @bind-Value="FormModel.Content" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 4; i++) { <div class="sms-skeleton h-20"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="message" Title="Belum ada topik diskusi"
+                    Hint="Mulai percakapan dengan menulis topik baru." />
+    }
+    else
+    {
+        <ul class="list-none m-0 p-0 space-y-3">
+            @foreach (var post in Paged)
+            {
+                var isOpen = _openTopicId == post.Id;
+
+                <li class="rounded-lg border p-4 sms-reveal"
+                    style="border-color: var(--rule); background: var(--bg-inset)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex items-start gap-3 min-w-0">
+                            <span class="sms-avatar flex-none">@Initials(post.Author)</span>
+                            <div class="min-w-0">
+                                <p class="m-0 font-semibold" style="color: var(--fg-strong)">@post.Topic</p>
+                                <p class="m-0 text-xs" style="color: var(--fg-faint)">
+                                    @post.Author · @post.PostedAt.ToString("dd MMM yyyy, HH:mm")
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex flex-none gap-1">
+                            <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                    @onclick="() => StartEdit(post)"><Icon Name="edit" /></button>
+                            <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                    style="color: var(--bata)" @onclick="() => AskDelete(post)"><Icon Name="trash" /></button>
+                        </div>
+                    </div>
+
+                    @* Stored content is sanitised on save, so it is safe to render as markup here. *@
+                    <div class="sms-prosa mt-3">@((MarkupString)DisplayHtml(post))</div>
+
+                    <button type="button" class="sms-btn sms-btn--quiet sms-btn--sm mt-3"
+                            @onclick="() => ToggleThread(post.Id)">
+                        <Icon Name="chat" />
+                        <span>
+                            @{
+                                var count = _commentCounts.GetValueOrDefault(post.Id);
+                            }
+                            @(isOpen ? "Tutup komentar" : count == 0 ? "Komentari" : $"{count} komentar")
+                        </span>
+                    </button>
+
+                    @if (isOpen)
+                    {
+                        <CommentThread ThreadType="@CommentThreads.Forum" ThreadId="post.Id"
+                                       OnCountChanged="c => OnCommentCountChanged(post.Id, c)" />
+                    }
+                </li>
+            }
+        </ul>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="topik" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()" Wide="true"
+       Title="@(IdOf(Form) == 0 ? "Tulis Topik Baru" : "Ubah Topik")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SavePostAsync" id="form-forum">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Topik</label>
+                        <InputText class="sms-input" @bind-Value="Form.Topic" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Penulis</label>
+                        <InputText class="sms-input" @bind-Value="Form.Author" />
+                    </div>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Isi</label>
+                    <RichTextEditor @bind-Value="_body" Placeholder="Tulis pengumuman atau bahan diskusi…" />
+                    @if (_bodyError is not null)
+                    {
+                        <p class="text-xs m-0" style="color: var(--bata)">@_bodyError</p>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-forum" class="sms-btn sms-btn--primary">Kirim</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus topik"
+               Message="Topik diskusi ini akan dihapus permanen beserta seluruh komentarnya."
+               Detail="@PendingDeleteLabel" OnConfirm="DeletePostAsync" />
+
 @code {
-    private List<ForumPost> Posts { get; set; } = new();
-    private ForumPost FormModel { get; set; } = new() { PostedAt = DateTime.Today };
-    private bool ShowForm { get; set; }
+    private string _currentUser = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    /// <summary>Bound to the editor. Kept out of the entity so a cancelled edit
+    /// cannot leave half-typed markup on the row still shown behind the dialog.</summary>
+    private string _body = string.Empty;
+    private string? _bodyError;
+
+    private int? _openTopicId;
+    private Dictionary<int, int> _commentCounts = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        LoadPosts();
-        return Task.CompletedTask;
+        await base.OnInitializedAsync();
+        _currentUser = await UserAccessor.GetUserNameAsync();
+        await LoadCommentCountsAsync();
     }
 
-    private void LoadPosts()
+    private async Task LoadCommentCountsAsync()
     {
-        Posts = Db.ForumPosts.AsNoTracking().OrderByDescending(p => p.PostedAt).ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new ForumPost { PostedAt = DateTime.Today };
-        ShowForm = true;
-    }
-
-    private void EditPost(ForumPost post)
-    {
-        FormModel = new ForumPost
+        try
         {
-            Id = post.Id,
-            Topic = post.Topic,
-            Author = post.Author,
-            Content = post.Content,
-            PostedAt = post.PostedAt
+            _commentCounts = await Comments.CountsAsync(CommentThreads.Forum, Items.Select(IdOf));
+        }
+        catch
+        {
+            // A count is decoration; failing to get it must not blank the page.
+            _commentCounts = new Dictionary<int, int>();
+        }
+    }
+
+    protected override void OnFormOpened()
+    {
+        // Legacy topics hold plain text; feed the editor markup either way so line
+        // breaks written before the editor existed survive an edit.
+        _body = HtmlContentSanitizer.LooksLikeHtml(Form.Content)
+            ? Form.Content ?? string.Empty
+            : HtmlContentSanitizer.FromPlainText(Form.Content);
+
+        _bodyError = null;
+    }
+
+    private void ToggleThread(int id) => _openTopicId = _openTopicId == id ? null : id;
+
+    private void OnCommentCountChanged(int topicId, int count) => _commentCounts[topicId] = count;
+
+    /// <summary>
+    /// Topics written before the editor existed hold plain text with real newlines.
+    /// Rendering those as markup would collapse every break, so they are escaped and
+    /// promoted to paragraphs first.
+    /// </summary>
+    private static string DisplayHtml(ForumPost post) =>
+        HtmlContentSanitizer.LooksLikeHtml(post.Content)
+            ? post.Content ?? string.Empty
+            : HtmlContentSanitizer.FromPlainText(post.Content);
+
+    private async Task SavePostAsync()
+    {
+        if (HtmlContentSanitizer.IsBlank(_body))
+        {
+            _bodyError = "Isi topik belum ditulis.";
+            return;
+        }
+
+        _bodyError = null;
+
+        // The editor runs in the browser, so its output is user input: sanitise on the
+        // way in, and a payload never reaches storage in the first place.
+        Form.Content = Sanitizer.Sanitize(_body);
+
+        await SaveAsync();
+        await LoadCommentCountsAsync();
+    }
+
+    private async Task DeletePostAsync()
+    {
+        var id = PendingDelete is null ? 0 : IdOf(PendingDelete);
+
+        await ConfirmDeleteAsync();
+
+        // Comment threads are addressed by (type, id) rather than a foreign key, so
+        // the database cannot cascade — without this the next topic to reuse this id
+        // would inherit a stranger's discussion.
+        if (id > 0)
+        {
+            await Comments.DeleteThreadAsync(CommentThreads.Forum, id);
+            _commentCounts.Remove(id);
+
+            if (_openTopicId == id)
+            {
+                _openTopicId = null;
+            }
+        }
+    }
+
+    protected override string EntityLabel => "topik diskusi";
+
+    protected override DbSet<ForumPost> Table(ApplicationDbContext db) => db.ForumPosts;
+
+    // Search reads the text of the post, not its markup — otherwise typing "p" or
+    // "strong" would match every formatted topic.
+    protected override IEnumerable<string?> SearchableText(ForumPost p) =>
+        new[] { p.Topic, p.Author, HtmlContentSanitizer.ToPlainText(p.Content) };
+
+    protected override string Describe(ForumPost p) => p.Topic;
+
+    protected override int IdOf(ForumPost p) => p.Id;
+
+    // Pre-filling the author with the signed-in user saves the most common keystroke.
+    protected override ForumPost NewEntity() => new()
+    {
+        PostedAt = SchoolClock.LocalNow,
+        Author = _currentUser
+    };
+
+    protected override ForumPost CloneForEdit(ForumPost p) => new()
+    {
+        Id = p.Id, Topic = p.Topic, Author = p.Author, Content = p.Content, PostedAt = p.PostedAt
+    };
+
+    protected override IEnumerable<ForumPost> ApplySort(IEnumerable<ForumPost> items) =>
+        SortAscending ? items.OrderByDescending(p => p.PostedAt) : items.OrderBy(p => p.PostedAt);
+
+    protected override string CsvHeader => "Id,Topik,Penulis,Tanggal,Komentar,Isi";
+
+    protected override string CsvRow(ForumPost p) =>
+        $"{p.Id},{Csv(p.Topic)},{Csv(p.Author)},{p.PostedAt:yyyy-MM-dd HH:mm}," +
+        $"{_commentCounts.GetValueOrDefault(p.Id)},{Csv(HtmlContentSanitizer.ToPlainText(p.Content))}";
+
+    private static string Initials(string name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
         };
-        ShowForm = true;
-    }
-
-    private async Task SavePost()
-    {
-        if (FormModel.Id == 0)
-        {
-            FormModel.PostedAt = DateTime.Today;
-            Db.ForumPosts.Add(FormModel);
-        }
-        else
-        {
-            Db.ForumPosts.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadPosts();
-    }
-
-    private async Task DeletePost(int id)
-    {
-        var post = await Db.ForumPosts.FindAsync(id);
-        if (post != null)
-        {
-            Db.ForumPosts.Remove(post);
-            await Db.SaveChangesAsync();
-            LoadPosts();
-        }
-    }
-
-    private void Cancel()
-    {
-        FormModel = new ForumPost { PostedAt = DateTime.Today };
-        ShowForm = false;
     }
 }

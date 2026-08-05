@@ -1,120 +1,446 @@
 @page "/parent/documents"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Siswa + "," + AppRoles.OrangTua)]
+@inherits CrudPageBase<DocumentItem>
+@using Microsoft.AspNetCore.Components.Forms
+@inject UploadService Uploads
+@inject IWebHostEnvironment Environment
 
-<h1 class="text-2xl font-semibold mb-6">Sertifikat & Dokumen Digital</h1>
+<PageTitle>Dokumen Digital — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Akses ijazah, rapor, dan surat resmi.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Dokumen</button>
+<PageHeader Eyebrow="Orang Tua & Siswa" Title="Dokumen Digital"
+            Subtitle="Rapor, ijazah, sertifikat, dan surat resmi sekolah.">
+    <Actions>
+        <AuthorizeView Roles="@AppRoles.Admin">
+            <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+                <Icon Name="download" /><span>Ekspor CSV</span>
+            </button>
+            <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+                <Icon Name="plus" /><span>Tambah Dokumen</span>
+            </button>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-3 mb-6">
+    <StatTile Label="Total Dokumen" Value="@Items.Count.ToString()" Icon="file" Tone="brand" />
+    <StatTile Label="Jenis Dokumen" Value="@Items.Select(d => d.DocumentType).Distinct().Count().ToString()" Icon="layers" />
+    <StatTile Label="Pemilik" Value="@Items.Select(d => d.OwnerName).Distinct().Count().ToString()" Icon="users" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama pemilik atau jenis dokumen…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-jenis">Jenis</label>
+            <select id="f-jenis" class="sms-select" @bind="TypeFilter" @bind:after="ResetPage">
+                <option value="">Semua jenis</option>
+                @foreach (var jenis in Items.Select(d => d.DocumentType).Distinct().OrderBy(t => t))
+                {
+                    <option value="@jenis">@jenis</option>
+                }
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Jenis Dokumen</th>
-                <th class="py-2">Pemilik</th>
-                <th class="py-2">File</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var doc in DocumentItems)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@doc.DocumentType</td>
-                    <td class="py-2">@doc.OwnerName</td>
-                    <td class="py-2"><a class="text-indigo-600" href="@doc.FilePath">Download</a></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditDocument(doc)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteDocument(doc.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveDocument">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Jenis dokumen" @bind-Value="FormModel.DocumentType" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama pemilik" @bind-Value="FormModel.OwnerName" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Path file" @bind-Value="FormModel.FilePath" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 4; i++) { <div class="sms-skeleton h-12"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="file" Title="Belum ada dokumen"
+                    Hint="Dokumen resmi yang diterbitkan sekolah akan tampil di sini." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("pemilik")'>Pemilik <span class="sort-caret">@SortCaret("pemilik")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("jenis")'>Jenis <span class="sort-caret">@SortCaret("jenis")</span></th>
+                        <th>Berkas</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var doc in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@doc.OwnerName</td>
+                            <td><span class="sms-badge sms-badge--info">@doc.DocumentType</span></td>
+                            <td>
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <Icon Name="@(doc.IsUploaded ? "file" : "link")" />
+                                    <span class="text-xs truncate" style="color: var(--fg-muted)"
+                                          title="@doc.FilePath">
+                                        @(doc.FileName ?? doc.FilePath)
+                                    </span>
+                                    @if (doc.SizeBytes is > 0)
+                                    {
+                                        <span class="text-xs flex-none" style="color: var(--fg-faint)">
+                                            @UploadService.Human(doc.SizeBytes.Value)
+                                        </span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <a href="@doc.FilePath" target="_blank" rel="noopener noreferrer"
+                                       download="@doc.FileName"
+                                       class="sms-btn sms-btn--quiet"
+                                       title="@(doc.IsUploaded ? "Unduh berkas" : "Buka tautan")">
+                                        <Icon Name="@(doc.IsUploaded ? "download" : "external")" />
+                                    </a>
+                                    <AuthorizeView Roles="@AppRoles.Admin" Context="admin">
+                                        <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                                @onclick="() => StartEdit(doc)"><Icon Name="edit" /></button>
+                                        <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                                style="color: var(--bata)" @onclick="() => AskDelete(doc)"><Icon Name="trash" /></button>
+                                    </AuthorizeView>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="dokumen" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Dokumen" : "Ubah Dokumen")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveDocumentAsync" id="form-dokumen">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Pemilik</label>
+                    <InputText class="sms-input" @bind-Value="Form.OwnerName" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Jenis dokumen</label>
+                    <InputSelect class="sms-select" @bind-Value="Form.DocumentType">
+                        <option value="Rapor">Rapor</option>
+                        <option value="Ijazah">Ijazah</option>
+                        <option value="Sertifikat">Sertifikat</option>
+                        <option value="Surat">Surat</option>
+                    </InputSelect>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Berkas</label>
+
+                    <div class="sms-segment mb-2">
+                        <button type="button" class="@(_mode == "upload" ? "is-aktif" : "")"
+                                @onclick='() => SetMode("upload")'>
+                            <Icon Name="paperclip" /><span>Unggah berkas</span>
+                        </button>
+                        <button type="button" class="@(_mode == "link" ? "is-aktif" : "")"
+                                @onclick='() => SetMode("link")'>
+                            <Icon Name="link" /><span>Tautan</span>
+                        </button>
+                    </div>
+
+                    @if (_mode == "upload")
+                    {
+                        @if (_uploading)
+                        {
+                            <div class="sms-skeleton h-10"></div>
+                        }
+                        else if (Form.IsUploaded && !string.IsNullOrWhiteSpace(Form.FilePath))
+                        {
+                            <div class="flex items-center gap-2 p-2 rounded"
+                                 style="border: 1px solid var(--rule); background: var(--bg-inset)">
+                                <Icon Name="file" />
+                                <span class="text-sm truncate flex-1">@(Form.FileName ?? Form.FilePath)</span>
+                                @if (Form.SizeBytes is > 0)
+                                {
+                                    <span class="text-xs" style="color: var(--fg-faint)">
+                                        @UploadService.Human(Form.SizeBytes.Value)
+                                    </span>
+                                }
+                                <button type="button" class="sms-btn sms-btn--quiet" title="Ganti berkas"
+                                        style="color: var(--bata)" @onclick="ClearFile">
+                                    <Icon Name="close" />
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <label class="sms-dropzone">
+                                <Icon Name="paperclip" Class="w-5 h-5" />
+                                <span>Pilih berkas untuk diunggah</span>
+                                <span class="sms-dropzone__hint">
+                                    Maksimal @UploadService.Human(Uploads.Settings.MaxFileSizeBytes)
+                                </span>
+                                <InputFile OnChange="OnFileSelected" accept="@Uploads.AcceptAttribute"
+                                           style="display:none" />
+                            </label>
+                        }
+                    }
+                    else
+                    {
+                        <input class="sms-input" type="url" placeholder="https://…"
+                               value="@Form.FilePath"
+                               @oninput="e => OnLinkChanged(e.Value?.ToString())" />
+                        <p class="text-xs m-0" style="color: var(--fg-faint)">
+                            Dokumen tetap tersimpan di layanan lain; sekolah hanya mencatat tautannya.
+                        </p>
+                    }
+
+                    @if (_fileError is not null)
+                    {
+                        <p class="text-xs m-0 mt-1" style="color: var(--bata)">@_fileError</p>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="button" class="sms-btn sms-btn--primary" disabled="@_uploading"
+                @onclick="SaveDocumentAsync">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus dokumen"
+               Message="@DeleteMessage"
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<DocumentItem> DocumentItems { get; set; } = new();
-    private DocumentItem FormModel { get; set; } = new();
-    private bool ShowForm { get; set; }
+    private string TypeFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    private string _mode = "upload";
+    private bool _uploading;
+    private string? _fileError;
+
+    /// <summary>
+    /// Set when an edit replaces an existing upload, so the superseded file is only
+    /// removed once the new record is safely saved — deleting it up front would lose
+    /// the document if the save then failed.
+    /// </summary>
+    private string? _supersededPath;
+
+    protected override void OnFormOpened()
     {
-        LoadDocuments();
-        return Task.CompletedTask;
+        _fileError = null;
+        _supersededPath = null;
+        _mode = Form.IsUploaded || string.IsNullOrWhiteSpace(Form.FilePath) ? "upload" : "link";
     }
 
-    private void LoadDocuments()
+    private void SetMode(string mode)
     {
-        DocumentItems = Db.Documents.AsNoTracking().ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new DocumentItem();
-        ShowForm = true;
-    }
-
-    private void EditDocument(DocumentItem doc)
-    {
-        FormModel = new DocumentItem
+        if (_mode == mode)
         {
-            Id = doc.Id,
-            DocumentType = doc.DocumentType,
-            OwnerName = doc.OwnerName,
-            FilePath = doc.FilePath
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveDocument()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Documents.Add(FormModel);
+            return;
         }
-        else
-        {
-            Db.Documents.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadDocuments();
-    }
 
-    private async Task DeleteDocument(int id)
-    {
-        var doc = await Db.Documents.FindAsync(id);
-        if (doc != null)
+        _mode = mode;
+        _fileError = null;
+
+        // Switching away from an upload would otherwise leave the file's URL sitting
+        // in the link box, where saving it would claim an uploaded file was external.
+        if (mode == "link" && Form.IsUploaded)
         {
-            Db.Documents.Remove(doc);
-            await Db.SaveChangesAsync();
-            LoadDocuments();
+            ClearFile();
+        }
+        else if (mode == "upload" && !Form.IsUploaded)
+        {
+            Form.FilePath = string.Empty;
         }
     }
 
-    private void Cancel()
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
-        FormModel = new DocumentItem();
-        ShowForm = false;
+        _uploading = true;
+        _fileError = null;
+
+        try
+        {
+            var result = await Uploads.SaveAsync(e.File, "uploads/dokumen");
+
+            if (result.Error is not null)
+            {
+                _fileError = result.Error;
+                return;
+            }
+
+            if (result.File is not null)
+            {
+                // Remember the old upload rather than deleting now — see _supersededPath.
+                if (Form.IsUploaded && !string.IsNullOrWhiteSpace(Form.FilePath))
+                {
+                    _supersededPath = Form.FilePath;
+                }
+
+                Form.FilePath = result.File.Url;
+                Form.FileName = result.File.FileName;
+                Form.SizeBytes = result.File.SizeBytes;
+                Form.IsUploaded = true;
+                Form.UploadedAt = SchoolClock.LocalNow;
+            }
+        }
+        catch (Exception ex)
+        {
+            _fileError = $"Gagal mengunggah: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
     }
+
+    private void ClearFile()
+    {
+        if (Form.IsUploaded && !string.IsNullOrWhiteSpace(Form.FilePath))
+        {
+            _supersededPath = Form.FilePath;
+        }
+
+        Form.FilePath = string.Empty;
+        Form.FileName = null;
+        Form.SizeBytes = null;
+        Form.IsUploaded = false;
+        Form.UploadedAt = null;
+    }
+
+    private void OnLinkChanged(string? value)
+    {
+        Form.FilePath = value ?? string.Empty;
+        Form.IsUploaded = false;
+        Form.FileName = null;
+        Form.SizeBytes = null;
+
+        _fileError = string.IsNullOrWhiteSpace(value) || LinkButton.Normalize(value) is not null
+            ? null
+            : "Gunakan alamat http:// atau https://.";
+    }
+
+    private async Task SaveDocumentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Form.OwnerName))
+        {
+            _fileError = "Nama pemilik belum diisi.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Form.FilePath))
+        {
+            _fileError = _mode == "upload"
+                ? "Belum ada berkas yang diunggah."
+                : "Tautan dokumen belum diisi.";
+            return;
+        }
+
+        if (!Form.IsUploaded)
+        {
+            var normalised = LinkButton.Normalize(Form.FilePath);
+
+            if (normalised is null)
+            {
+                _fileError = "Gunakan alamat http:// atau https://.";
+                return;
+            }
+
+            Form.FilePath = normalised;
+        }
+
+        _fileError = null;
+
+        var replaced = _supersededPath;
+        await SaveAsync();
+
+        // Only now is the new record durable, so the old file can go.
+        if (replaced is not null)
+        {
+            DeleteStoredFile(replaced);
+            _supersededPath = null;
+        }
+    }
+
+    protected override async Task ConfirmDeleteAsync()
+    {
+        // Captured before the base clears PendingDelete.
+        var path = PendingDelete is { IsUploaded: true } d ? d.FilePath : null;
+
+        await base.ConfirmDeleteAsync();
+
+        if (path is not null)
+        {
+            DeleteStoredFile(path);
+        }
+    }
+
+    /// <summary>
+    /// Removes a file this app stored. Best effort: an orphaned file is untidy, but
+    /// throwing here would fail an operation the user has already been told succeeded.
+    /// </summary>
+    private void DeleteStoredFile(string url)
+    {
+        try
+        {
+            var relative = url.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+            var root = Path.GetFullPath(Environment.WebRootPath);
+            var full = Path.GetFullPath(Path.Combine(Environment.WebRootPath, relative));
+
+            // Never follow a path that climbed out of wwwroot.
+            if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(full))
+            {
+                File.Delete(full);
+            }
+        }
+        catch
+        {
+            // Deliberately swallowed — see the summary above.
+        }
+    }
+
+    protected override string EntityLabel => "dokumen";
+
+    protected override DbSet<DocumentItem> Table(ApplicationDbContext db) => db.Documents;
+
+    protected override IEnumerable<string?> SearchableText(DocumentItem d) =>
+        new[] { d.OwnerName, d.DocumentType, d.FilePath, d.FileName };
+
+    protected override string Describe(DocumentItem d) => $"{d.DocumentType} — {d.OwnerName}";
+
+    protected override int IdOf(DocumentItem d) => d.Id;
+
+    protected override DocumentItem NewEntity() => new() { DocumentType = "Rapor" };
+
+    protected override DocumentItem CloneForEdit(DocumentItem d) => new()
+    {
+        Id = d.Id, OwnerName = d.OwnerName, DocumentType = d.DocumentType, FilePath = d.FilePath,
+        FileName = d.FileName, SizeBytes = d.SizeBytes, IsUploaded = d.IsUploaded, UploadedAt = d.UploadedAt
+    };
+
+    protected override IEnumerable<DocumentItem> ApplyFilters(IEnumerable<DocumentItem> items) =>
+        string.IsNullOrWhiteSpace(TypeFilter) ? items : items.Where(d => d.DocumentType == TypeFilter);
+
+    protected override IEnumerable<DocumentItem> ApplySort(IEnumerable<DocumentItem> items) => SortColumn switch
+    {
+        "jenis" => SortAscending ? items.OrderBy(d => d.DocumentType) : items.OrderByDescending(d => d.DocumentType),
+        _ => SortAscending ? items.OrderBy(d => d.OwnerName) : items.OrderByDescending(d => d.OwnerName)
+    };
+
+    protected override string CsvHeader => "Id,Pemilik,Jenis,NamaBerkas,Sumber,Ukuran,Lokasi";
+
+    protected override string CsvRow(DocumentItem d) =>
+        $"{d.Id},{Csv(d.OwnerName)},{Csv(d.DocumentType)},{Csv(d.FileName)}," +
+        $"{(d.IsUploaded ? "Unggahan" : "Tautan")},{d.SizeBytes?.ToString() ?? string.Empty},{Csv(d.FilePath)}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    /// <summary>An uploaded file really is destroyed; a link is only unlisted. Saying
+    /// which one applies is the difference between a reversible act and a permanent one.</summary>
+    private string DeleteMessage => PendingDelete is { IsUploaded: true }
+        ? "Catatan dokumen ini akan dihapus permanen beserta berkas yang tersimpan di server."
+        : "Catatan dokumen ini akan dihapus permanen. Berkas di layanan lain tidak ikut terhapus.";
 }

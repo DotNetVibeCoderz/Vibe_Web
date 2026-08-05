@@ -1,26 +1,186 @@
 @page "/security/roles"
 @attribute [Authorize(Roles = AppRoles.Admin)]
+@using SMSNet.Services
+@inject UserManager<AppUser> UserManager
+@inject IJSRuntime JS
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Role-Based Access Control</h1>
+<PageTitle>Role Access — SMSNet</PageTitle>
 
-<div class="sms-card">
-    <p class="text-sm text-slate-500">Hak akses berbeda untuk admin, guru, siswa, dan orang tua.</p>
-    <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Admin</p>
-            <p class="text-xs text-slate-500">Akses penuh terhadap seluruh modul.</p>
-        </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Guru</p>
-            <p class="text-xs text-slate-500">Kelola jadwal, tugas, dan nilai.</p>
-        </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Siswa</p>
-            <p class="text-xs text-slate-500">Akses materi belajar dan rapor.</p>
-        </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Orang Tua</p>
-            <p class="text-xs text-slate-500">Memantau perkembangan anak.</p>
-        </div>
+<PageHeader Eyebrow="Keamanan & Integrasi" Title="Role-Based Access Control"
+            Subtitle="Matriks hak akses per peran, dibaca langsung dari definisi navigasi aplikasi.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportMatrixAsync">
+            <Icon Name="download" /><span>Ekspor Matriks</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    @foreach (var role in AppRoles.All)
+    {
+        <StatTile Label="@RoleLabel(role)"
+                  Value="@RouteCount(role).ToString()"
+                  Meta="@($"{UserCount(role)} pengguna")"
+                  Icon="@RoleIcon(role)"
+                  Tone="@(role == AppRoles.Admin ? "brand" : "neutral")" />
+    }
+</div>
+
+<div class="sms-card mb-6">
+    <div class="sms-card__head">
+        <h2 class="sms-card__title">Matriks Hak Akses</h2>
+        <span class="text-xs" style="color: var(--fg-faint)">
+            @NavigationRegistry.AllRoutes().Count() rute terdaftar
+        </span>
+    </div>
+
+    <p class="text-sm mb-4" style="color: var(--fg-muted)">
+        Tabel ini dibangkitkan dari <code class="mono text-xs">NavigationRegistry</code> — sumber tunggal
+        yang juga menentukan isi menu samping. Karena keduanya membaca definisi yang sama, sebuah halaman
+        tidak mungkin muncul di menu untuk peran yang kemudian ditolak oleh atribut
+        <code class="mono text-xs">[Authorize]</code> miliknya.
+    </p>
+
+    <div class="sms-table-wrap">
+        <table class="sms-table">
+            <thead>
+                <tr>
+                    <th>Modul</th>
+                    <th>Halaman</th>
+                    <th class="mono text-xs">Rute</th>
+                    @foreach (var role in AppRoles.All)
+                    {
+                        <th class="text-center">@RoleLabel(role)</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var (group, item) in NavigationRegistry.AllRoutes())
+                {
+                    <tr>
+                        <td class="text-xs" style="color: var(--fg-faint)">@group</td>
+                        <td class="font-medium" style="color: var(--fg-strong)">@item.Label</td>
+                        <td class="mono text-xs" style="color: var(--fg-muted)">@item.Href</td>
+                        @foreach (var role in AppRoles.All)
+                        {
+                            var allowed = item.AllowedFor(new[] { role });
+                            <td class="text-center">
+                                @if (allowed)
+                                {
+                                    <span title="Diizinkan" style="color: var(--daun)">
+                                        <Icon Name="check" Class="w-4 h-4 inline" />
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span title="Tidak diizinkan" style="color: var(--fg-faint); opacity:.4">—</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </div>
+
+<div class="grid gap-4 md:grid-cols-2">
+    @foreach (var role in AppRoles.All)
+    {
+        <div class="sms-card sms-reveal">
+            <div class="flex items-center gap-3 mb-3">
+                <span class="flex-none w-9 h-9 rounded-lg grid place-items-center"
+                      style="background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand)">
+                    <Icon Name="@RoleIcon(role)" Class="w-4 h-4" />
+                </span>
+                <div>
+                    <p class="font-display font-semibold m-0" style="color: var(--fg-strong)">@RoleLabel(role)</p>
+                    <p class="mono text-xs m-0" style="color: var(--fg-faint)">@role</p>
+                </div>
+            </div>
+
+            <p class="text-sm m-0 mb-3" style="color: var(--fg-muted)">@RoleDescription(role)</p>
+
+            <div class="flex flex-wrap gap-1.5">
+                @foreach (var item in NavigationRegistry.AllRoutes()
+                    .Where(r => r.Item.AllowedFor(new[] { role }))
+                    .Select(r => r.Item).Take(12))
+                {
+                    <span class="sms-badge">@item.Label</span>
+                }
+                @if (RouteCount(role) > 12)
+                {
+                    <span class="sms-badge sms-badge--info">+@(RouteCount(role) - 12) lainnya</span>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private Dictionary<string, int> _userCounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        foreach (var role in AppRoles.All)
+        {
+            var users = await UserManager.GetUsersInRoleAsync(role);
+            _userCounts[role] = users.Count;
+        }
+    }
+
+    private int UserCount(string role) => _userCounts.TryGetValue(role, out var n) ? n : 0;
+
+    private static int RouteCount(string role) =>
+        NavigationRegistry.AllRoutes().Count(r => r.Item.AllowedFor(new[] { role }));
+
+    private static string RoleLabel(string role) => role switch
+    {
+        AppRoles.Admin => "Admin",
+        AppRoles.Guru => "Guru",
+        AppRoles.Siswa => "Siswa",
+        AppRoles.OrangTua => "Orang Tua",
+        _ => role
+    };
+
+    private static string RoleIcon(string role) => role switch
+    {
+        AppRoles.Admin => "shield",
+        AppRoles.Guru => "teacher",
+        AppRoles.Siswa => "user",
+        _ => "users"
+    };
+
+    private static string RoleDescription(string role) => role switch
+    {
+        AppRoles.Admin => "Akses penuh: seluruh modul akademik, keuangan, keamanan, dan konfigurasi sistem.",
+        AppRoles.Guru => "Mengelola jadwal, absensi, nilai, tugas, dan data induk siswa serta guru.",
+        AppRoles.Siswa => "Membaca materi e-learning, notifikasi, dokumen pribadi, dan agenda kegiatan.",
+        AppRoles.OrangTua => "Memantau perkembangan anak dan menyelesaikan tagihan sekolah.",
+        _ => string.Empty
+    };
+
+    private async Task ExportMatrixAsync()
+    {
+        var header = "Modul,Halaman,Rute," + string.Join(",", AppRoles.All.Select(RoleLabel));
+
+        var rows = NavigationRegistry.AllRoutes().Select(r =>
+        {
+            var flags = AppRoles.All.Select(role => r.Item.AllowedFor(new[] { role }) ? "Ya" : "Tidak");
+            return $"{r.Group},{r.Item.Label},{r.Item.Href},{string.Join(",", flags)}";
+        });
+
+        var csv = string.Join("\r\n", new[] { header }.Concat(rows));
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetDownload", $"matriks-rbac-{SchoolClock.Today:yyyyMMdd}.csv", csv);
+            Toasts.Success("Matriks hak akses diekspor.");
+        }
+        catch (JSException ex)
+        {
+            Toasts.Error($"Gagal mengekspor: {ex.Message}");
+        }
+    }
+}

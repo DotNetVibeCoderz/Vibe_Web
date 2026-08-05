@@ -7,7 +7,7 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Label="Platform">
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.3">
@@ -16,5 +16,44 @@
     </PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.4" />
   </ItemGroup>
+
+  <ItemGroup Label="Assistant — Pak Dedi">
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.78.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.78.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Google" Version="1.78.0-alpha" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.78.0-alpha" />
+    <!-- Microsoft ships no Anthropic connector; this is the first-party Anthropic SDK
+         that Services/Assistant/AnthropicChatCompletionService.cs builds one on. -->
+    <PackageReference Include="Anthropic" Version="12.39.0" />
+    <PackageReference Include="Markdig" Version="0.42.0" />
+    <!-- QR generation for student/teacher cards. SVG output keeps cards crisp at any
+         print size and avoids a System.Drawing dependency. -->
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="HtmlSanitizer" Version="9.1.982" />
+    <!-- HtmlSanitizer pulls AngleSharp 0.17.x, which carries GHSA-pgww-w46g-26qg.
+         The sanitiser is the last line of defence on model-generated HTML, so its
+         own parser is pinned forward rather than left on the advisory build. -->
+    <PackageReference Include="AngleSharp" Version="1.7.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Security — pinned transitive dependencies">
+    <!-- Both arrive transitively (Microsoft.OpenApi via Swashbuckle, SQLitePCLRaw via
+         EF Core Sqlite) at versions carrying published advisories:
+           Microsoft.OpenApi 2.4.1        GHSA-v5pm-xwqc-g5wc
+           SQLitePCLRaw.lib.e_sqlite3 2.1.11  GHSA-2m69-gcr7-jv3q
+         Pinning them here lifts the whole graph onto patched builds. Remove these
+         once the direct packages ship references to fixed versions themselves. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="3.9.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.5" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- The alpha Google/Ollama connectors and SK's function-calling surface are
+         flagged experimental; the whole point of this integration is to use them. -->
+    <NoWarn>$(NoWarn);SKEXP0001;SKEXP0010;SKEXP0070</NoWarn>
+  </PropertyGroup>
 
 </Project>

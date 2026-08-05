@@ -1,129 +1,382 @@
 @page "/parent/epayment"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.OrangTua)]
+@using SMSNet.Services.Payments
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject PaymentService Payments
+@inject PaymentGatewayRegistry Registry
+@inject AuthenticationStateProviderAccessor UserAccessor
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">E-Payment</h1>
+<PageTitle>E-Payment — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Pembayaran SPP, buku, dan kegiatan sekolah</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Transaksi</button>
-    </div>
+<PageHeader Eyebrow="Orang Tua & Siswa" Title="E-Payment"
+            Subtitle="Tagihan SPP, buku, dan kegiatan sekolah beserta riwayat pembayarannya.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="LoadAsync">
+            <Icon Name="refresh" /><span>Muat ulang</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Siswa</th>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Nominal</th>
-                <th class="py-2">Status</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var pay in Payments)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@pay.StudentName</td>
-                    <td class="py-2">@pay.Category</td>
-                    <td class="py-2">@pay.Amount.ToString("C0")</td>
-                    <td class="py-2"><span class="sms-badge">@pay.Status</span></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditPayment(pay)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeletePayment(pay.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
-    {
-        <EditForm Model="FormModel" OnValidSubmit="SavePayment">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama siswa" @bind-Value="FormModel.StudentName" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kategori" @bind-Value="FormModel.Category" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nominal" @bind-Value="FormModel.Amount" />
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
-                    <option>Paid</option>
-                    <option>Pending</option>
-                </InputSelect>
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
-    }
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Tagihan" Value="@Money(_bills.Sum(b => b.Amount))" Icon="coins" Tone="brand" />
+    <StatTile Label="Lunas" Value="@Money(_bills.Where(b => b.Status == "Paid").Sum(b => b.Amount))"
+              Meta="@($"{_bills.Count(b => b.Status == "Paid")} transaksi")" Icon="check" Tone="good" />
+    <StatTile Label="Belum Dibayar" Value="@Money(_outstanding)"
+              Meta="@($"{_bills.Count(b => b.Status != "Paid")} tagihan")" Icon="warning"
+              Tone="@(_outstanding > 0 ? "warn" : "good")" />
+    <StatTile Label="Kanal Aktif" Value="@_gateways.Count.ToString()" Icon="credit-card" />
 </div>
 
-@code {
-    private List<PaymentRecord> Payments { get; set; } = new();
-    private PaymentRecord FormModel { get; set; } = new() { Date = DateTime.Today };
-    private bool ShowForm { get; set; }
+@if (_gateways.Count == 0)
+{
+    <div class="sms-card mb-6">
+        <EmptyState Icon="credit-card" Title="Belum ada metode pembayaran aktif"
+                    Hint="Administrator perlu mengaktifkan minimal satu kanal pada halaman Metode Pembayaran." />
+    </div>
+}
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadPayments();
-        return Task.CompletedTask;
-    }
+<div class="grid gap-6 xl:grid-cols-3">
+    <!-- Bills -->
+    <div class="sms-card xl:col-span-2">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Daftar Tagihan</h2>
+            <select class="sms-select w-auto" @bind="_statusFilter">
+                <option value="">Semua status</option>
+                <option value="Pending">Belum dibayar</option>
+                <option value="Paid">Lunas</option>
+            </select>
+        </div>
 
-    private void LoadPayments()
-    {
-        Payments = Db.PaymentRecords.AsNoTracking().OrderByDescending(p => p.Date).ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new PaymentRecord { Date = DateTime.Today };
-        ShowForm = true;
-    }
-
-    private void EditPayment(PaymentRecord pay)
-    {
-        FormModel = new PaymentRecord
+        @if (FilteredBills.Count == 0)
         {
-            Id = pay.Id,
-            StudentName = pay.StudentName,
-            Category = pay.Category,
-            Amount = pay.Amount,
-            Status = pay.Status,
-            Date = pay.Date
-        };
-        ShowForm = true;
-    }
-
-    private async Task SavePayment()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.PaymentRecords.Add(FormModel);
+            <EmptyState Icon="receipt" Title="Tidak ada tagihan"
+                        Hint="Tagihan yang diterbitkan sekolah akan muncul di sini." />
         }
         else
         {
-            Db.PaymentRecords.Update(FormModel);
+            <div class="sms-table-wrap">
+                <table class="sms-table">
+                    <thead>
+                        <tr>
+                            <th>Siswa</th>
+                            <th>Kategori</th>
+                            <th class="sms-table__num">Nominal</th>
+                            <th>Jatuh Tempo</th>
+                            <th>Status</th>
+                            <th class="text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var bill in FilteredBills.Take(15))
+                        {
+                            <tr>
+                                <td class="font-medium" style="color: var(--fg-strong)">@bill.StudentName</td>
+                                <td>@bill.Category</td>
+                                <td class="sms-table__num">@Money(bill.Amount)</td>
+                                <td class="tabular">@bill.Date.ToString("dd MMM yyyy")</td>
+                                <td>
+                                    <span class="sms-badge @(bill.Status == "Paid" ? "sms-badge--good" : "sms-badge--warn")">
+                                        @(bill.Status == "Paid" ? "Lunas" : "Belum dibayar")
+                                    </span>
+                                </td>
+                                <td class="text-right">
+                                    @if (bill.Status != "Paid" && _gateways.Count > 0)
+                                    {
+                                        <button type="button" class="sms-btn sms-btn--accent sms-btn--sm"
+                                                @onclick="() => StartCheckout(bill)">Bayar</button>
+                                    }
+                                    else if (bill.Status == "Paid")
+                                    {
+                                        <span class="text-xs" style="color: var(--fg-faint)">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadPayments();
-    }
+    </div>
 
-    private async Task DeletePayment(int id)
-    {
-        var pay = await Db.PaymentRecords.FindAsync(id);
-        if (pay != null)
+    <!-- Transactions -->
+    <div class="sms-card">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Transaksi Terakhir</h2>
+        </div>
+
+        @if (_transactions.Count == 0)
         {
-            Db.PaymentRecords.Remove(pay);
-            await Db.SaveChangesAsync();
-            LoadPayments();
+            <p class="text-sm" style="color: var(--fg-muted)">Belum ada transaksi.</p>
+        }
+        else
+        {
+            <ul class="list-none m-0 p-0 space-y-3">
+                @foreach (var trx in _transactions.Take(8))
+                {
+                    <li class="pb-3 border-b last:border-0" style="border-color: var(--rule-soft)">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="m-0 font-medium text-sm truncate" style="color: var(--fg-strong)">
+                                    @trx.StudentName
+                                </p>
+                                <p class="m-0 mono text-[0.68rem]" style="color: var(--fg-faint)">@trx.Reference</p>
+                                <p class="m-0 text-xs mt-0.5" style="color: var(--fg-muted)">
+                                    @trx.GatewayName · @Money(trx.Amount)
+                                </p>
+                            </div>
+                            <span class="sms-badge @StatusTone(trx.Status)">@StatusLabel(trx.Status)</span>
+                        </div>
+
+                        @if (trx.Status is PaymentStatus.AwaitingConfirmation or PaymentStatus.Pending)
+                        {
+                            <div class="flex gap-2 mt-2">
+                                <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm"
+                                        @onclick="() => ShowDetail(trx)">Petunjuk</button>
+                                <AuthorizeView Roles="@AppRoles.Admin" Context="admin">
+                                    <button type="button" class="sms-btn sms-btn--primary sms-btn--sm"
+                                            @onclick="() => ConfirmAsync(trx)">Tandai lunas</button>
+                                </AuthorizeView>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
+
+<!-- Checkout -->
+<Modal Open="_showCheckout" OpenChanged="_ => _showCheckout = false"
+       Title="@($"Bayar {_selectedBill?.Category} — {_selectedBill?.StudentName}")">
+    <ChildContent>
+        @if (_selectedBill is not null)
+        {
+            <p class="text-sm mb-1" style="color: var(--fg-muted)">Nominal yang harus dibayar</p>
+            <p class="font-display text-3xl font-bold m-0 mb-5" style="color: var(--fg-strong)">
+                @Money(_selectedBill.Amount)
+            </p>
+
+            <p class="sms-label mb-2">Pilih metode pembayaran</p>
+            <div class="grid gap-2">
+                @foreach (var gateway in _gateways)
+                {
+                    var fee = gateway.FeeFlat + _selectedBill.Amount * gateway.FeePercent / 100m;
+                    <button type="button"
+                            class="text-left w-full rounded-lg border p-3 transition"
+                            style="border-color: @(_selectedGateway == gateway.Key ? "var(--kunyit)" : "var(--rule)");
+                                   background: @(_selectedGateway == gateway.Key ? "color-mix(in srgb, var(--kunyit) 8%, transparent)" : "var(--bg-surface)")"
+                            @onclick="() => _selectedGateway = gateway.Key">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <Icon Name="@(gateway.Key == "qris" ? "grid" : gateway.Key == "manual" ? "receipt" : "wallet")"
+                                      Class="w-4 h-4 flex-none" />
+                                <span class="font-medium text-sm" style="color: var(--fg-strong)">@gateway.DisplayName</span>
+                                @if (gateway.SandboxMode)
+                                {
+                                    <span class="sms-badge sms-badge--warn">Sandbox</span>
+                                }
+                            </div>
+                            @if (fee > 0)
+                            {
+                                <span class="text-xs tabular flex-none" style="color: var(--fg-faint)">
+                                    +@Money(fee)
+                                </span>
+                            }
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _showCheckout = false">Batal</button>
+        <button type="button" class="sms-btn sms-btn--accent"
+                disabled="@(string.IsNullOrEmpty(_selectedGateway) || _processing)"
+                @onclick="CreateChargeAsync">
+            @(_processing ? "Memproses…" : "Lanjutkan")
+        </button>
+    </Footer>
+</Modal>
+
+<!-- Instructions -->
+<Modal Open="_showDetail" OpenChanged="_ => _showDetail = false" Title="Petunjuk Pembayaran">
+    <ChildContent>
+        @if (_detail is not null)
+        {
+            <dl class="grid gap-3 text-sm">
+                <div>
+                    <dt class="text-xs" style="color: var(--fg-faint)">Kode pembayaran</dt>
+                    <dd class="m-0 mono font-semibold" style="color: var(--fg-strong)">@_detail.Reference</dd>
+                </div>
+                <div>
+                    <dt class="text-xs" style="color: var(--fg-faint)">Metode</dt>
+                    <dd class="m-0">@_detail.GatewayName</dd>
+                </div>
+                <div>
+                    <dt class="text-xs" style="color: var(--fg-faint)">Nominal</dt>
+                    <dd class="m-0 tabular font-semibold">@Money(_detail.Amount)</dd>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_detail.PaymentTarget))
+                {
+                    <div>
+                        <dt class="text-xs" style="color: var(--fg-faint)">
+                            @(_detail.Channel == PaymentChannelKind.QrCode ? "Kode merchant QRIS" : "Tujuan pembayaran")
+                        </dt>
+                        <dd class="m-0 mono text-xs break-all px-2 py-1.5 rounded"
+                            style="background: var(--bg-inset)">@_detail.PaymentTarget</dd>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_detail.Instructions))
+                {
+                    <div>
+                        <dt class="text-xs" style="color: var(--fg-faint)">Petunjuk</dt>
+                        <dd class="m-0" style="color: var(--fg-muted)">@_detail.Instructions</dd>
+                    </div>
+                }
+                @if (_detail.ExpiresAt is { } expires)
+                {
+                    <div>
+                        <dt class="text-xs" style="color: var(--fg-faint)">Berlaku sampai</dt>
+                        <dd class="m-0 tabular">@expires.ToString("dd MMM yyyy HH:mm") WIB</dd>
+                    </div>
+                }
+            </dl>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _showDetail = false">Tutup</button>
+    </Footer>
+</Modal>
+
+@code {
+    private List<PaymentRecord> _bills = new();
+    private List<PaymentTransaction> _transactions = new();
+    private List<PaymentGatewayConfig> _gateways = new();
+
+    private PaymentRecord? _selectedBill;
+    private PaymentTransaction? _detail;
+    private string _selectedGateway = string.Empty;
+    private string _statusFilter = string.Empty;
+    private bool _showCheckout;
+    private bool _showDetail;
+    private bool _processing;
+
+    private decimal _outstanding => _bills.Where(b => b.Status != "Paid").Sum(b => b.Amount);
+
+    private List<PaymentRecord> FilteredBills => string.IsNullOrWhiteSpace(_statusFilter)
+        ? _bills
+        : _bills.Where(b => b.Status == _statusFilter).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _bills = await db.PaymentRecords.AsNoTracking()
+                .OrderByDescending(p => p.Date).Take(100).ToListAsync();
+
+            _transactions = await Payments.GetTransactionsAsync();
+            _gateways = await Registry.GetEnabledConfigsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal memuat data pembayaran: {ex.Message}");
         }
     }
 
-    private void Cancel()
+    private void StartCheckout(PaymentRecord bill)
     {
-        FormModel = new PaymentRecord { Date = DateTime.Today };
-        ShowForm = false;
+        _selectedBill = bill;
+        _selectedGateway = _gateways.FirstOrDefault()?.Key ?? string.Empty;
+        _showCheckout = true;
     }
+
+    private async Task CreateChargeAsync()
+    {
+        if (_selectedBill is null || string.IsNullOrEmpty(_selectedGateway))
+        {
+            return;
+        }
+
+        _processing = true;
+
+        try
+        {
+            var transaction = await Payments.CreateChargeAsync(
+                _selectedGateway,
+                _selectedBill.StudentName,
+                _selectedBill.Category,
+                _selectedBill.Amount,
+                _selectedBill.Id);
+
+            _showCheckout = false;
+
+            if (transaction.Status == PaymentStatus.Failed)
+            {
+                Toasts.Error(transaction.FailureReason ?? "Pembuatan tagihan gagal.");
+            }
+            else
+            {
+                Toasts.Success($"Tagihan {transaction.Reference} dibuat.");
+                _detail = transaction;
+                _showDetail = true;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private void ShowDetail(PaymentTransaction trx)
+    {
+        _detail = trx;
+        _showDetail = true;
+    }
+
+    private async Task ConfirmAsync(PaymentTransaction trx)
+    {
+        var handler = await UserAccessor.GetUserNameAsync();
+
+        if (await Payments.ConfirmAsync(trx.Id, handler))
+        {
+            Toasts.Success($"{trx.Reference} ditandai lunas.");
+            await LoadAsync();
+        }
+        else
+        {
+            Toasts.Warn("Transaksi tidak dapat dikonfirmasi.");
+        }
+    }
+
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
+
+    private static string StatusLabel(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Paid => "Lunas",
+        PaymentStatus.Pending => "Menunggu",
+        PaymentStatus.AwaitingConfirmation => "Perlu konfirmasi",
+        PaymentStatus.Failed => "Gagal",
+        PaymentStatus.Expired => "Kedaluwarsa",
+        PaymentStatus.Cancelled => "Dibatalkan",
+        PaymentStatus.Refunded => "Dikembalikan",
+        _ => status.ToString()
+    };
+
+    private static string StatusTone(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Paid => "sms-badge--good",
+        PaymentStatus.Failed or PaymentStatus.Expired or PaymentStatus.Cancelled => "sms-badge--bad",
+        PaymentStatus.AwaitingConfirmation or PaymentStatus.Pending => "sms-badge--warn",
+        _ => string.Empty
+    };
 }

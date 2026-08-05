@@ -1,47 +1,196 @@
 @page "/teacher/dashboard"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Guru</h1>
+<PageTitle>Dashboard Guru — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Guru & Staff" Title="Dashboard Guru"
+            Subtitle="Jadwal mengajar hari ini, tugas yang berjalan, dan ringkasan kelas." />
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Jadwal Hari Ini" Value="@_todaySchedule.Count.ToString()"
+              Meta="@SchoolClock.Today.ToString("dddd")" Icon="calendar" Tone="brand" />
+    <StatTile Label="Tugas Berjalan" Value="@_openTasks.ToString()" Icon="clipboard" Tone="good" />
+    <StatTile Label="Mendekati Tenggat" Value="@_dueSoon.ToString()" Meta="7 hari ke depan"
+              Icon="warning" Tone="@(_dueSoon > 0 ? "warn" : "good")" />
+    <StatTile Label="Rata-rata Nilai" Value="@_averageScore.ToString("0.##")" Icon="chart" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3 mb-6">
+    <div class="sms-card lg:col-span-2">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Jadwal Mengajar Hari Ini</h2>
+            <a href="/academic/curriculum" class="sms-btn sms-btn--quiet sms-btn--sm">Semua jadwal</a>
+        </div>
+
+        @if (_todaySchedule.Count == 0)
+        {
+            <EmptyState Icon="calendar" Title="Tidak ada jadwal hari ini"
+                        Hint="@($"Tidak ada kelas terjadwal pada hari {SchoolClock.Today:dddd}.")" />
+        }
+        else
+        {
+            <div class="sms-table-wrap">
+                <table class="sms-table">
+                    <thead>
+                        <tr><th>Jam</th><th>Kelas</th><th>Mata Pelajaran</th><th>Guru</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var slot in _todaySchedule)
+                        {
+                            <tr>
+                                <td class="mono text-xs">@slot.TimeSlot</td>
+                                <td><span class="sms-badge">@slot.ClassName</span></td>
+                                <td class="font-medium" style="color: var(--fg-strong)">@slot.Subject</td>
+                                <td>@slot.Teacher</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="sms-card">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Rata-rata per Mata Pelajaran</h2>
+        </div>
+        <div style="height: 15rem"><canvas id="chart-mapel"></canvas></div>
+    </div>
+</div>
 
 <div class="grid gap-6 lg:grid-cols-2">
     <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Jadwal Mengajar</h2>
-        <ul class="space-y-3">
-            @foreach (var item in ScheduleItems)
-            {
-                <li class="flex items-center justify-between">
-                    <div>
-                        <p class="font-medium">@item.Subject</p>
-                        <p class="text-xs text-slate-500">@item.ClassName • @item.Day</p>
-                    </div>
-                    <span class="sms-badge">@item.TimeSlot</span>
-                </li>
-            }
-        </ul>
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Tugas & Ujian Terdekat</h2>
+            <a href="/teacher/tasks" class="sms-btn sms-btn--quiet sms-btn--sm">Kelola</a>
+        </div>
+
+        @if (_upcomingTasks.Count == 0)
+        {
+            <EmptyState Icon="clipboard" Title="Tidak ada tugas mendatang" />
+        }
+        else
+        {
+            <ul class="list-none m-0 p-0 space-y-3">
+                @foreach (var tugas in _upcomingTasks)
+                {
+                    var sisa = (tugas.DueDate.Date - SchoolClock.Today).Days;
+                    <li class="flex items-center justify-between gap-3 pb-3 border-b last:border-0"
+                        style="border-color: var(--rule-soft)">
+                        <div class="min-w-0">
+                            <p class="m-0 font-medium truncate" style="color: var(--fg-strong)">@tugas.Title</p>
+                            <p class="m-0 text-xs" style="color: var(--fg-faint)">
+                                @tugas.Type · @tugas.DueDate.ToString("dd MMM yyyy")
+                            </p>
+                        </div>
+                        <span class="sms-badge flex-none @(sisa <= 3 ? "sms-badge--warn" : "")">
+                            @(sisa <= 0 ? "hari ini" : $"{sisa} hari")
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
     </div>
+
     <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Daftar Siswa</h2>
-        <ul class="space-y-2">
-            @foreach (var student in Students)
-            {
-                <li class="flex items-center justify-between">
-                    <span>@student.FullName</span>
-                    <span class="text-xs text-slate-500">@student.ClassName</span>
-                </li>
-            }
-        </ul>
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Diskusi Terbaru</h2>
+            <a href="/teacher/communication" class="sms-btn sms-btn--quiet sms-btn--sm">Forum</a>
+        </div>
+
+        @if (_recentPosts.Count == 0)
+        {
+            <EmptyState Icon="message" Title="Belum ada diskusi" />
+        }
+        else
+        {
+            <ul class="list-none m-0 p-0 space-y-3">
+                @foreach (var post in _recentPosts)
+                {
+                    <li class="pb-3 border-b last:border-0" style="border-color: var(--rule-soft)">
+                        <p class="m-0 font-medium" style="color: var(--fg-strong)">@post.Topic</p>
+                        <p class="m-0 text-xs" style="color: var(--fg-faint)">
+                            @post.Author · @post.PostedAt.ToString("dd MMM, HH:mm")
+                        </p>
+                    </li>
+                }
+            </ul>
+        }
     </div>
 </div>
 
 @code {
-    private List<ScheduleItem> ScheduleItems { get; set; } = new();
-    private List<Student> Students { get; set; } = new();
+    private List<ScheduleItem> _todaySchedule = new();
+    private List<TaskExam> _upcomingTasks = new();
+    private List<ForumPost> _recentPosts = new();
 
-    protected override Task OnInitializedAsync()
+    private int _openTasks, _dueSoon;
+    private decimal _averageScore;
+
+    private List<string> _subjectLabels = new();
+    private List<int> _subjectAverages = new();
+
+    private bool _chartRendered;
+
+    protected override async Task OnInitializedAsync()
     {
-        ScheduleItems = Db.ScheduleItems.Take(6).ToList();
-        Students = Db.Students.Take(8).ToList();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // ScheduleItem.Day holds the Indonesian day name; the culture is set app-wide
+        // in Program.cs, so the default formatting already produces it.
+        var todayName = SchoolClock.Today.ToString("dddd");
+
+        _todaySchedule = await db.ScheduleItems.AsNoTracking()
+            .Where(s => s.Day == todayName)
+            .OrderBy(s => s.TimeSlot)
+            .ToListAsync();
+
+        _openTasks = await db.TaskExams.CountAsync(t => t.Status == "Open");
+
+        var horizon = SchoolClock.Today.AddDays(7);
+        _dueSoon = await db.TaskExams
+            .CountAsync(t => t.DueDate >= SchoolClock.Today && t.DueDate <= horizon && t.Status != "Closed");
+
+        _upcomingTasks = await db.TaskExams.AsNoTracking()
+            .Where(t => t.Status != "Closed")
+            .OrderBy(t => t.DueDate).Take(5).ToListAsync();
+
+        _recentPosts = await db.ForumPosts.AsNoTracking()
+            .OrderByDescending(p => p.PostedAt).Take(5).ToListAsync();
+
+        if (await db.GradeRecords.AnyAsync())
+        {
+            _averageScore = await db.GradeRecords.AverageAsync(g => g.Score);
+
+            var perSubject = await db.GradeRecords.AsNoTracking()
+                .GroupBy(g => g.Subject)
+                .Select(g => new { Subject = g.Key, Average = g.Average(x => x.Score) })
+                .OrderByDescending(x => x.Average)
+                .Take(6)
+                .ToListAsync();
+
+            _subjectLabels = perSubject.Select(x => x.Subject).ToList();
+            _subjectAverages = perSubject.Select(x => (int)Math.Round(x.Average)).ToList();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chartRendered || _subjectLabels.Count == 0)
+        {
+            return;
+        }
+
+        _chartRendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "chart-mapel", "bar",
+                _subjectLabels, _subjectAverages, "Rata-rata nilai");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

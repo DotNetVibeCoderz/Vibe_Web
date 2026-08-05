@@ -1,0 +1,24 @@
+@* An empty screen is an invitation to act, not a dead end — so it always says
+   what to do next. *@
+
+<div class="sms-empty">
+    <span style="color: var(--fg-faint)">
+        <Icon Name="@Icon" Class="w-7 h-7" />
+    </span>
+    <p class="sms-empty__title">@Title</p>
+    @if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <p class="sms-empty__hint">@Hint</p>
+    }
+    @if (Action is not null)
+    {
+        <div class="mt-2">@Action</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Belum ada data";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string Icon { get; set; } = "database";
+    [Parameter] public RenderFragment? Action { get; set; }
+}

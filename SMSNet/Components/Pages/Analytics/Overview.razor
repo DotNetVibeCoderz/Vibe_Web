@@ -1,37 +1,134 @@
 @page "/analytics/overview"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Administrasi</h1>
+<PageTitle>Dashboard Analitik — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-3">
+<PageHeader Eyebrow="Analitik & Laporan" Title="Dashboard Analitik"
+            Subtitle="Ringkasan menyeluruh: siswa, guru, keuangan, dan kegiatan sekolah." />
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Kehadiran Hari Ini" Value="@_attendanceToday.ToString()"
+              Meta="@($"{_presentToday} hadir")" Icon="check" Tone="brand" />
+    <StatTile Label="Rata-rata Nilai" Value="@_averageScore.ToString("0.##")"
+              Meta="@($"{_gradeCount} catatan")" Icon="chart"
+              Tone="@(_averageScore >= 75 ? "good" : "warn")" />
+    <StatTile Label="Pendapatan Tercatat" Value="@($"Rp{_income:N0}")"
+              Meta="@($"{_paidCount} transaksi lunas")" Icon="coins" Tone="good" />
+    <StatTile Label="Tunggakan" Value="@($"Rp{_outstanding:N0}")"
+              Meta="@($"{_pendingCount} tagihan")" Icon="warning"
+              Tone="@(_outstanding > 0 ? "warn" : "good")" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Kehadiran Hari Ini</p>
-        <p class="text-3xl font-semibold">@AttendanceToday</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Tren Kehadiran 30 Hari</h2></div>
+        <div style="height: 16rem"><canvas id="an-kehadiran"></canvas></div>
     </div>
+
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Rata-rata Nilai</p>
-        <p class="text-3xl font-semibold">@AverageScore.ToString("0.0")</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Komposisi Status Pembayaran</h2></div>
+        <div style="height: 16rem"><canvas id="an-bayar"></canvas></div>
     </div>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Pendapatan Bulan Ini</p>
-        <p class="text-3xl font-semibold">@Income.ToString("C0")</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Sebaran Siswa per Kelas</h2></div>
+        <div style="height: 16rem"><canvas id="an-kelas"></canvas></div>
+    </div>
+
+    <div class="sms-card">
+        <div class="sms-card__head"><h2 class="sms-card__title">Metode Absensi</h2></div>
+        <div style="height: 16rem"><canvas id="an-metode"></canvas></div>
     </div>
 </div>
 
 @code {
-    private int AttendanceToday { get; set; }
-    private decimal AverageScore { get; set; }
-    private decimal Income { get; set; }
+    private int _attendanceToday, _presentToday, _gradeCount, _paidCount, _pendingCount;
+    private decimal _averageScore, _income, _outstanding;
 
-    protected override Task OnInitializedAsync()
+    private List<string> _dayLabels = new();
+    private List<int> _daySeries = new();
+    private List<string> _payLabels = new();
+    private List<int> _paySeries = new();
+    private List<string> _classLabels = new();
+    private List<int> _classSeries = new();
+    private List<string> _methodLabels = new();
+    private List<int> _methodSeries = new();
+
+    private bool _rendered;
+
+    protected override async Task OnInitializedAsync()
     {
-        AttendanceToday = Db.AttendanceRecords.Count(a => a.Date.Date == DateTime.Today);
-        if (Db.GradeRecords.Any())
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var today = SchoolClock.Today;
+
+        _attendanceToday = await db.AttendanceRecords.CountAsync(a => a.Date >= today && a.Date < today.AddDays(1));
+        _presentToday = await db.AttendanceRecords
+            .CountAsync(a => a.Date >= today && a.Date < today.AddDays(1) && a.Status == "Present");
+
+        _gradeCount = await db.GradeRecords.CountAsync();
+        _averageScore = _gradeCount == 0 ? 0 : await db.GradeRecords.AverageAsync(g => g.Score);
+
+        _income = await db.PaymentRecords.Where(p => p.Status == "Paid")
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        _outstanding = await db.PaymentRecords.Where(p => p.Status != "Paid")
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        _paidCount = await db.PaymentRecords.CountAsync(p => p.Status == "Paid");
+        _pendingCount = await db.PaymentRecords.CountAsync(p => p.Status != "Paid");
+
+        for (var offset = 29; offset >= 0; offset -= 3)
         {
-            AverageScore = Db.GradeRecords.Average(g => g.Score);
+            var day = today.AddDays(-offset);
+            _dayLabels.Add(day.ToString("dd/MM"));
+            _daySeries.Add(await db.AttendanceRecords
+                .CountAsync(a => a.Date >= day && a.Date < day.AddDays(1) && a.Status == "Present"));
         }
-        Income = Db.PaymentRecords.Sum(p => p.Amount);
-        return Task.CompletedTask;
+
+        var byStatus = await db.PaymentRecords.AsNoTracking()
+            .GroupBy(p => p.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync();
+        _payLabels = byStatus.Select(x => x.Status == "Paid" ? "Lunas" : "Belum dibayar").ToList();
+        _paySeries = byStatus.Select(x => x.Count).ToList();
+
+        var byClass = await db.Students.AsNoTracking()
+            .Where(s => s.ClassName != null && s.Status == "Active")
+            .GroupBy(s => s.ClassName!)
+            .Select(g => new { Kelas = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Kelas)
+            .ToListAsync();
+        _classLabels = byClass.Select(x => x.Kelas).ToList();
+        _classSeries = byClass.Select(x => x.Count).ToList();
+
+        var byMethod = await db.AttendanceRecords.AsNoTracking()
+            .GroupBy(a => a.Method)
+            .Select(g => new { Method = g.Key, Count = g.Count() })
+            .ToListAsync();
+        _methodLabels = byMethod.Select(x => x.Method).ToList();
+        _methodSeries = byMethod.Select(x => x.Count).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered)
+        {
+            return;
+        }
+
+        _rendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "an-kehadiran", "line", _dayLabels, _daySeries, "Hadir");
+            await JS.InvokeVoidAsync("smsnetChart.render", "an-bayar", "doughnut", _payLabels, _paySeries, "Transaksi");
+            await JS.InvokeVoidAsync("smsnetChart.render", "an-kelas", "bar", _classLabels, _classSeries, "Siswa");
+            await JS.InvokeVoidAsync("smsnetChart.render", "an-metode", "pie", _methodLabels, _methodSeries, "Catatan");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

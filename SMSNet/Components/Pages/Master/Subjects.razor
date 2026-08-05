@@ -1,141 +1,148 @@
 @page "/master/subjects"
 @attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
-@inject ApplicationDbContext Db
-@inject IJSRuntime JSRuntime
+@inherits CrudPageBase<Subject>
 
-<h1 class="text-2xl font-semibold mb-6">Master Data - Mata Pelajaran</h1>
+<PageTitle>Master Data Mata Pelajaran — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex gap-4 flex-wrap">
-        <InputText class="w-full md:w-64 rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" placeholder="Cari mata pelajaran" />
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
-        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Mapel</button>
-    </div>
+<PageHeader Eyebrow="Master Data" Title="Mata Pelajaran"
+            Subtitle="Daftar mata pelajaran beserta bobot jam dan keterangannya.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Mata Pelajaran</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">SKS</th>
-                <th class="py-2">Deskripsi</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var subject in FilteredSubjects)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@subject.Name</td>
-                    <td class="py-2">@subject.Credits</td>
-                    <td class="py-2">@subject.Description</td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditSubject(subject)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteSubject(subject.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+<div class="grid gap-4 md:grid-cols-3 mb-6">
+    <StatTile Label="Mata Pelajaran" Value="@Items.Count.ToString()" Icon="book" Tone="brand" />
+    <StatTile Label="Total Kredit" Value="@Items.Sum(s => s.Credits).ToString()" Icon="layers" />
+    <StatTile Label="Rata-rata Kredit"
+              Value="@(Items.Count == 0 ? "0" : Items.Average(s => s.Credits).ToString("0.#"))" Icon="chart" />
 </div>
 
-@if (ShowForm)
-{
-    <div class="sms-card mt-6 max-w-xl">
-        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
-        <EditForm Model="FormModel" OnValidSubmit="SaveSubject">
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama mata pelajaran…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="book" Title="Belum ada mata pelajaran"
+                    Hint="Tambahkan mata pelajaran agar dapat dipakai pada jadwal dan penilaian." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Mata Pelajaran <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("kredit")'>Kredit <span class="sort-caret">@SortCaret("kredit")</span></th>
+                        <th>Keterangan</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var mapel in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@mapel.Name</td>
+                            <td class="sms-table__num">@mapel.Credits</td>
+                            <td style="color: var(--fg-muted)">@(mapel.Description ?? "—")</td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(mapel)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(mapel)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="mata pelajaran" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
+</div>
+
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Mata Pelajaran" : "Ubah Mata Pelajaran")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-mapel">
             <DataAnnotationsValidator />
+            <ValidationSummary class="validation-errors" />
+
             <div class="grid gap-4">
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama mata pelajaran" @bind-Value="FormModel.Name" />
-                <InputNumber class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="SKS" @bind-Value="FormModel.Credits" />
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Deskripsi" @bind-Value="FormModel.Description" />
-            </div>
-            <div class="mt-4 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+                <div class="sms-field">
+                    <label class="sms-label">Nama mata pelajaran</label>
+                    <InputText class="sms-input" @bind-Value="Form.Name" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Kredit / jam pelajaran</label>
+                    <InputNumber class="sms-input" @bind-Value="Form.Credits" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Keterangan</label>
+                    <InputTextArea class="sms-textarea" @bind-Value="Form.Description" rows="3" />
+                </div>
             </div>
         </EditForm>
-    </div>
-}
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-mapel" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen"
+               Title="Hapus mata pelajaran"
+               Message="Mata pelajaran ini akan dihapus permanen. Jadwal dan nilai yang memakai namanya tidak ikut terhapus."
+               Detail="@PendingDeleteLabel"
+               OnConfirm="ConfirmDeleteAsync" />
 
 @code {
-    private List<Subject> SubjectItems { get; set; } = new();
-    private string SearchText { get; set; } = string.Empty;
-    private Subject FormModel { get; set; } = new();
-    private string FormTitle => FormModel.Id == 0 ? "Tambah Mata Pelajaran" : "Edit Mata Pelajaran";
-    private bool ShowForm { get; set; }
+    protected override string EntityLabel => "mata pelajaran";
 
-    private List<Subject> FilteredSubjects => SubjectItems
-        .Where(s => string.IsNullOrWhiteSpace(SearchText) || s.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-        .ToList();
+    protected override DbSet<Subject> Table(ApplicationDbContext db) => db.Subjects;
 
-    protected override Task OnInitializedAsync()
+    protected override IEnumerable<string?> SearchableText(Subject s) => new[] { s.Name, s.Description };
+
+    protected override string Describe(Subject s) => s.Name;
+
+    protected override int IdOf(Subject s) => s.Id;
+
+    protected override Subject NewEntity() => new() { Credits = 2 };
+
+    protected override Subject CloneForEdit(Subject s) => new()
     {
-        LoadSubjects();
-        return Task.CompletedTask;
-    }
+        Id = s.Id,
+        Name = s.Name,
+        Credits = s.Credits,
+        Description = s.Description
+    };
 
-    private void LoadSubjects()
+    protected override IEnumerable<Subject> ApplySort(IEnumerable<Subject> items) => SortColumn switch
     {
-        SubjectItems = Db.Subjects.AsNoTracking().ToList();
-    }
+        "kredit" => SortAscending ? items.OrderBy(s => s.Credits) : items.OrderByDescending(s => s.Credits),
+        _ => SortAscending ? items.OrderBy(s => s.Name) : items.OrderByDescending(s => s.Name)
+    };
 
-    private void ShowAdd()
-    {
-        FormModel = new Subject();
-        ShowForm = true;
-    }
+    protected override string CsvHeader => "Id,MataPelajaran,Kredit,Keterangan";
 
-    private void EditSubject(Subject subject)
-    {
-        FormModel = new Subject
-        {
-            Id = subject.Id,
-            Name = subject.Name,
-            Credits = subject.Credits,
-            Description = subject.Description
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveSubject()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Subjects.Add(FormModel);
-        }
-        else
-        {
-            Db.Subjects.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadSubjects();
-    }
-
-    private async Task DeleteSubject(int id)
-    {
-        var subject = await Db.Subjects.FindAsync(id);
-        if (subject != null)
-        {
-            Db.Subjects.Remove(subject);
-            await Db.SaveChangesAsync();
-            LoadSubjects();
-        }
-    }
-
-    private void Cancel()
-    {
-        FormModel = new Subject();
-        ShowForm = false;
-    }
-
-    private async Task ExportCsv()
-    {
-        var rows = new List<string> { "Id,Name,Credits,Description" };
-        foreach (var subject in FilteredSubjects)
-        {
-            rows.Add($"{subject.Id},\"{subject.Name}\",{subject.Credits},\"{subject.Description}\"");
-        }
-        await JSRuntime.InvokeVoidAsync("smsnetDownload", "subjects.csv", string.Join("\n", rows));
-    }
+    protected override string CsvRow(Subject s) =>
+        $"{s.Id},{Csv(s.Name)},{s.Credits},{Csv(s.Description)}";
 }

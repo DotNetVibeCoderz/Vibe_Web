@@ -1,116 +1,201 @@
 @page "/events"
 @attribute [Authorize]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<EventItem>
 
-<h1 class="text-2xl font-semibold mb-6">Event & Extracurricular Management</h1>
+<PageTitle>Event & Ekstrakurikuler — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Manajemen kegiatan sekolah dan organisasi siswa.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Event</button>
+<PageHeader Eyebrow="Kegiatan" Title="Event & Ekstrakurikuler"
+            Subtitle="Agenda kegiatan sekolah dan organisasi siswa.">
+    <Actions>
+        <AuthorizeView Roles="@(AppRoles.Admin + "," + AppRoles.Guru)">
+            <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+                <Icon Name="download" /><span>Ekspor CSV</span>
+            </button>
+            <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+                <Icon Name="plus" /><span>Tambah Kegiatan</span>
+            </button>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-3 mb-6">
+    <StatTile Label="Total Kegiatan" Value="@Items.Count.ToString()" Icon="flag" Tone="brand" />
+    <StatTile Label="Akan Datang" Value="@Items.Count(e => e.Date.Date >= SchoolClock.Today).ToString()"
+              Icon="calendar" Tone="good" />
+    <StatTile Label="Sudah Berlalu" Value="@Items.Count(e => e.Date.Date < SchoolClock.Today).ToString()"
+              Icon="history" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama kegiatan atau lokasi…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-waktu">Waktu</label>
+            <select id="f-waktu" class="sms-select" @bind="TimeFilter" @bind:after="ResetPage">
+                <option value="upcoming">Akan datang</option>
+                <option value="past">Sudah berlalu</option>
+                <option value="">Semua</option>
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-jenis">Jenis</label>
+            <select id="f-jenis" class="sms-select" @bind="TypeFilter" @bind:after="ResetPage">
+                <option value="">Semua jenis</option>
+                @foreach (var jenis in Items.Select(e => e.Type).Distinct().OrderBy(t => t))
+                {
+                    <option value="@jenis">@jenis</option>
+                }
+            </select>
+        </div>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2">
-        @foreach (var ev in EventItems)
-        {
-            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <p class="font-medium">@ev.Title</p>
-                        <p class="text-xs text-slate-500">@ev.Date.ToString("dd MMM yyyy") • @ev.Location</p>
-                        <span class="sms-badge mt-2">@ev.Type</span>
-                    </div>
-                    <div class="flex gap-2 text-sm">
-                        <button class="text-indigo-600" @onclick="() => EditEvent(ev)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteEvent(ev.Id)">Hapus</button>
-                    </div>
-                </div>
-            </div>
-        }
-    </div>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveEvent">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul event" @bind-Value="FormModel.Title" />
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Lokasi" @bind-Value="FormModel.Location" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Jenis event" @bind-Value="FormModel.Type" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-14"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="flag" Title="Tidak ada kegiatan"
+                    Hint="Kegiatan yang dijadwalkan akan muncul di sini." />
+    }
+    else
+    {
+        <ul class="list-none m-0 p-0 space-y-2">
+            @foreach (var kegiatan in Paged)
+            {
+                var lampau = kegiatan.Date.Date < SchoolClock.Today;
+                <li class="flex items-center gap-4 rounded-lg border p-3 sms-reveal"
+                    style="border-color: var(--rule); background: var(--bg-inset); opacity: @(lampau ? "0.7" : "1")">
+
+                    <div class="flex-none w-14 text-center rounded-lg py-1.5"
+                         style="background: @(lampau ? "var(--bg-sunken)" : "color-mix(in srgb, var(--kunyit) 16%, transparent)")">
+                        <p class="m-0 font-display font-bold text-lg leading-none tabular"
+                           style="color: var(--fg-strong)">@kegiatan.Date.ToString("dd")</p>
+                        <p class="m-0 text-[0.65rem] uppercase tracking-wide" style="color: var(--fg-muted)">
+                            @kegiatan.Date.ToString("MMM")
+                        </p>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <p class="m-0 font-semibold truncate" style="color: var(--fg-strong)">@kegiatan.Title</p>
+                        <p class="m-0 text-xs" style="color: var(--fg-faint)">@kegiatan.Location</p>
+                    </div>
+
+                    <span class="sms-badge flex-none @(lampau ? "" : "sms-badge--info")">@kegiatan.Type</span>
+
+                    <AuthorizeView Roles="@(AppRoles.Admin + "," + AppRoles.Guru)">
+                        <div class="flex flex-none gap-1">
+                            <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                    @onclick="() => StartEdit(kegiatan)"><Icon Name="edit" /></button>
+                            <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                    style="color: var(--bata)" @onclick="() => AskDelete(kegiatan)"><Icon Name="trash" /></button>
+                        </div>
+                    </AuthorizeView>
+                </li>
+            }
+        </ul>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="kegiatan" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Kegiatan" : "Ubah Kegiatan")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-event">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama kegiatan</label>
+                    <InputText class="sms-input" @bind-Value="Form.Title" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Tanggal</label>
+                        <InputDate class="sms-input" @bind-Value="Form.Date" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Jenis</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Type">
+                            <option value="Event">Event</option>
+                            <option value="Ekstrakurikuler">Ekstrakurikuler</option>
+                            <option value="Lomba">Lomba</option>
+                            <option value="Rapat">Rapat</option>
+                        </InputSelect>
+                    </div>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Lokasi</label>
+                    <InputText class="sms-input" @bind-Value="Form.Location" />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-event" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus kegiatan"
+               Message="Kegiatan ini akan dihapus permanen dari agenda."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<EventItem> EventItems { get; set; } = new();
-    private EventItem FormModel { get; set; } = new() { Date = DateTime.Today };
-    private bool ShowForm { get; set; }
+    private string TimeFilter = "upcoming";
+    private string TypeFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadEvents();
-        return Task.CompletedTask;
-    }
+    protected override string EntityLabel => "kegiatan";
 
-    private void LoadEvents()
-    {
-        EventItems = Db.Events.AsNoTracking().OrderBy(e => e.Date).ToList();
-    }
+    protected override DbSet<EventItem> Table(ApplicationDbContext db) => db.Events;
 
-    private void ShowAdd()
-    {
-        FormModel = new EventItem { Date = DateTime.Today };
-        ShowForm = true;
-    }
+    protected override IEnumerable<string?> SearchableText(EventItem e) =>
+        new[] { e.Title, e.Location, e.Type };
 
-    private void EditEvent(EventItem ev)
+    protected override string Describe(EventItem e) => e.Title;
+
+    protected override int IdOf(EventItem e) => e.Id;
+
+    protected override EventItem NewEntity() => new()
     {
-        FormModel = new EventItem
+        Date = SchoolClock.Today.AddDays(7),
+        Type = "Event"
+    };
+
+    protected override EventItem CloneForEdit(EventItem e) => new()
+    {
+        Id = e.Id, Title = e.Title, Date = e.Date, Location = e.Location, Type = e.Type
+    };
+
+    protected override IEnumerable<EventItem> ApplyFilters(IEnumerable<EventItem> items)
+    {
+        items = TimeFilter switch
         {
-            Id = ev.Id,
-            Title = ev.Title,
-            Date = ev.Date,
-            Location = ev.Location,
-            Type = ev.Type
+            "upcoming" => items.Where(e => e.Date.Date >= SchoolClock.Today),
+            "past" => items.Where(e => e.Date.Date < SchoolClock.Today),
+            _ => items
         };
-        ShowForm = true;
+
+        if (!string.IsNullOrWhiteSpace(TypeFilter))
+        {
+            items = items.Where(e => e.Type == TypeFilter);
+        }
+
+        return items;
     }
 
-    private async Task SaveEvent()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Events.Add(FormModel);
-        }
-        else
-        {
-            Db.Events.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadEvents();
-    }
+    protected override IEnumerable<EventItem> ApplySort(IEnumerable<EventItem> items) =>
+        SortAscending ? items.OrderBy(e => e.Date) : items.OrderByDescending(e => e.Date);
 
-    private async Task DeleteEvent(int id)
-    {
-        var ev = await Db.Events.FindAsync(id);
-        if (ev != null)
-        {
-            Db.Events.Remove(ev);
-            await Db.SaveChangesAsync();
-            LoadEvents();
-        }
-    }
+    protected override string CsvHeader => "Id,Kegiatan,Tanggal,Lokasi,Jenis";
 
-    private void Cancel()
-    {
-        FormModel = new EventItem { Date = DateTime.Today };
-        ShowForm = false;
-    }
+    protected override string CsvRow(EventItem e) =>
+        $"{e.Id},{Csv(e.Title)},{e.Date:yyyy-MM-dd},{Csv(e.Location)},{Csv(e.Type)}";
+
+    private void ResetPage() => CurrentPage = 1;
 }

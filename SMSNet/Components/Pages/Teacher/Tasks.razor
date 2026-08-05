@@ -1,132 +1,410 @@
 @page "/teacher/tasks"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inherits CrudPageBase<TaskExam>
 
-<h1 class="text-2xl font-semibold mb-6">Manajemen Tugas & Ujian</h1>
+<PageTitle>Tugas & Ujian — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Upload soal, koreksi otomatis, dan feedback digital</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Buat Tugas</button>
+<PageHeader Eyebrow="Guru & Staff" Title="Tugas & Ujian"
+            Subtitle="Penjadwalan tugas dan ujian beserta tenggat pengumpulannya.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Tugas</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total" Value="@Items.Count.ToString()" Icon="clipboard" Tone="brand" />
+    <StatTile Label="Sedang Berjalan" Value="@Items.Count(t => t.Status == "Open").ToString()" Icon="activity" Tone="good" />
+    <StatTile Label="Terjadwal" Value="@Items.Count(t => t.Status == "Scheduled").ToString()" Icon="calendar" />
+    <StatTile Label="Lewat Tenggat"
+              Value="@Items.Count(t => t.DueDate.Date < SchoolClock.Today && t.Status != "Closed").ToString()"
+              Icon="warning" Tone="warn" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Judul tugas atau ujian…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-jenis">Jenis</label>
+            <select id="f-jenis" class="sms-select" @bind="TypeFilter" @bind:after="ResetPage">
+                <option value="">Semua jenis</option>
+                <option value="Tugas">Tugas</option>
+                <option value="Quiz">Kuis</option>
+                <option value="Ujian">Ujian</option>
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kelas">Kelas</label>
+            <select id="f-kelas" class="sms-select" @bind="ClassFilter" @bind:after="ResetPage">
+                <option value="">Semua kelas</option>
+                @foreach (var kelas in _classNames)
+                {
+                    <option value="@kelas">@kelas</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-status">Status</label>
+            <select id="f-status" class="sms-select" @bind="StatusFilter" @bind:after="ResetPage">
+                <option value="">Semua status</option>
+                <option value="Open">Berjalan</option>
+                <option value="Scheduled">Terjadwal</option>
+                <option value="Closed">Selesai</option>
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Judul</th>
-                <th class="py-2">Jenis</th>
-                <th class="py-2">Deadline</th>
-                <th class="py-2">Status</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var task in TaskItems)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@task.Title</td>
-                    <td class="py-2">@task.Type</td>
-                    <td class="py-2">@task.DueDate.ToString("dd MMM yyyy")</td>
-                    <td class="py-2"><span class="sms-badge">@task.Status</span></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditTask(task)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteTask(task.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveTask">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul" @bind-Value="FormModel.Title" />
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Type">
-                    <option>Quiz</option>
-                    <option>Ujian</option>
-                    <option>Tugas</option>
-                </InputSelect>
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.DueDate" />
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
-                    <option>Open</option>
-                    <option>Scheduled</option>
-                    <option>Closed</option>
-                </InputSelect>
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="clipboard" Title="Belum ada tugas atau ujian"
+                    Hint="Jadwalkan tugas agar muncul di portal siswa." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("judul")'>Judul <span class="sort-caret">@SortCaret("judul")</span></th>
+                        <th>Jenis</th>
+                        <th>Kelas</th>
+                        <th class="is-sortable" @onclick='() => SortBy("tenggat")'>Tenggat <span class="sort-caret">@SortCaret("tenggat")</span></th>
+                        <th>Sisa Waktu</th>
+                        <th>Status</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var tugas in Paged)
+                    {
+                        var sisa = (tugas.DueDate.Date - SchoolClock.Today).Days;
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@tugas.Title</td>
+                            <td><span class="sms-badge">@tugas.Type</span></td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(tugas.Classes))
+                                {
+                                    <span class="sms-badge sms-badge--info">Semua kelas</span>
+                                }
+                                else
+                                {
+                                    var kelasList = SplitClasses(tugas.Classes);
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var kelas in kelasList.Take(3))
+                                        {
+                                            <span class="sms-badge">@kelas</span>
+                                        }
+                                        @if (kelasList.Count > 3)
+                                        {
+                                            <span class="text-xs" style="color: var(--fg-faint)"
+                                                  title="@string.Join(", ", kelasList)">
+                                                +@(kelasList.Count - 3)
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                            <td class="tabular">@tugas.DueDate.ToString("dd MMM yyyy")</td>
+                            <td class="tabular text-xs"
+                                style="color: @(sisa < 0 ? "var(--bata)" : sisa <= 3 ? "var(--kunyit-deep)" : "var(--fg-muted)")">
+                                @(sisa < 0 ? $"lewat {Math.Abs(sisa)} hari" : sisa == 0 ? "hari ini" : $"{sisa} hari lagi")
+                            </td>
+                            <td><span class="sms-badge @StatusTone(tugas.Status)">@StatusLabel(tugas.Status)</span></td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <LinkButton Url="@tugas.LinkUrl" Label=""
+                                                Class="sms-btn sms-btn--quiet"
+                                                Title="@($"Buka {tugas.Type.ToLowerInvariant()} di tab baru")" />
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(tugas)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(tugas)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="tugas" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Tugas / Ujian" : "Ubah Tugas / Ujian")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveTaskAsync" id="form-tugas">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Judul</label>
+                    <InputText class="sms-input" @bind-Value="Form.Title" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-3">
+                    <div class="sms-field">
+                        <label class="sms-label">Jenis</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Type">
+                            <option value="Tugas">Tugas</option>
+                            <option value="Quiz">Kuis</option>
+                            <option value="Ujian">Ujian</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Tenggat</label>
+                        <InputDate class="sms-input" @bind-Value="Form.DueDate" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Status</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Status">
+                            <option value="Scheduled">Terjadwal</option>
+                            <option value="Open">Berjalan</option>
+                            <option value="Closed">Selesai</option>
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="sms-field">
+                    <label class="sms-label">Tautan tugas / ujian</label>
+                    <input class="sms-input" type="url" placeholder="https://… (opsional)"
+                           value="@Form.LinkUrl"
+                           @oninput="e => OnLinkChanged(e.Value?.ToString())" />
+                    @if (_linkError is not null)
+                    {
+                        <p class="text-xs m-0" style="color: var(--bata)">@_linkError</p>
+                    }
+                </div>
+
+                <div class="sms-field">
+                    <label class="sms-label">Kelas</label>
+
+                    <label class="flex items-center gap-2 text-sm cursor-pointer mb-2">
+                        <input type="checkbox" checked="@_allClasses"
+                               @onchange="e => ToggleAllClasses((bool?)e.Value == true)" />
+                        <span>Semua kelas</span>
+                    </label>
+
+                    @if (!_allClasses)
+                    {
+                        <div class="sms-pilih-kelas">
+                            @foreach (var kelas in _classNames)
+                            {
+                                var selected = _selectedClasses.Contains(kelas);
+                                <button type="button"
+                                        class="sms-pilih-kelas__item @(selected ? "is-aktif" : "")"
+                                        @onclick="() => ToggleClass(kelas)">
+                                    @kelas
+                                </button>
+                            }
+                        </div>
+
+                        @if (_selectedClasses.Count == 0)
+                        {
+                            <p class="text-xs m-0 mt-1" style="color: var(--bata)">
+                                Pilih minimal satu kelas, atau centang "Semua kelas".
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="text-xs m-0 mt-1" style="color: var(--fg-faint)">
+                                @_selectedClasses.Count kelas dipilih.
+                            </p>
+                        }
+                    }
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="SaveTaskAsync">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus tugas"
+               Message="Tugas atau ujian ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<TaskExam> TaskItems { get; set; } = new();
-    private TaskExam FormModel { get; set; } = new() { DueDate = DateTime.Today.AddDays(1) };
-    private bool ShowForm { get; set; }
+    private string TypeFilter = string.Empty;
+    private string StatusFilter = string.Empty;
+    private string ClassFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadTasks();
-        return Task.CompletedTask;
-    }
+    private List<string> _classNames = new();
+    private HashSet<string> _selectedClasses = new(StringComparer.OrdinalIgnoreCase);
+    private bool _allClasses = true;
+    private string? _linkError;
 
-    private void LoadTasks()
+    protected override async Task OnInitializedAsync()
     {
-        TaskItems = Db.TaskExams.AsNoTracking().ToList();
-    }
+        await base.OnInitializedAsync();
 
-    private void ShowAdd()
-    {
-        FormModel = new TaskExam { DueDate = DateTime.Today.AddDays(1) };
-        ShowForm = true;
-    }
-
-    private void EditTask(TaskExam task)
-    {
-        FormModel = new TaskExam
+        try
         {
-            Id = task.Id,
-            Title = task.Title,
-            Type = task.Type,
-            DueDate = task.DueDate,
-            Status = task.Status
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveTask()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.TaskExams.Add(FormModel);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _classNames = await db.ClassRooms.AsNoTracking()
+                .OrderBy(c => c.Name).Select(c => c.Name).ToListAsync();
         }
-        else
+        catch (Exception ex)
         {
-            Db.TaskExams.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadTasks();
-    }
-
-    private async Task DeleteTask(int id)
-    {
-        var task = await Db.TaskExams.FindAsync(id);
-        if (task != null)
-        {
-            Db.TaskExams.Remove(task);
-            await Db.SaveChangesAsync();
-            LoadTasks();
+            Toasts.Error($"Gagal memuat daftar kelas: {ex.Message}");
         }
     }
 
-    private void Cancel()
+    protected override void OnFormOpened()
     {
-        FormModel = new TaskExam { DueDate = DateTime.Today.AddDays(1) };
-        ShowForm = false;
+        _linkError = null;
+
+        // An empty Classes column means "every class" — the same thing a brand-new
+        // task should default to.
+        _selectedClasses = SplitClasses(Form.Classes).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _allClasses = _selectedClasses.Count == 0;
     }
+
+    private void ToggleAllClasses(bool value)
+    {
+        _allClasses = value;
+
+        if (value)
+        {
+            _selectedClasses.Clear();
+        }
+    }
+
+    private void ToggleClass(string kelas)
+    {
+        if (!_selectedClasses.Add(kelas))
+        {
+            _selectedClasses.Remove(kelas);
+        }
+    }
+
+    private void OnLinkChanged(string? value)
+    {
+        Form.LinkUrl = value;
+
+        _linkError = string.IsNullOrWhiteSpace(value) || LinkButton.Normalize(value) is not null
+            ? null
+            : "Gunakan alamat http:// atau https://.";
+    }
+
+    private async Task SaveTaskAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Form.Title))
+        {
+            _linkError = "Judul belum diisi.";
+            return;
+        }
+
+        if (!_allClasses && _selectedClasses.Count == 0)
+        {
+            _linkError = "Pilih minimal satu kelas, atau centang \"Semua kelas\".";
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Form.LinkUrl))
+        {
+            var normalised = LinkButton.Normalize(Form.LinkUrl);
+
+            if (normalised is null)
+            {
+                _linkError = "Gunakan alamat http:// atau https://.";
+                return;
+            }
+
+            Form.LinkUrl = normalised;
+        }
+
+        // Stored in the page's own class order, not click order, so the badges read
+        // the same way every time.
+        Form.Classes = _allClasses
+            ? null
+            : string.Join(", ", _classNames.Where(_selectedClasses.Contains));
+
+        _linkError = null;
+        await SaveAsync();
+    }
+
+    /// <summary>Splits the stored list, tolerating the spacing a hand-edited value
+    /// might carry.</summary>
+    private static List<string> SplitClasses(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? new List<string>()
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    protected override string EntityLabel => "tugas";
+
+    protected override DbSet<TaskExam> Table(ApplicationDbContext db) => db.TaskExams;
+
+    protected override IEnumerable<string?> SearchableText(TaskExam t) =>
+        new[] { t.Title, t.Type, t.Status, t.Classes, t.LinkUrl };
+
+    protected override string Describe(TaskExam t) => t.Title;
+
+    protected override int IdOf(TaskExam t) => t.Id;
+
+    protected override TaskExam NewEntity() => new()
+    {
+        DueDate = SchoolClock.Today.AddDays(7), Type = "Tugas", Status = "Scheduled"
+    };
+
+    protected override TaskExam CloneForEdit(TaskExam t) => new()
+    {
+        Id = t.Id, Title = t.Title, Type = t.Type, DueDate = t.DueDate,
+        Status = t.Status, LinkUrl = t.LinkUrl, Classes = t.Classes
+    };
+
+    protected override IEnumerable<TaskExam> ApplyFilters(IEnumerable<TaskExam> items)
+    {
+        if (!string.IsNullOrWhiteSpace(TypeFilter)) items = items.Where(t => t.Type == TypeFilter);
+        if (!string.IsNullOrWhiteSpace(StatusFilter)) items = items.Where(t => t.Status == StatusFilter);
+
+        // A task for every class belongs in every class's list, so a blank Classes
+        // value matches whichever class is being filtered for.
+        if (!string.IsNullOrWhiteSpace(ClassFilter))
+        {
+            items = items.Where(t => string.IsNullOrWhiteSpace(t.Classes)
+                                     || SplitClasses(t.Classes).Contains(ClassFilter, StringComparer.OrdinalIgnoreCase));
+        }
+
+        return items;
+    }
+
+    protected override IEnumerable<TaskExam> ApplySort(IEnumerable<TaskExam> items) => SortColumn switch
+    {
+        "judul" => SortAscending ? items.OrderBy(t => t.Title) : items.OrderByDescending(t => t.Title),
+        _ => SortAscending ? items.OrderBy(t => t.DueDate) : items.OrderByDescending(t => t.DueDate)
+    };
+
+    protected override string CsvHeader => "Id,Judul,Jenis,Kelas,Tenggat,Status,Tautan";
+
+    protected override string CsvRow(TaskExam t) =>
+        $"{t.Id},{Csv(t.Title)},{Csv(t.Type)}," +
+        $"{Csv(string.IsNullOrWhiteSpace(t.Classes) ? "Semua kelas" : t.Classes)}," +
+        $"{t.DueDate:yyyy-MM-dd},{Csv(t.Status)},{Csv(t.LinkUrl)}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Open" => "Berjalan", "Scheduled" => "Terjadwal", "Closed" => "Selesai", _ => s
+    };
+
+    private static string StatusTone(string s) => s switch
+    {
+        "Open" => "sms-badge--good", "Closed" => "", _ => "sms-badge--info"
+    };
 }

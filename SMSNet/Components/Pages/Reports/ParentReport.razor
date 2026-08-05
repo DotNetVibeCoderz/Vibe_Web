@@ -1,108 +1,167 @@
 @page "/reports/parent"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Orang Tua & Siswa</h1>
+<PageTitle>Laporan Orang Tua — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-3">
+<PageHeader Eyebrow="Analitik & Laporan" Title="Laporan Orang Tua & Siswa"
+            Subtitle="Ringkasan keterlibatan wali, tagihan, dan kondisi belajar per siswa." />
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Wali Terdaftar" Value="@_parents.ToString()"
+              Meta="@($"{_students} siswa aktif")" Icon="users" Tone="brand" />
+    <StatTile Label="Kontak Lengkap" Value="@($"{_contactRate:0.#}%")"
+              Meta="wali dengan email & telepon" Icon="bell"
+              Tone="@(_contactRate >= 80 ? "good" : "warn")" />
+    <StatTile Label="Siswa Menunggak" Value="@_studentsWithDebt.ToString()"
+              Meta="@($"Rp{_outstanding:N0}")" Icon="coins"
+              Tone="@(_studentsWithDebt > 0 ? "warn" : "good")" />
+    <StatTile Label="Notifikasi Terkirim" Value="@_notifications.ToString()" Icon="bell" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Notifikasi</p>
-        <p class="text-3xl font-semibold">@NotificationCount</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Status Tagihan per Siswa</h2></div>
+        <div style="height: 16rem"><canvas id="pr-tagihan"></canvas></div>
     </div>
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Dokumen Digital</p>
-        <p class="text-3xl font-semibold">@DocumentCount</p>
-    </div>
-    <div class="sms-card flex flex-col items-center gap-3">
-        <p class="text-sm text-slate-500">Pembayaran Lunas</p>
-        <div class="sms-gauge" style="@GetGaugeStyle(PaymentRate)">@PaymentRate.ToString("0")%</div>
+        <div class="sms-card__head"><h2 class="sms-card__title">Sasaran Notifikasi</h2></div>
+        <div style="height: 16rem"><canvas id="pr-notif"></canvas></div>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Status Pembayaran</h2>
-        <div class="h-64">
-            <canvas id="paymentChart"></canvas>
-        </div>
-    </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Notifikasi per Audience</h2>
-        <div class="h-64">
-            <canvas id="notificationChart"></canvas>
-        </div>
-    </div>
-</div>
+<div class="sms-card">
+    <div class="sms-card__head"><h2 class="sms-card__title">Perlu Perhatian</h2></div>
 
-<div class="sms-card mt-8">
-    <h2 class="text-lg font-semibold mb-4">Riwayat Pembayaran Terbaru</h2>
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Siswa</th>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Nominal</th>
-                <th class="py-2">Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var pay in Payments)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@pay.StudentName</td>
-                    <td class="py-2">@pay.Category</td>
-                    <td class="py-2">@pay.Amount.ToString("C0")</td>
-                    <td class="py-2">@pay.Status</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    @if (_attention.Count == 0)
+    {
+        <EmptyState Icon="check" Title="Tidak ada yang perlu ditindaklanjuti"
+                    Hint="Seluruh siswa tuntas secara akademik dan administratif." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th>Siswa</th>
+                        <th>Kelas</th>
+                        <th>Wali</th>
+                        <th class="sms-table__num">Tunggakan</th>
+                        <th class="sms-table__num">Rata-rata Nilai</th>
+                        <th>Alasan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _attention)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@row.Student</td>
+                            <td>@row.ClassName</td>
+                            <td>@row.Parent</td>
+                            <td class="sms-table__num" style="color: @(row.Debt > 0 ? "var(--bata)" : "var(--fg-muted)")">
+                                @(row.Debt > 0 ? $"Rp{row.Debt:N0}" : "—")
+                            </td>
+                            <td class="sms-table__num">@(row.Average > 0 ? row.Average.ToString("0.##") : "—")</td>
+                            <td><span class="sms-badge sms-badge--warn">@row.Reason</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @code {
-    private int NotificationCount { get; set; }
-    private int DocumentCount { get; set; }
-    private double PaymentRate { get; set; }
-    private List<PaymentRecord> Payments { get; set; } = new();
+    private sealed record AttentionRow(string Student, string ClassName, string Parent,
+        decimal Debt, decimal Average, string Reason);
+
+    private int _parents, _students, _studentsWithDebt, _notifications;
+    private double _contactRate;
+    private decimal _outstanding;
+
+    private List<AttentionRow> _attention = new();
+    private List<string> _notifLabels = new();
+    private List<int> _notifSeries = new();
+    private int _paidStudents, _unpaidStudents;
+
     private bool _rendered;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        NotificationCount = Db.Notifications.Count();
-        DocumentCount = Db.Documents.Count();
-        var paid = Db.PaymentRecords.Count(p => p.Status == "Paid");
-        var total = Db.PaymentRecords.Count();
-        PaymentRate = total == 0 ? 0 : (double)paid / total * 100;
-        Payments = Db.PaymentRecords.OrderByDescending(p => p.Date).Take(6).ToList();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var parents = await db.Parents.AsNoTracking().ToListAsync();
+        var students = await db.Students.AsNoTracking().Where(s => s.Status == "Active").ToListAsync();
+        var payments = await db.PaymentRecords.AsNoTracking().ToListAsync();
+        var grades = await db.GradeRecords.AsNoTracking().ToListAsync();
+
+        _parents = parents.Count;
+        _students = students.Count;
+        _notifications = await db.Notifications.CountAsync();
+
+        var complete = parents.Count(p => !string.IsNullOrWhiteSpace(p.Email) && !string.IsNullOrWhiteSpace(p.Phone));
+        _contactRate = parents.Count == 0 ? 0 : complete * 100.0 / parents.Count;
+
+        var unpaid = payments.Where(p => p.Status != "Paid").ToList();
+        _outstanding = unpaid.Sum(p => p.Amount);
+        _studentsWithDebt = unpaid.Select(p => p.StudentName).Distinct().Count();
+
+        _unpaidStudents = _studentsWithDebt;
+        _paidStudents = Math.Max(0, students.Count - _studentsWithDebt);
+
+        // A student needs following up when they owe money or are below the pass mark.
+        foreach (var student in students)
+        {
+            var debt = unpaid.Where(p => p.StudentName == student.FullName).Sum(p => p.Amount);
+            var studentGrades = grades.Where(g => g.StudentName == student.FullName).ToList();
+            var average = studentGrades.Count == 0 ? 0 : studentGrades.Average(g => g.Score);
+
+            var reasons = new List<string>();
+            if (debt > 0) reasons.Add("Tunggakan");
+            if (studentGrades.Count > 0 && average < 75) reasons.Add("Nilai di bawah KKM");
+
+            if (reasons.Count > 0)
+            {
+                _attention.Add(new AttentionRow(
+                    student.FullName,
+                    student.ClassName ?? "—",
+                    student.ParentName ?? "—",
+                    debt,
+                    average,
+                    string.Join(" · ", reasons)));
+            }
+        }
+
+        _attention = _attention.OrderByDescending(a => a.Debt).ThenBy(a => a.Average).Take(25).ToList();
+
+        var byAudience = await db.Notifications.AsNoTracking()
+            .GroupBy(n => n.Audience)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync();
+        _notifLabels = byAudience.Select(x => x.Key).ToList();
+        _notifSeries = byAudience.Select(x => x.Count).ToList();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_rendered) return;
+        if (_rendered)
+        {
+            return;
+        }
+
         _rendered = true;
 
-        await JS.InvokeVoidAsync("smsnetChart.render", "paymentChart", "pie",
-            new[] { "Paid", "Pending" },
-            new[]
-            {
-                Db.PaymentRecords.Count(p => p.Status == "Paid"),
-                Db.PaymentRecords.Count(p => p.Status == "Pending")
-            },
-            "Pembayaran");
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "pr-tagihan", "doughnut",
+                new[] { "Lunas", "Menunggak" }, new[] { _paidStudents, _unpaidStudents }, "Siswa");
 
-        var audiences = Db.Notifications.GroupBy(n => n.Audience)
-            .Select(g => new { g.Key, Count = g.Count() })
-            .ToList();
-        await JS.InvokeVoidAsync("smsnetChart.render", "notificationChart", "bar",
-            audiences.Select(a => a.Key).ToArray(),
-            audiences.Select(a => a.Count).ToArray(),
-            "Notifikasi");
-    }
-
-    private string GetGaugeStyle(double percent)
-    {
-        return $"background: conic-gradient(#f59e0b {percent}%, #e2e8f0 0%);";
+            await JS.InvokeVoidAsync("smsnetChart.render", "pr-notif", "bar",
+                _notifLabels, _notifSeries, "Notifikasi");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

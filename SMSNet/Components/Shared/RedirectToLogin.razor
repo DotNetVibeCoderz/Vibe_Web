@@ -1,0 +1,14 @@
+@inject NavigationManager Nav
+
+@* Sends an anonymous visitor to the sign-in form, carrying where they were
+   headed so they land there after signing in rather than on the dashboard. *@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var returnUrl = Uri.EscapeDataString(
+            Nav.ToBaseRelativePath(Nav.Uri) is { Length: > 0 } path ? "/" + path : "/");
+
+        Nav.NavigateTo($"/auth/login?ReturnUrl={returnUrl}", forceLoad: false);
+    }
+}

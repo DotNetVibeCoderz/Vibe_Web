@@ -1,22 +1,128 @@
 @page "/integration/api"
-@attribute [Authorize]
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IWebHostEnvironment Environment
 
-<h1 class="text-2xl font-semibold mb-6">Integrasi REST API</h1>
+<PageTitle>REST API — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <p class="text-sm text-slate-500">SMSNet menyediakan REST API dengan Swagger untuk integrasi ke sistem lain.</p>
+<PageHeader Eyebrow="Keamanan & Integrasi" Title="Integrasi REST API"
+            Subtitle="Endpoint untuk menghubungkan SMSNet dengan sistem lain.">
+    <Actions>
+        @if (Environment.IsDevelopment())
+        {
+            <a href="/swagger" target="_blank" rel="noopener" class="sms-btn sms-btn--primary">
+                <Icon Name="plug" /><span>Buka Swagger</span>
+            </a>
+        }
+    </Actions>
+</PageHeader>
 
-    <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-        <p class="font-medium">Swagger UI</p>
-        <p class="text-xs text-slate-500">Akses dokumentasi di <code>/swagger</code></p>
-    </div>
-
-    <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-        <p class="font-medium">Endpoint Contoh</p>
-        <ul class="text-sm text-slate-500 list-disc list-inside">
-            <li>GET /api/students</li>
-            <li>GET /api/teachers</li>
-            <li>POST /api/students</li>
-        </ul>
+<div class="sms-card mb-6" style="border-color: color-mix(in srgb, var(--daun) 40%, var(--rule));
+                                  background: color-mix(in srgb, var(--daun) 7%, var(--bg-surface))">
+    <div class="flex items-start gap-3">
+        <span style="color: var(--daun)"><Icon Name="shield" Class="w-5 h-5" /></span>
+        <div>
+            <p class="font-semibold m-0" style="color: var(--fg-strong)">Seluruh endpoint memerlukan autentikasi</p>
+            <p class="text-sm m-0 mt-1" style="color: var(--fg-muted)">
+                Operasi baca terbatas pada peran <code class="mono text-xs">admin</code> dan
+                <code class="mono text-xs">guru</code>; seluruh operasi tulis hanya untuk
+                <code class="mono text-xs">admin</code>. Permintaan tanpa sesi login dijawab
+                <code class="mono text-xs">401 Unauthorized</code>.
+            </p>
+        </div>
     </div>
 </div>
+
+@if (!Environment.IsDevelopment())
+{
+    <div class="sms-card mb-6" style="border-color: color-mix(in srgb, var(--kunyit) 40%, var(--rule));
+                                      background: color-mix(in srgb, var(--kunyit) 8%, var(--bg-surface))">
+        <div class="flex items-start gap-3">
+            <span style="color: var(--kunyit)"><Icon Name="warning" Class="w-5 h-5" /></span>
+            <p class="text-sm m-0" style="color: var(--fg-muted)">
+                Swagger UI hanya aktif pada environment Development, sehingga tidak tersedia di sini.
+            </p>
+        </div>
+    </div>
+}
+
+<div class="sms-card">
+    <div class="sms-card__head">
+        <h2 class="sms-card__title">Daftar Endpoint</h2>
+        <span class="text-xs" style="color: var(--fg-faint)">@Endpoints.Length endpoint</span>
+    </div>
+
+    <div class="sms-table-wrap">
+        <table class="sms-table">
+            <thead>
+                <tr>
+                    <th>Metode</th>
+                    <th>Rute</th>
+                    <th>Keterangan</th>
+                    <th>Peran</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var endpoint in Endpoints)
+                {
+                    <tr>
+                        <td>
+                            <span class="sms-badge @MethodTone(endpoint.Method)"
+                                  style="font-family: 'IBM Plex Mono', monospace">@endpoint.Method</span>
+                        </td>
+                        <td class="mono text-xs" style="color: var(--fg-strong)">@endpoint.Route</td>
+                        <td style="color: var(--fg-muted)">@endpoint.Description</td>
+                        <td>
+                            @foreach (var role in endpoint.Roles)
+                            {
+                                <span class="sms-badge mr-1">@role</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="sms-card mt-6">
+    <div class="sms-card__head"><h2 class="sms-card__title">Contoh Pemakaian</h2></div>
+
+    <p class="text-sm mb-3" style="color: var(--fg-muted)">
+        API memakai cookie sesi yang sama dengan aplikasi web, sehingga klien harus login terlebih dahulu
+        lalu menyertakan cookie tersebut pada setiap permintaan.
+    </p>
+
+    <pre class="rounded-lg p-4 overflow-x-auto text-xs"
+         style="background: var(--tinta); color: #e6ecf5"><code># 1. Login dan simpan cookie sesi
+curl -c cookies.txt -X POST http://localhost:5175/account/login \
+  -d "UserName=admin&amp;Password=admin123"
+
+# 2. Panggil endpoint dengan cookie tersebut
+curl -b cookies.txt http://localhost:5175/api/students</code></pre>
+</div>
+
+@code {
+    private sealed record Endpoint(string Method, string Route, string Description, string[] Roles);
+
+    private static readonly Endpoint[] Endpoints =
+    {
+        new("GET", "/api/students", "Daftar seluruh siswa", new[] { "admin", "guru" }),
+        new("GET", "/api/students/{id}", "Detail satu siswa", new[] { "admin", "guru" }),
+        new("POST", "/api/students", "Tambah siswa baru", new[] { "admin" }),
+        new("PUT", "/api/students/{id}", "Ubah data siswa", new[] { "admin" }),
+        new("DELETE", "/api/students/{id}", "Hapus data siswa", new[] { "admin" }),
+        new("GET", "/api/teachers", "Daftar seluruh guru", new[] { "admin", "guru" }),
+        new("GET", "/api/teachers/{id}", "Detail satu guru", new[] { "admin", "guru" }),
+        new("POST", "/api/teachers", "Tambah guru baru", new[] { "admin" }),
+        new("PUT", "/api/teachers/{id}", "Ubah data guru", new[] { "admin" }),
+        new("DELETE", "/api/teachers/{id}", "Hapus data guru", new[] { "admin" })
+    };
+
+    private static string MethodTone(string method) => method switch
+    {
+        "GET" => "sms-badge--info",
+        "POST" => "sms-badge--good",
+        "DELETE" => "sms-badge--bad",
+        _ => "sms-badge--warn"
+    };
+}

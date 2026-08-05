@@ -1,0 +1,51 @@
+@using SMSNet.Services
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="sms-toast-stack" aria-live="polite" aria-atomic="false">
+    @foreach (var toast in Toasts.Items)
+    {
+        <div class="sms-toast @ToneClass(toast.Tone)" role="status">
+            <span class="flex-none mt-0.5" style="color: @ToneColor(toast.Tone)">
+                <Icon Name="@ToneIcon(toast.Tone)" Class="w-4 h-4" />
+            </span>
+            <span class="flex-1" style="color: var(--fg-strong)">@toast.Message</span>
+            <button type="button" class="sms-btn sms-btn--quiet flex-none -mt-1 -mr-1"
+                    @onclick="() => Toasts.Dismiss(toast.Id)" aria-label="Tutup notifikasi">
+                <Icon Name="close" Class="w-3.5 h-3.5" />
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+
+    private static string ToneClass(ToastTone tone) => tone switch
+    {
+        ToastTone.Good => "sms-toast--good",
+        ToastTone.Warn => "sms-toast--warn",
+        ToastTone.Bad => "sms-toast--bad",
+        _ => string.Empty
+    };
+
+    private static string ToneIcon(ToastTone tone) => tone switch
+    {
+        ToastTone.Good => "check",
+        ToastTone.Warn => "warning",
+        ToastTone.Bad => "warning",
+        _ => "bell"
+    };
+
+    private static string ToneColor(ToastTone tone) => tone switch
+    {
+        ToastTone.Good => "var(--daun)",
+        ToastTone.Warn => "var(--kunyit)",
+        ToastTone.Bad => "var(--bata)",
+        _ => "var(--brand)"
+    };
+}

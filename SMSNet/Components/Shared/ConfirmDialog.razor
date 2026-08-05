@@ -1,0 +1,49 @@
+@* Destructive actions are confirmed here rather than firing straight from the
+   row button — the previous Hapus buttons deleted immediately with no undo. *@
+
+<Modal Open="Open" OpenChanged="OpenChanged" Title="@Title" CloseOnBackdrop="false">
+    <ChildContent>
+        <p style="color: var(--fg-muted)">@Message</p>
+
+        @if (!string.IsNullOrWhiteSpace(Detail))
+        {
+            <p class="mt-3 px-3 py-2 rounded-md text-sm font-medium"
+               style="background: var(--bg-inset); color: var(--fg-strong)">@Detail</p>
+        }
+    </ChildContent>
+
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="Cancel">Batal</button>
+        <button type="button" class="sms-btn @(Destructive ? "sms-btn--danger" : "sms-btn--primary")"
+                @onclick="Accept">@ConfirmLabel</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    [Parameter] public string Title { get; set; } = "Konfirmasi";
+    [Parameter] public string Message { get; set; } = "Tindakan ini tidak dapat dibatalkan. Lanjutkan?";
+
+    /// <summary>What exactly is being acted on, e.g. the row's name.</summary>
+    [Parameter] public string? Detail { get; set; }
+
+    [Parameter] public string ConfirmLabel { get; set; } = "Hapus";
+    [Parameter] public bool Destructive { get; set; } = true;
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private async Task Accept()
+    {
+        await CloseAsync();
+        await OnConfirm.InvokeAsync();
+    }
+
+    private Task Cancel() => CloseAsync();
+
+    private async Task CloseAsync()
+    {
+        Open = false;
+        await OpenChanged.InvokeAsync(false);
+    }
+}

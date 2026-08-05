@@ -1,45 +1,232 @@
 @page "/parent/portal"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Siswa + "," + AppRoles.OrangTua)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Portal Orang Tua</h1>
+<PageTitle>Portal Orang Tua — SMSNet</PageTitle>
 
-<div class="grid gap-6 lg:grid-cols-2">
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Ringkasan Kehadiran</h2>
-        <p class="text-slate-500 text-sm">Pantau absensi anak secara real-time.</p>
-        <div class="mt-4 space-y-3">
-            @foreach (var record in AttendanceRecords)
+<PageHeader Eyebrow="Orang Tua & Siswa" Title="Portal Orang Tua"
+            Subtitle="Pantau kehadiran, nilai, tagihan, dan kegiatan anak dalam satu halaman.">
+    <Actions>
+        <select class="sms-select w-auto" @bind="_selectedStudent" @bind:after="LoadStudentAsync">
+            <option value="">— Pilih siswa —</option>
+            @foreach (var nama in _students)
             {
-                <div class="flex items-center justify-between">
-                    <span>@record.PersonName</span>
-                    <span class="sms-badge">@record.Status</span>
-                </div>
+                <option value="@nama">@nama</option>
+            }
+        </select>
+    </Actions>
+</PageHeader>
+
+@if (string.IsNullOrWhiteSpace(_selectedStudent))
+{
+    <div class="sms-card">
+        <EmptyState Icon="users" Title="Pilih siswa terlebih dahulu"
+                    Hint="Gunakan pemilih di kanan atas untuk menampilkan rangkuman perkembangan anak." />
+    </div>
+}
+else
+{
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+        <StatTile Label="Kehadiran" Value="@($"{_attendanceRate:0.#}%")"
+                  Meta="@($"{_present} hadir dari {_attendanceTotal}")" Icon="check"
+                  Tone="@(_attendanceRate >= 90 ? "good" : "warn")" />
+        <StatTile Label="Rata-rata Nilai" Value="@_average.ToString("0.##")"
+                  Meta="@($"{_grades.Count} mata pelajaran")" Icon="chart" Tone="brand" />
+        <StatTile Label="Tagihan Belum Lunas" Value="@Money(_outstanding)"
+                  Meta="@($"{_unpaidCount} tagihan")" Icon="coins"
+                  Tone="@(_outstanding > 0 ? "warn" : "good")" />
+        <StatTile Label="Kegiatan Mendatang" Value="@_events.Count.ToString()" Icon="flag" />
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-3 mb-6">
+        <div class="sms-card flex flex-col items-center justify-center gap-3">
+            <p class="sms-eyebrow">Ringkasan Kehadiran</p>
+            <div class="sms-gauge" style="--pct: @_attendanceRate.ToString("0")%">
+                <span class="sms-gauge__value">@($"{_attendanceRate:0}%")</span>
+            </div>
+            <p class="text-sm text-center m-0" style="color: var(--fg-muted)">
+                @_present hadir dari @_attendanceTotal catatan
+            </p>
+        </div>
+
+        <div class="sms-card lg:col-span-2">
+            <div class="sms-card__head">
+                <h2 class="sms-card__title">Nilai per Mata Pelajaran</h2>
+            </div>
+            @if (_grades.Count == 0)
+            {
+                <EmptyState Icon="chart" Title="Belum ada nilai" />
+            }
+            else
+            {
+                <div style="height: 15rem"><canvas id="chart-nilai-siswa"></canvas></div>
             }
         </div>
     </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Nilai Terbaru</h2>
-        <div class="space-y-3">
-            @foreach (var grade in Grades)
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <div class="sms-card">
+            <div class="sms-card__head"><h2 class="sms-card__title">Rincian Nilai</h2></div>
+            @if (_grades.Count == 0)
             {
-                <div class="flex items-center justify-between">
-                    <span>@grade.Subject</span>
-                    <span class="sms-badge">@grade.Score</span>
+                <EmptyState Icon="chart" Title="Belum ada nilai tercatat" />
+            }
+            else
+            {
+                <div class="sms-table-wrap">
+                    <table class="sms-table">
+                        <thead>
+                            <tr><th>Mata Pelajaran</th><th class="sms-table__num">Nilai</th><th>Ketuntasan</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var nilai in _grades)
+                            {
+                                <tr>
+                                    <td class="font-medium" style="color: var(--fg-strong)">@nilai.Subject</td>
+                                    <td class="sms-table__num font-semibold">@nilai.Score.ToString("0.##")</td>
+                                    <td>
+                                        <span class="sms-badge @(nilai.Score >= 75 ? "sms-badge--good" : "sms-badge--bad")">
+                                            @(nilai.Score >= 75 ? "Tuntas" : "Belum tuntas")
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             }
         </div>
+
+        <div class="sms-card">
+            <div class="sms-card__head">
+                <h2 class="sms-card__title">Tagihan</h2>
+                <a href="/parent/epayment" class="sms-btn sms-btn--quiet sms-btn--sm">Bayar</a>
+            </div>
+            @if (_bills.Count == 0)
+            {
+                <EmptyState Icon="coins" Title="Tidak ada tagihan" Hint="Semua kewajiban sudah terpenuhi." />
+            }
+            else
+            {
+                <ul class="list-none m-0 p-0 space-y-3">
+                    @foreach (var bill in _bills)
+                    {
+                        <li class="flex items-center justify-between gap-3 pb-3 border-b last:border-0"
+                            style="border-color: var(--rule-soft)">
+                            <div class="min-w-0">
+                                <p class="m-0 font-medium" style="color: var(--fg-strong)">@bill.Category</p>
+                                <p class="m-0 text-xs tabular" style="color: var(--fg-faint)">
+                                    @bill.Date.ToString("dd MMM yyyy")
+                                </p>
+                            </div>
+                            <div class="text-right flex-none">
+                                <p class="m-0 tabular font-semibold" style="color: var(--fg-strong)">
+                                    @Money(bill.Amount)
+                                </p>
+                                <span class="sms-badge @(bill.Status == "Paid" ? "sms-badge--good" : "sms-badge--warn")">
+                                    @(bill.Status == "Paid" ? "Lunas" : "Belum dibayar")
+                                </span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
     </div>
-</div>
+}
 
 @code {
-    private List<AttendanceRecord> AttendanceRecords { get; set; } = new();
-    private List<GradeRecord> Grades { get; set; } = new();
+    private List<string> _students = new();
+    private string _selectedStudent = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    private List<GradeRecord> _grades = new();
+    private List<PaymentRecord> _bills = new();
+    private List<EventItem> _events = new();
+
+    private int _attendanceTotal, _present, _unpaidCount;
+    private double _attendanceRate;
+    private decimal _average, _outstanding;
+
+    private bool _chartPending;
+
+    protected override async Task OnInitializedAsync()
     {
-        AttendanceRecords = Db.AttendanceRecords.Take(5).ToList();
-        Grades = Db.GradeRecords.Take(5).ToList();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _students = await db.Students.AsNoTracking()
+            .Where(s => s.Status == "Active")
+            .OrderBy(s => s.FullName)
+            .Select(s => s.FullName)
+            .ToListAsync();
+
+        _events = await db.Events.AsNoTracking()
+            .Where(e => e.Date >= SchoolClock.Today)
+            .OrderBy(e => e.Date).Take(5).ToListAsync();
+
+        if (_students.Count > 0)
+        {
+            _selectedStudent = _students[0];
+            await LoadStudentAsync();
+        }
     }
+
+    private async Task LoadStudentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedStudent))
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // Records join by display name — the schema has no student foreign key.
+        _attendanceTotal = await db.AttendanceRecords.CountAsync(a => a.PersonName == _selectedStudent);
+        _present = await db.AttendanceRecords
+            .CountAsync(a => a.PersonName == _selectedStudent && a.Status == "Present");
+        _attendanceRate = _attendanceTotal == 0 ? 0 : _present * 100.0 / _attendanceTotal;
+
+        _grades = await db.GradeRecords.AsNoTracking()
+            .Where(g => g.StudentName == _selectedStudent)
+            .OrderBy(g => g.Subject).ToListAsync();
+
+        _average = _grades.Count == 0 ? 0 : _grades.Average(g => g.Score);
+
+        _bills = await db.PaymentRecords.AsNoTracking()
+            .Where(p => p.StudentName == _selectedStudent)
+            .OrderByDescending(p => p.Date).ToListAsync();
+
+        _outstanding = _bills.Where(b => b.Status != "Paid").Sum(b => b.Amount);
+        _unpaidCount = _bills.Count(b => b.Status != "Paid");
+
+        _chartPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_chartPending || _grades.Count == 0)
+        {
+            return;
+        }
+
+        _chartPending = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "chart-nilai-siswa", "bar",
+                _grades.Select(g => g.Subject).ToList(),
+                _grades.Select(g => (int)g.Score).ToList(),
+                "Nilai");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>
+    /// Rupiah for display. Always call this rather than writing the prefix inline:
+    /// <c>Rp@bill.Amount</c> reads to Razor as an email address (word char, "@", word
+    /// chars) and is emitted as literal text, which is exactly how this page once
+    /// showed parents the string "Rp@bill.Amount.ToString(...)" instead of a number.
+    /// </summary>
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
 }

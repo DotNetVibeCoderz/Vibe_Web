@@ -1,116 +1,172 @@
 @page "/parent/notifications"
 @attribute [Authorize]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<NotificationItem>
 
-<h1 class="text-2xl font-semibold mb-6">Notifikasi Real-Time</h1>
+<PageTitle>Notifikasi — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Pengingat ujian, pembayaran, atau kegiatan sekolah.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Notifikasi</button>
+<PageHeader Eyebrow="Orang Tua & Siswa" Title="Notifikasi"
+            Subtitle="Pengumuman sekolah, pengingat ujian, dan informasi pembayaran.">
+    <Actions>
+        <AuthorizeView Roles="@(AppRoles.Admin + "," + AppRoles.Guru)">
+            <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+                <Icon Name="plus" /><span>Kirim Notifikasi</span>
+            </button>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Notifikasi" Value="@Items.Count.ToString()" Icon="bell" Tone="brand" />
+    <StatTile Label="Hari Ini" Value="@Items.Count(n => n.Date.Date == SchoolClock.Today).ToString()" Icon="calendar" Tone="good" />
+    <StatTile Label="Untuk Siswa" Value="@Items.Count(n => n.Audience.Contains("Siswa")).ToString()" Icon="users" />
+    <StatTile Label="Untuk Orang Tua" Value="@Items.Count(n => n.Audience.Contains("Orang Tua")).ToString()" Icon="users" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Judul atau isi notifikasi…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-sasaran">Sasaran</label>
+            <select id="f-sasaran" class="sms-select" @bind="AudienceFilter" @bind:after="ResetPage">
+                <option value="">Semua sasaran</option>
+                @foreach (var sasaran in Items.Select(n => n.Audience).Distinct().OrderBy(a => a))
+                {
+                    <option value="@sasaran">@sasaran</option>
+                }
+            </select>
+        </div>
     </div>
 
-    <ul class="space-y-3">
-        @foreach (var item in NotificationItems)
-        {
-            <li class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-                <div class="flex items-start justify-between">
-                    <div>
-                        <p class="font-medium">@item.Title</p>
-                        <p class="text-xs text-slate-500">@item.Date.ToString("dd MMM yyyy") • @item.Audience</p>
-                        <p class="text-sm mt-2">@item.Message</p>
-                    </div>
-                    <div class="flex gap-2 text-sm">
-                        <button class="text-indigo-600" @onclick="() => EditNotification(item)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteNotification(item.Id)">Hapus</button>
-                    </div>
-                </div>
-            </li>
-        }
-    </ul>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveNotification">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul" @bind-Value="FormModel.Title" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Audience" @bind-Value="FormModel.Audience" />
-                <InputTextArea class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pesan" @bind-Value="FormModel.Message" />
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 4; i++) { <div class="sms-skeleton h-16"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="bell" Title="Belum ada notifikasi"
+                    Hint="Pengumuman dari sekolah akan tampil di sini." />
+    }
+    else
+    {
+        <ul class="list-none m-0 p-0 space-y-3">
+            @foreach (var note in Paged)
+            {
+                <li class="rounded-lg border p-4 sms-reveal"
+                    style="border-color: var(--rule); background: var(--bg-inset)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <p class="m-0 font-semibold" style="color: var(--fg-strong)">@note.Title</p>
+                                <span class="sms-badge sms-badge--info">@note.Audience</span>
+                                @if (note.Date.Date == SchoolClock.Today)
+                                {
+                                    <span class="sms-badge sms-badge--warn">Hari ini</span>
+                                }
+                            </div>
+                            <p class="m-0 mt-1.5 text-sm" style="color: var(--fg-muted)">@note.Message</p>
+                            <p class="m-0 mt-2 text-xs tabular" style="color: var(--fg-faint)">
+                                @note.Date.ToString("dd MMMM yyyy")
+                            </p>
+                        </div>
+
+                        <AuthorizeView Roles="@(AppRoles.Admin + "," + AppRoles.Guru)">
+                            <div class="flex flex-none gap-1">
+                                <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                        @onclick="() => StartEdit(note)"><Icon Name="edit" /></button>
+                                <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                        style="color: var(--bata)" @onclick="() => AskDelete(note)"><Icon Name="trash" /></button>
+                            </div>
+                        </AuthorizeView>
+                    </div>
+                </li>
+            }
+        </ul>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="notifikasi" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Kirim Notifikasi" : "Ubah Notifikasi")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-notif">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Judul</label>
+                    <InputText class="sms-input" @bind-Value="Form.Title" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Isi pesan</label>
+                    <InputTextArea class="sms-textarea" rows="4" @bind-Value="Form.Message" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Sasaran</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Audience">
+                            <option value="Semua">Semua</option>
+                            <option value="Siswa">Siswa</option>
+                            <option value="Guru">Guru</option>
+                            <option value="Orang Tua">Orang Tua</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Tanggal</label>
+                        <InputDate class="sms-input" @bind-Value="Form.Date" />
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-notif" class="sms-btn sms-btn--primary">Kirim</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus notifikasi"
+               Message="Notifikasi ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<NotificationItem> NotificationItems { get; set; } = new();
-    private NotificationItem FormModel { get; set; } = new() { Date = DateTime.Today };
-    private bool ShowForm { get; set; }
+    private string AudienceFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadNotifications();
-        return Task.CompletedTask;
-    }
+    protected override string EntityLabel => "notifikasi";
 
-    private void LoadNotifications()
-    {
-        NotificationItems = Db.Notifications.AsNoTracking().OrderByDescending(n => n.Date).ToList();
-    }
+    protected override DbSet<NotificationItem> Table(ApplicationDbContext db) => db.Notifications;
 
-    private void ShowAdd()
-    {
-        FormModel = new NotificationItem { Date = DateTime.Today };
-        ShowForm = true;
-    }
+    protected override IEnumerable<string?> SearchableText(NotificationItem n) =>
+        new[] { n.Title, n.Message, n.Audience };
 
-    private void EditNotification(NotificationItem item)
-    {
-        FormModel = new NotificationItem
-        {
-            Id = item.Id,
-            Title = item.Title,
-            Message = item.Message,
-            Audience = item.Audience,
-            Date = item.Date
-        };
-        ShowForm = true;
-    }
+    protected override string Describe(NotificationItem n) => n.Title;
 
-    private async Task SaveNotification()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Notifications.Add(FormModel);
-        }
-        else
-        {
-            Db.Notifications.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadNotifications();
-    }
+    protected override int IdOf(NotificationItem n) => n.Id;
 
-    private async Task DeleteNotification(int id)
+    protected override NotificationItem NewEntity() => new()
     {
-        var item = await Db.Notifications.FindAsync(id);
-        if (item != null)
-        {
-            Db.Notifications.Remove(item);
-            await Db.SaveChangesAsync();
-            LoadNotifications();
-        }
-    }
+        Date = SchoolClock.Today, Audience = "Semua"
+    };
 
-    private void Cancel()
+    protected override NotificationItem CloneForEdit(NotificationItem n) => new()
     {
-        FormModel = new NotificationItem { Date = DateTime.Today };
-        ShowForm = false;
-    }
+        Id = n.Id, Title = n.Title, Message = n.Message, Date = n.Date, Audience = n.Audience
+    };
+
+    protected override IEnumerable<NotificationItem> ApplyFilters(IEnumerable<NotificationItem> items) =>
+        string.IsNullOrWhiteSpace(AudienceFilter) ? items : items.Where(n => n.Audience == AudienceFilter);
+
+    protected override IEnumerable<NotificationItem> ApplySort(IEnumerable<NotificationItem> items) =>
+        SortAscending ? items.OrderByDescending(n => n.Date) : items.OrderBy(n => n.Date);
+
+    protected override string CsvHeader => "Id,Judul,Isi,Tanggal,Sasaran";
+
+    protected override string CsvRow(NotificationItem n) =>
+        $"{n.Id},{Csv(n.Title)},{Csv(n.Message)},{n.Date:yyyy-MM-dd},{Csv(n.Audience)}";
+
+    private void ResetPage() => CurrentPage = 1;
 }

@@ -1,0 +1,53 @@
+<!--
+  Template Kartu Siswa SMSNet
+  ==========================
+  Berkas ini boleh disunting langsung, atau lewat halaman
+  Master Data → Kartu Siswa → tab "Template". Pengaturan yang disimpan dari
+  antarmuka akan menimpa isi berkas ini.
+
+  Placeholder yang tersedia:
+    {{NAMA}}          nama lengkap
+    {{KELAS}}         nama kelas
+    {{NIS}}           nomor induk (dibangkitkan dari Id)
+    {{GENDER}}        Laki-laki / Perempuan
+    {{WALI}}          nama orang tua / wali
+    {{TELEPON}}       nomor telepon
+    {{KODE}}          kode QR dalam bentuk teks
+    {{QR}}            gambar QR (data URI, pakai di dalam atribut src)
+    {{SEKOLAH}}       nama sekolah
+    {{TAHUN_AJARAN}}  tahun ajaran berjalan
+    {{STATUS}}        Aktif / Tidak aktif
+
+  Ukuran kartu mengikuti standar ID-1 (85.6 × 54 mm) agar muat di dompet
+  dan di holder tanda pengenal biasa.
+-->
+<div class="kartu">
+  <div class="kartu__pita"></div>
+
+  <div class="kartu__isi">
+    <div class="kartu__kiri">
+      <div class="kartu__sekolah">
+        <span class="kartu__logo">SN</span>
+        <div>
+          <p class="kartu__namasekolah">{{SEKOLAH}}</p>
+          <p class="kartu__tahun">Tahun Ajaran {{TAHUN_AJARAN}}</p>
+        </div>
+      </div>
+
+      <p class="kartu__nama">{{NAMA}}</p>
+
+      <dl class="kartu__data">
+        <div><dt>NIS</dt><dd>{{NIS}}</dd></div>
+        <div><dt>Kelas</dt><dd>{{KELAS}}</dd></div>
+        <div><dt>Wali</dt><dd>{{WALI}}</dd></div>
+      </dl>
+    </div>
+
+    <div class="kartu__kanan">
+      <img class="kartu__qr" src="{{QR}}" alt="Kode QR {{NAMA}}" />
+      <p class="kartu__kode">{{KODE}}</p>
+    </div>
+  </div>
+
+  <p class="kartu__catatan">Kartu ini berfungsi sebagai alat absensi. Simpan baik-baik.</p>
+</div>

@@ -1,233 +1,378 @@
 @page "/academic/curriculum"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuditService Audit
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Manajemen Kurikulum & Jadwal</h1>
+<PageTitle>Kurikulum & Jadwal — SMSNet</PageTitle>
 
-<div class="grid gap-6 lg:grid-cols-2">
-    <div class="sms-card space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Kurikulum</h2>
-            <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowCurriculumAdd">Tambah</button>
-        </div>
-        <table class="min-w-full text-sm">
-            <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                    <th class="py-2">Nama</th>
-                    <th class="py-2">Jenjang</th>
-                    <th class="py-2">Deskripsi</th>
-                    <th class="py-2">Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in CurriculumItems)
-                {
-                    <tr class="border-b border-slate-100 dark:border-slate-800">
-                        <td class="py-2">@item.Name</td>
-                        <td class="py-2">@item.GradeLevel</td>
-                        <td class="py-2">@item.Description</td>
-                        <td class="py-2 flex gap-2">
-                            <button class="text-indigo-600" @onclick="() => EditCurriculum(item)">Edit</button>
-                            <button class="text-rose-600" @onclick="() => DeleteCurriculum(item.Id)">Hapus</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+<PageHeader Eyebrow="Akademik" Title="Kurikulum & Jadwal"
+            Subtitle="Pengaturan kurikulum, mata pelajaran, dan jadwal pelajaran per kelas.">
+    <Actions>
+        <a href="/academic/schedule-generator" class="sms-btn sms-btn--accent">
+            <Icon Name="sparkle" /><span>Penjadwalan Otomatis</span>
+        </a>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" />
+            <span>@(_tab == Tab.Curriculum ? "Tambah Kurikulum" : "Tambah Jadwal")</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-        @if (ShowCurriculumForm)
-        {
-            <EditForm Model="CurriculumForm" OnValidSubmit="SaveCurriculum">
-                <DataAnnotationsValidator />
-                <div class="grid gap-3">
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama kurikulum" @bind-Value="CurriculumForm.Name" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Jenjang" @bind-Value="CurriculumForm.GradeLevel" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Deskripsi" @bind-Value="CurriculumForm.Description" />
-                </div>
-                <div class="mt-3 flex gap-2">
-                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                    <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="CancelCurriculum">Cancel</button>
-                </div>
-            </EditForm>
-        }
-    </div>
-
-    <div class="sms-card space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Jadwal Pelajaran</h2>
-            <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowScheduleAdd">Tambah</button>
-        </div>
-        <table class="min-w-full text-sm">
-            <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                    <th class="py-2">Kelas</th>
-                    <th class="py-2">Mapel</th>
-                    <th class="py-2">Guru</th>
-                    <th class="py-2">Hari</th>
-                    <th class="py-2">Waktu</th>
-                    <th class="py-2">Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in ScheduleItems)
-                {
-                    <tr class="border-b border-slate-100 dark:border-slate-800">
-                        <td class="py-2">@item.ClassName</td>
-                        <td class="py-2">@item.Subject</td>
-                        <td class="py-2">@item.Teacher</td>
-                        <td class="py-2">@item.Day</td>
-                        <td class="py-2">@item.TimeSlot</td>
-                        <td class="py-2 flex gap-2">
-                            <button class="text-indigo-600" @onclick="() => EditSchedule(item)">Edit</button>
-                            <button class="text-rose-600" @onclick="() => DeleteSchedule(item.Id)">Hapus</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-
-        @if (ShowScheduleForm)
-        {
-            <EditForm Model="ScheduleForm" OnValidSubmit="SaveSchedule">
-                <DataAnnotationsValidator />
-                <div class="grid gap-3">
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kelas" @bind-Value="ScheduleForm.ClassName" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Mata pelajaran" @bind-Value="ScheduleForm.Subject" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Guru" @bind-Value="ScheduleForm.Teacher" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Hari" @bind-Value="ScheduleForm.Day" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Waktu" @bind-Value="ScheduleForm.TimeSlot" />
-                </div>
-                <div class="mt-3 flex gap-2">
-                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                    <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="CancelSchedule">Cancel</button>
-                </div>
-            </EditForm>
-        }
+<div class="flex items-center gap-3 mb-5 flex-wrap">
+    <div class="sms-segment" role="tablist">
+        <button type="button" role="tab" class="sms-segment__item @(_tab == Tab.Curriculum ? "is-active" : "")"
+                @onclick="() => SwitchTab(Tab.Curriculum)">Kurikulum</button>
+        <button type="button" role="tab" class="sms-segment__item @(_tab == Tab.Schedule ? "is-active" : "")"
+                @onclick="() => SwitchTab(Tab.Schedule)">Jadwal Pelajaran</button>
     </div>
 </div>
 
+@if (_tab == Tab.Curriculum)
+{
+    <div class="sms-card">
+        @if (_curriculum.Count == 0)
+        {
+            <EmptyState Icon="layers" Title="Belum ada kurikulum"
+                        Hint="Tambahkan kurikulum yang berlaku di sekolah." />
+        }
+        else
+        {
+            <div class="grid gap-4 md:grid-cols-2">
+                @foreach (var item in _curriculum)
+                {
+                    <article class="rounded-xl border p-4 sms-reveal"
+                             style="border-color: var(--rule); background: var(--bg-inset)">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="font-display font-semibold m-0" style="color: var(--fg-strong)">@item.Name</p>
+                                <span class="sms-badge sms-badge--info mt-1">@(item.GradeLevel ?? "Umum")</span>
+                            </div>
+                            <div class="flex flex-none gap-1">
+                                <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                        @onclick="() => EditCurriculum(item)"><Icon Name="edit" /></button>
+                                <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                        style="color: var(--bata)"
+                                        @onclick="() => AskDeleteCurriculum(item)"><Icon Name="trash" /></button>
+                            </div>
+                        </div>
+                        <p class="text-sm mt-2 m-0" style="color: var(--fg-muted)">
+                            @(item.Description ?? "Tanpa keterangan.")
+                        </p>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="sms-card">
+        <div class="sms-toolbar">
+            <div class="sms-field">
+                <label class="sms-label" for="f-kelas">Kelas</label>
+                <select id="f-kelas" class="sms-select" @bind="_classFilter">
+                    <option value="">Semua kelas</option>
+                    @foreach (var kelas in _schedule.Select(s => s.ClassName).Distinct().OrderBy(c => c))
+                    {
+                        <option value="@kelas">@kelas</option>
+                    }
+                </select>
+            </div>
+            <div class="sms-field">
+                <label class="sms-label" for="f-hari">Hari</label>
+                <select id="f-hari" class="sms-select" @bind="_dayFilter">
+                    <option value="">Semua hari</option>
+                    @foreach (var hari in Days)
+                    {
+                        <option value="@hari">@hari</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (FilteredSchedule.Count == 0)
+        {
+            <EmptyState Icon="calendar" Title="Belum ada jadwal"
+                        Hint="Tambahkan entri jadwal untuk kelas dan hari tertentu." />
+        }
+        else
+        {
+            @foreach (var hari in Days.Where(d => FilteredSchedule.Any(s => s.Day == d)))
+            {
+                <section class="mb-5">
+                    <h3 class="sms-eyebrow mb-2">@hari</h3>
+                    <div class="sms-table-wrap">
+                        <table class="sms-table">
+                            <thead>
+                                <tr>
+                                    <th>Jam</th>
+                                    <th>Kelas</th>
+                                    <th>Mata Pelajaran</th>
+                                    <th>Guru</th>
+                                    <th class="text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var slot in FilteredSchedule.Where(s => s.Day == hari).OrderBy(s => s.TimeSlot))
+                                {
+                                    <tr>
+                                        <td class="mono text-xs">@slot.TimeSlot</td>
+                                        <td><span class="sms-badge">@slot.ClassName</span></td>
+                                        <td class="font-medium" style="color: var(--fg-strong)">@slot.Subject</td>
+                                        <td>@slot.Teacher</td>
+                                        <td>
+                                            <div class="flex items-center justify-end gap-1">
+                                                <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                                        @onclick="() => EditSchedule(slot)"><Icon Name="edit" /></button>
+                                                <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                                        style="color: var(--bata)"
+                                                        @onclick="() => AskDeleteSchedule(slot)"><Icon Name="trash" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+        }
+    </div>
+}
+
+<Modal Open="_showCurriculumForm" OpenChanged="_ => _showCurriculumForm = false"
+       Title="@(_curriculumForm.Id == 0 ? "Tambah Kurikulum" : "Ubah Kurikulum")">
+    <ChildContent>
+        <EditForm Model="_curriculumForm" OnValidSubmit="SaveCurriculumAsync" id="form-kurikulum">
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama kurikulum</label>
+                    <InputText class="sms-input" @bind-Value="_curriculumForm.Name" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Jenjang</label>
+                    <InputText class="sms-input" @bind-Value="_curriculumForm.GradeLevel" placeholder="SMP / SMA" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Keterangan</label>
+                    <InputTextArea class="sms-textarea" rows="3" @bind-Value="_curriculumForm.Description" />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _showCurriculumForm = false">Batal</button>
+        <button type="submit" form="form-kurikulum" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<Modal Open="_showScheduleForm" OpenChanged="_ => _showScheduleForm = false"
+       Title="@(_scheduleForm.Id == 0 ? "Tambah Jadwal" : "Ubah Jadwal")">
+    <ChildContent>
+        <EditForm Model="_scheduleForm" OnValidSubmit="SaveScheduleAsync" id="form-jadwal">
+            <div class="grid gap-4 md:grid-cols-2">
+                <div class="sms-field">
+                    <label class="sms-label">Kelas</label>
+                    <InputText class="sms-input" @bind-Value="_scheduleForm.ClassName" placeholder="8A" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Hari</label>
+                    <InputSelect class="sms-select" @bind-Value="_scheduleForm.Day">
+                        @foreach (var hari in Days)
+                        {
+                            <option value="@hari">@hari</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Jam</label>
+                    <InputText class="sms-input" @bind-Value="_scheduleForm.TimeSlot" placeholder="08:00 - 09:40" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Mata pelajaran</label>
+                    <InputText class="sms-input" @bind-Value="_scheduleForm.Subject" />
+                </div>
+                <div class="sms-field md:col-span-2">
+                    <label class="sms-label">Guru pengampu</label>
+                    <InputText class="sms-input" @bind-Value="_scheduleForm.Teacher" />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _showScheduleForm = false">Batal</button>
+        <button type="submit" form="form-jadwal" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="_confirmDelete" Title="Hapus data"
+               Message="Data ini akan dihapus permanen."
+               Detail="@_pendingLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<CurriculumItem> CurriculumItems { get; set; } = new();
-    private List<ScheduleItem> ScheduleItems { get; set; } = new();
+    private enum Tab { Curriculum, Schedule }
 
-    private CurriculumItem CurriculumForm { get; set; } = new();
-    private ScheduleItem ScheduleForm { get; set; } = new();
-    private bool ShowCurriculumForm { get; set; }
-    private bool ShowScheduleForm { get; set; }
+    private static readonly string[] Days = { "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 
-    protected override Task OnInitializedAsync()
+    private Tab _tab = Tab.Curriculum;
+
+    private List<CurriculumItem> _curriculum = new();
+    private List<ScheduleItem> _schedule = new();
+
+    private CurriculumItem _curriculumForm = new();
+    private ScheduleItem _scheduleForm = new();
+
+    private string _classFilter = string.Empty;
+    private string _dayFilter = string.Empty;
+
+    private bool _showCurriculumForm;
+    private bool _showScheduleForm;
+    private bool _confirmDelete;
+
+    private int? _pendingCurriculumId;
+    private int? _pendingScheduleId;
+    private string _pendingLabel = string.Empty;
+
+    private List<ScheduleItem> FilteredSchedule
     {
-        LoadData();
-        return Task.CompletedTask;
+        get
+        {
+            IEnumerable<ScheduleItem> query = _schedule;
+
+            if (!string.IsNullOrWhiteSpace(_classFilter))
+            {
+                query = query.Where(s => s.ClassName == _classFilter);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_dayFilter))
+            {
+                query = query.Where(s => s.Day == _dayFilter);
+            }
+
+            return query.ToList();
+        }
     }
 
-    private void LoadData()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
-        CurriculumItems = Db.CurriculumItems.AsNoTracking().ToList();
-        ScheduleItems = Db.ScheduleItems.AsNoTracking().OrderBy(s => s.Day).ToList();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _curriculum = await db.CurriculumItems.AsNoTracking().OrderBy(c => c.Name).ToListAsync();
+        _schedule = await db.ScheduleItems.AsNoTracking().ToListAsync();
     }
 
-    private void ShowCurriculumAdd()
+    private void SwitchTab(Tab tab) => _tab = tab;
+
+    private void StartAdd()
     {
-        CurriculumForm = new CurriculumItem();
-        ShowCurriculumForm = true;
+        if (_tab == Tab.Curriculum)
+        {
+            _curriculumForm = new CurriculumItem();
+            _showCurriculumForm = true;
+        }
+        else
+        {
+            _scheduleForm = new ScheduleItem { Day = "Senin", TimeSlot = "07:00 - 08:30" };
+            _showScheduleForm = true;
+        }
     }
 
     private void EditCurriculum(CurriculumItem item)
     {
-        CurriculumForm = new CurriculumItem
+        _curriculumForm = new CurriculumItem
         {
-            Id = item.Id,
-            Name = item.Name,
-            GradeLevel = item.GradeLevel,
-            Description = item.Description
+            Id = item.Id, Name = item.Name, GradeLevel = item.GradeLevel, Description = item.Description
         };
-        ShowCurriculumForm = true;
-    }
-
-    private async Task SaveCurriculum()
-    {
-        if (CurriculumForm.Id == 0)
-        {
-            Db.CurriculumItems.Add(CurriculumForm);
-        }
-        else
-        {
-            Db.CurriculumItems.Update(CurriculumForm);
-        }
-
-        await Db.SaveChangesAsync();
-        CancelCurriculum();
-        LoadData();
-    }
-
-    private async Task DeleteCurriculum(int id)
-    {
-        var item = await Db.CurriculumItems.FindAsync(id);
-        if (item != null)
-        {
-            Db.CurriculumItems.Remove(item);
-            await Db.SaveChangesAsync();
-            LoadData();
-        }
-    }
-
-    private void CancelCurriculum()
-    {
-        CurriculumForm = new CurriculumItem();
-        ShowCurriculumForm = false;
-    }
-
-    private void ShowScheduleAdd()
-    {
-        ScheduleForm = new ScheduleItem();
-        ShowScheduleForm = true;
+        _showCurriculumForm = true;
     }
 
     private void EditSchedule(ScheduleItem item)
     {
-        ScheduleForm = new ScheduleItem
+        _scheduleForm = new ScheduleItem
         {
-            Id = item.Id,
-            ClassName = item.ClassName,
-            Subject = item.Subject,
-            Teacher = item.Teacher,
-            Day = item.Day,
-            TimeSlot = item.TimeSlot
+            Id = item.Id, ClassName = item.ClassName, Subject = item.Subject,
+            Teacher = item.Teacher, Day = item.Day, TimeSlot = item.TimeSlot
         };
-        ShowScheduleForm = true;
+        _showScheduleForm = true;
     }
 
-    private async Task SaveSchedule()
+    private async Task SaveCurriculumAsync()
     {
-        if (ScheduleForm.Id == 0)
-        {
-            Db.ScheduleItems.Add(ScheduleForm);
-        }
-        else
-        {
-            Db.ScheduleItems.Update(ScheduleForm);
-        }
+        await using var db = await DbFactory.CreateDbContextAsync();
 
-        await Db.SaveChangesAsync();
-        CancelSchedule();
-        LoadData();
+        if (_curriculumForm.Id == 0) db.CurriculumItems.Add(_curriculumForm);
+        else db.CurriculumItems.Update(_curriculumForm);
+
+        await db.SaveChangesAsync();
+        await Audit.RecordUpdateAsync("kurikulum", _curriculumForm.Name);
+
+        Toasts.Success($"Kurikulum {_curriculumForm.Name} disimpan.");
+        _showCurriculumForm = false;
+        await LoadAsync();
     }
 
-    private async Task DeleteSchedule(int id)
+    private async Task SaveScheduleAsync()
     {
-        var item = await Db.ScheduleItems.FindAsync(id);
-        if (item != null)
-        {
-            Db.ScheduleItems.Remove(item);
-            await Db.SaveChangesAsync();
-            LoadData();
-        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (_scheduleForm.Id == 0) db.ScheduleItems.Add(_scheduleForm);
+        else db.ScheduleItems.Update(_scheduleForm);
+
+        await db.SaveChangesAsync();
+        await Audit.RecordUpdateAsync("jadwal",
+            $"{_scheduleForm.ClassName} {_scheduleForm.Day} {_scheduleForm.Subject}");
+
+        Toasts.Success("Jadwal disimpan.");
+        _showScheduleForm = false;
+        await LoadAsync();
     }
 
-    private void CancelSchedule()
+    private void AskDeleteCurriculum(CurriculumItem item)
     {
-        ScheduleForm = new ScheduleItem();
-        ShowScheduleForm = false;
+        _pendingCurriculumId = item.Id;
+        _pendingScheduleId = null;
+        _pendingLabel = item.Name;
+        _confirmDelete = true;
+    }
+
+    private void AskDeleteSchedule(ScheduleItem item)
+    {
+        _pendingScheduleId = item.Id;
+        _pendingCurriculumId = null;
+        _pendingLabel = $"{item.ClassName} · {item.Day} · {item.Subject}";
+        _confirmDelete = true;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (_pendingCurriculumId is { } curriculumId)
+        {
+            var row = await db.CurriculumItems.FindAsync(curriculumId);
+            if (row is not null)
+            {
+                db.CurriculumItems.Remove(row);
+                await db.SaveChangesAsync();
+                await Audit.RecordDeleteAsync("kurikulum", _pendingLabel);
+            }
+        }
+        else if (_pendingScheduleId is { } scheduleId)
+        {
+            var row = await db.ScheduleItems.FindAsync(scheduleId);
+            if (row is not null)
+            {
+                db.ScheduleItems.Remove(row);
+                await db.SaveChangesAsync();
+                await Audit.RecordDeleteAsync("jadwal", _pendingLabel);
+            }
+        }
+
+        Toasts.Success($"{_pendingLabel} dihapus.");
+        _pendingCurriculumId = null;
+        _pendingScheduleId = null;
+        await LoadAsync();
     }
 }

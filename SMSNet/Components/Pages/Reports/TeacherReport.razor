@@ -1,110 +1,134 @@
 @page "/reports/teacher"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Guru & Staff</h1>
+<PageTitle>Laporan Guru & Staff — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-3">
+<PageHeader Eyebrow="Analitik & Laporan" Title="Laporan Guru & Staff"
+            Subtitle="Beban mengajar, kehadiran, dan capaian KPI tenaga pendidik." />
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Guru Aktif" Value="@_activeTeachers.ToString()"
+              Meta="@($"dari {_totalTeachers} terdaftar")" Icon="teacher" Tone="brand" />
+    <StatTile Label="Kehadiran Guru" Value="@($"{_attendanceRate:0.#}%")"
+              Meta="@($"{_present} dari {_attendanceTotal}")" Icon="check"
+              Tone="@(_attendanceRate >= 90 ? "good" : "warn")" />
+    <StatTile Label="Rata-rata Beban" Value="@($"{_averageLoad:0.#}")"
+              Meta="entri jadwal per guru" Icon="calendar" />
+    <StatTile Label="Penilaian KPI" Value="@_reviews.ToString()" Icon="gauge" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Jumlah Guru</p>
-        <p class="text-3xl font-semibold">@TeacherCount</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Beban Mengajar per Guru</h2></div>
+        <div style="height: 16rem"><canvas id="tr-beban"></canvas></div>
     </div>
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Tugas Aktif</p>
-        <p class="text-3xl font-semibold">@OpenTasks</p>
-    </div>
-    <div class="sms-card flex flex-col items-center gap-3">
-        <p class="text-sm text-slate-500">KPI Rata-rata</p>
-        <div class="sms-gauge" style="@GetGaugeStyle(KpiScore)">@KpiScore.ToString("0")%</div>
+        <div class="sms-card__head"><h2 class="sms-card__title">Guru per Mata Pelajaran</h2></div>
+        <div style="height: 16rem"><canvas id="tr-mapel"></canvas></div>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Status Tugas & Ujian</h2>
-        <div class="h-64">
-            <canvas id="taskChart"></canvas>
-        </div>
-    </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">KPI Guru</h2>
-        <div class="h-64">
-            <canvas id="kpiChart"></canvas>
-        </div>
-    </div>
-</div>
+<div class="sms-card">
+    <div class="sms-card__head"><h2 class="sms-card__title">Rincian per Guru</h2></div>
 
-<div class="sms-card mt-8">
-    <h2 class="text-lg font-semibold mb-4">Topik Diskusi Terbaru</h2>
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Topik</th>
-                <th class="py-2">Author</th>
-                <th class="py-2">Tanggal</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var post in ForumPosts)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@post.Topic</td>
-                    <td class="py-2">@post.Author</td>
-                    <td class="py-2">@post.PostedAt.ToString("dd MMM yyyy")</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    @if (_rows.Count == 0)
+    {
+        <EmptyState Icon="teacher" Title="Belum ada data guru" />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th>Guru</th>
+                        <th>Mata Pelajaran</th>
+                        <th class="sms-table__num">Entri Jadwal</th>
+                        <th class="sms-table__num">Kehadiran</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@row.Name</td>
+                            <td>@row.Subject</td>
+                            <td class="sms-table__num">@row.Load</td>
+                            <td class="sms-table__num">@row.Attendance</td>
+                            <td>
+                                <span class="sms-badge @(row.Status == "Active" ? "sms-badge--good" : "")">
+                                    @(row.Status == "Active" ? "Aktif" : "Tidak aktif")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @code {
-    private int TeacherCount { get; set; }
-    private int OpenTasks { get; set; }
-    private double KpiScore { get; set; }
-    private List<ForumPost> ForumPosts { get; set; } = new();
+    private sealed record TeacherRow(string Name, string Subject, int Load, int Attendance, string Status);
+
+    private int _totalTeachers, _activeTeachers, _attendanceTotal, _present, _reviews;
+    private double _attendanceRate, _averageLoad;
+
+    private List<TeacherRow> _rows = new();
     private bool _rendered;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        TeacherCount = Db.Teachers.Count();
-        OpenTasks = Db.TaskExams.Count(t => t.Status == "Open" || t.Status == "Scheduled");
-        KpiScore = Db.PerformanceReviews.Any() ? 92 : 85;
-        ForumPosts = Db.ForumPosts.OrderByDescending(p => p.PostedAt).Take(5).ToList();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var teachers = await db.Teachers.AsNoTracking().OrderBy(t => t.FullName).ToListAsync();
+        var schedule = await db.ScheduleItems.AsNoTracking().ToListAsync();
+        var attendance = await db.AttendanceRecords.AsNoTracking().Where(a => a.Role == "Guru").ToListAsync();
+
+        _totalTeachers = teachers.Count;
+        _activeTeachers = teachers.Count(t => t.Status == "Active");
+        _reviews = await db.PerformanceReviews.CountAsync();
+
+        _attendanceTotal = attendance.Count;
+        _present = attendance.Count(a => a.Status == "Present");
+        _attendanceRate = _attendanceTotal == 0 ? 0 : _present * 100.0 / _attendanceTotal;
+
+        _rows = teachers.Select(t => new TeacherRow(
+            t.FullName,
+            t.Subject ?? "—",
+            schedule.Count(s => s.Teacher == t.FullName),
+            attendance.Count(a => a.PersonName == t.FullName && a.Status == "Present"),
+            t.Status)).ToList();
+
+        _averageLoad = _rows.Count == 0 ? 0 : _rows.Average(r => r.Load);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_rendered) return;
+        if (_rendered || _rows.Count == 0)
+        {
+            return;
+        }
+
         _rendered = true;
 
-        var taskLabels = new[] { "Open", "Scheduled", "Closed" };
-        var taskData = new[]
+        try
         {
-            Db.TaskExams.Count(t => t.Status == "Open"),
-            Db.TaskExams.Count(t => t.Status == "Scheduled"),
-            Db.TaskExams.Count(t => t.Status == "Closed")
-        };
-        await JS.InvokeVoidAsync("smsnetChart.render", "taskChart", "bar", taskLabels, taskData, "Tugas");
+            var top = _rows.OrderByDescending(r => r.Load).Take(8).ToList();
+            await JS.InvokeVoidAsync("smsnetChart.render", "tr-beban", "bar",
+                top.Select(r => r.Name).ToList(), top.Select(r => r.Load).ToList(), "Entri jadwal");
 
-        var kpiRows = Db.PerformanceReviews.AsNoTracking().Take(5).ToList();
-        var kpiLabels = kpiRows.Select(p => p.TeacherName).ToList();
-        var kpiData = kpiRows.Select(p => ParseKpi(p.Score)).ToList();
-        await JS.InvokeVoidAsync("smsnetChart.render", "kpiChart", "line", kpiLabels, kpiData, "KPI");
-    }
+            var bySubject = _rows.GroupBy(r => r.Subject)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count).ToList();
 
-    private static double ParseKpi(string score)
-    {
-        if (double.TryParse(score.Replace("%", string.Empty), out var value))
-        {
-            return value;
+            await JS.InvokeVoidAsync("smsnetChart.render", "tr-mapel", "doughnut",
+                bySubject.Select(x => x.Key).ToList(), bySubject.Select(x => x.Count).ToList(), "Guru");
         }
-        return 80;
-    }
-
-    private string GetGaugeStyle(double percent)
-    {
-        return $"background: conic-gradient(#22c55e {percent}%, #e2e8f0 0%);";
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

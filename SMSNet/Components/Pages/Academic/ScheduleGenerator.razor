@@ -1,0 +1,659 @@
+@page "/academic/schedule-generator"
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@using SMSNet.Services.Scheduling
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject TimetableGenerator Generator
+@inject TimetableValidator Validator
+@inject AuditService Audit
+@inject ToastService Toasts
+
+<PageTitle>Penjadwalan Otomatis — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Akademik" Title="Penjadwalan Otomatis"
+            Subtitle="Simulasikan jadwal seminggu penuh tanpa bentrok waktu, kelas, maupun guru.">
+    <Actions>
+        <a href="/academic/curriculum" class="sms-btn sms-btn--ghost">
+            <Icon Name="calendar" /><span>Kembali ke Jadwal</span>
+        </a>
+        @if (_lessons.Count > 0)
+        {
+            <button type="button" class="sms-btn sms-btn--primary"
+                    @onclick="() => _confirmSave = true" disabled="@(_blocking > 0 || _saving)">
+                <Icon Name="check" /><span>@(_saving ? "Menyimpan…" : "Simpan ke Jadwal")</span>
+            </button>
+        }
+    </Actions>
+</PageHeader>
+
+@if (_step == Step.Setup)
+{
+    <div class="grid gap-6 xl:grid-cols-3">
+        <div class="sms-card xl:col-span-2">
+            <div class="sms-card__head"><h2 class="sms-card__title">Jam per Minggu</h2></div>
+
+            @if (_subjects.Count == 0)
+            {
+                <EmptyState Icon="book" Title="Belum ada mata pelajaran"
+                            Hint="Tambahkan mata pelajaran pada Master Data terlebih dahulu." />
+            }
+            else
+            {
+                <div class="sms-table-wrap">
+                    <table class="sms-table">
+                        <thead>
+                            <tr>
+                                <th>Mata Pelajaran</th>
+                                <th>Guru Pengampu</th>
+                                <th class="sms-table__num" style="width: 9rem">Jam / Minggu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var subject in _subjects)
+                            {
+                                var teachers = TeachersFor(subject);
+                                <tr>
+                                    <td class="font-medium" style="color: var(--fg-strong)">@subject</td>
+                                    <td>
+                                        @if (teachers.Count == 0)
+                                        {
+                                            <span class="sms-badge sms-badge--bad">belum ada pengampu</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-xs" style="color: var(--fg-muted)">
+                                                @string.Join(", ", teachers.Take(3))
+                                                @(teachers.Count > 3 ? $" +{teachers.Count - 3}" : "")
+                                            </span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <input type="number" class="sms-input text-right" min="0" max="12"
+                                               value="@(teachers.Count == 0 ? 0 : _periods.GetValueOrDefault(subject))"
+                                               @onchange="e => SetPeriods(subject, e.Value?.ToString())"
+                                               disabled="@(teachers.Count == 0)" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t"
+                     style="border-color: var(--rule-soft)">
+                    <p class="m-0 text-sm" style="color: var(--fg-muted)">
+                        Total <span class="tabular font-semibold" style="color: var(--fg-strong)">@TotalPerClass</span>
+                        jam per kelas, dari <span class="tabular font-semibold"
+                        style="color: var(--fg-strong)">@SlotsPerClass</span> slot tersedia.
+                    </p>
+                    <div class="sms-meter" style="width: 12rem">
+                        <div class="sms-meter__fill"
+                             style="width: @(SlotsPerClass == 0 ? 0 : Math.Min(100, TotalPerClass * 100 / SlotsPerClass))%;
+                                    background: @(TotalPerClass > SlotsPerClass ? "var(--bata)" : "var(--kunyit)")"></div>
+                    </div>
+                </div>
+
+                @if (SkippedSubjects.Count > 0)
+                {
+                    <p class="text-xs mt-3 m-0 px-3 py-2 rounded"
+                       style="background: color-mix(in srgb, var(--bata) 8%, transparent); color: var(--fg-muted)">
+                        @string.Join(", ", SkippedSubjects) dilewati karena belum ada guru pengampunya.
+                        Tetapkan pengampu di <a href="/master/teachers" class="underline">Master Data · Guru</a>
+                        agar ikut dijadwalkan.
+                    </p>
+                }
+            }
+        </div>
+
+        <div class="space-y-6">
+            <div class="sms-card">
+                <div class="sms-card__head"><h2 class="sms-card__title">Pengaturan</h2></div>
+
+                <div class="grid gap-4">
+                    <div class="sms-field">
+                        <label class="sms-label">Hari sekolah</label>
+                        <select class="sms-select" @bind="_dayCount">
+                            <option value="5">Senin – Jumat (5 hari)</option>
+                            <option value="6">Senin – Sabtu (6 hari)</option>
+                        </select>
+                    </div>
+
+                    <div class="sms-field">
+                        <label class="sms-label">Slot per hari</label>
+                        <select class="sms-select" @bind="_slotCount">
+                            <option value="6">6 jam pelajaran</option>
+                            <option value="7">7 jam pelajaran</option>
+                            <option value="8">8 jam pelajaran</option>
+                        </select>
+                    </div>
+
+                    <div class="sms-field">
+                        <label class="sms-label">Maksimal jam mengajar per guru per hari</label>
+                        <InputNumber class="sms-input" @bind-Value="_maxPerDay" />
+                    </div>
+
+                    <label class="flex items-start gap-2 cursor-pointer text-sm" style="color: var(--fg-muted)">
+                        <input type="checkbox" class="mt-1" @bind="_avoidRepeat" />
+                        <span>
+                            Hindari mata pelajaran yang sama dua kali dalam sehari
+                            <span class="block text-xs" style="color: var(--fg-faint)">
+                                Dilonggarkan otomatis bila jadwal tidak bisa tersusun tanpanya.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+
+                <button type="button" class="sms-btn sms-btn--accent sms-btn--block mt-5"
+                        @onclick="GenerateAsync" disabled="@(_generating || _classes.Count == 0)">
+                    <Icon Name="sparkle" />
+                    <span>@(_generating ? "Menyusun…" : "Susun Jadwal")</span>
+                </button>
+            </div>
+
+            <div class="sms-card">
+                <div class="sms-card__head"><h2 class="sms-card__title">Cakupan</h2></div>
+                <dl class="grid gap-2 text-sm m-0">
+                    <div class="flex justify-between"><dt style="color: var(--fg-muted)">Kelas</dt>
+                        <dd class="m-0 tabular font-semibold">@_classes.Count</dd></div>
+                    <div class="flex justify-between"><dt style="color: var(--fg-muted)">Mata pelajaran</dt>
+                        <dd class="m-0 tabular font-semibold">@SchedulablePeriods.Count</dd></div>
+                    <div class="flex justify-between"><dt style="color: var(--fg-muted)">Guru tersedia</dt>
+                        <dd class="m-0 tabular font-semibold">@_teacherSubjects.Count</dd></div>
+                    <div class="flex justify-between pt-2 border-t" style="border-color: var(--rule-soft)">
+                        <dt style="color: var(--fg-muted)">Total jam disusun</dt>
+                        <dd class="m-0 tabular font-semibold" style="color: var(--fg-strong)">
+                            @(TotalPerClass * _classes.Count)</dd></div>
+                </dl>
+
+                @if (_existingCount > 0)
+                {
+                    <p class="text-xs mt-4 m-0 px-3 py-2 rounded"
+                       style="background: color-mix(in srgb, var(--kunyit) 12%, transparent); color: var(--fg-strong)">
+                        Sudah ada @_existingCount entri jadwal tersimpan. Menyimpan hasil simulasi akan
+                        menggantinya.
+                    </p>
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <!-- Result: summary, conflicts, editable grid -->
+    <div class="sms-card mb-6 @(_result?.Success == true && _blocking == 0 ? "" : "")"
+         style="border-color: @(_blocking > 0 ? "color-mix(in srgb, var(--bata) 40%, var(--rule))"
+                                              : "color-mix(in srgb, var(--daun) 40%, var(--rule))");
+                background: @(_blocking > 0 ? "color-mix(in srgb, var(--bata) 7%, var(--bg-surface))"
+                                            : "color-mix(in srgb, var(--daun) 7%, var(--bg-surface))")">
+        <div class="flex items-start gap-3">
+            <span style="color: @(_blocking > 0 ? "var(--bata)" : "var(--daun)")">
+                <Icon Name="@(_blocking > 0 ? "warning" : "check")" Class="w-5 h-5" />
+            </span>
+            <div class="min-w-0 flex-1">
+                <p class="font-semibold m-0" style="color: var(--fg-strong)">@Headline</p>
+                <p class="text-xs m-0 mt-1" style="color: var(--fg-muted)">
+                    @_result?.Lessons.Count jam pelajaran ·
+                    @_result?.Attempts percobaan ·
+                    @($"{_result?.Elapsed.TotalMilliseconds:0}") ms
+                    @if (_blocking > 0)
+                    {
+                        <span> · <strong style="color: var(--bata)">@_blocking bentrok harus diperbaiki sebelum disimpan</strong></span>
+                    }
+                </p>
+            </div>
+            <div class="flex flex-none gap-2">
+                <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm" @onclick="RerollAsync">
+                    <Icon Name="refresh" /><span>Susun Ulang</span>
+                </button>
+                <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm" @onclick="() => _step = Step.Setup">
+                    <Icon Name="settings" /><span>Ubah Pengaturan</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (_conflicts.Count > 0)
+    {
+        <div class="sms-card mb-6">
+            <div class="sms-card__head">
+                <h2 class="sms-card__title">Temuan (@_conflicts.Count)</h2>
+            </div>
+            <ul class="list-none m-0 p-0 space-y-2">
+                @foreach (var conflict in _conflicts.Take(12))
+                {
+                    <li class="flex items-start gap-2 text-sm">
+                        <span class="sms-badge @(conflict.IsBlocking ? "sms-badge--bad" : "sms-badge--warn") flex-none">
+                            @(conflict.IsBlocking ? "Bentrok" : "Catatan")
+                        </span>
+                        <span style="color: var(--fg-muted)">@conflict.Message</span>
+                    </li>
+                }
+                @if (_conflicts.Count > 12)
+                {
+                    <li class="text-xs" style="color: var(--fg-faint)">
+                        …dan @(_conflicts.Count - 12) temuan lainnya.
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (_result?.Unplaced.Count > 0)
+    {
+        <div class="sms-card mb-6">
+            <div class="sms-card__head"><h2 class="sms-card__title">Tidak Dapat Ditempatkan</h2></div>
+            <ul class="list-none m-0 p-0 grid gap-1 md:grid-cols-2">
+                @foreach (var item in _result.Unplaced.Take(20))
+                {
+                    <li class="text-sm" style="color: var(--bata)">· @item</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="sms-card">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Jadwal Kelas</h2>
+            <select class="sms-select w-auto" @bind="_viewClass">
+                @foreach (var kelas in _classes)
+                {
+                    <option value="@kelas">Kelas @kelas</option>
+                }
+            </select>
+        </div>
+
+        <p class="text-sm mb-4" style="color: var(--fg-muted)">
+            Klik sel mana pun untuk mengubah mata pelajaran dan gurunya. Bentrok ditandai merah
+            dan diperiksa ulang setiap kali Anda mengubah sesuatu.
+        </p>
+
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th style="min-width: 7rem">Jam</th>
+                        @foreach (var day in _days)
+                        {
+                            <th style="min-width: 11rem">@day</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var slot = 0; slot < _slots.Count; slot++)
+                    {
+                        var slotIndex = slot;
+                        <tr>
+                            <td class="mono text-xs" style="white-space: nowrap">@_slots[slotIndex]</td>
+                            @for (var day = 0; day < _days.Count; day++)
+                            {
+                                var dayIndex = day;
+                                var lesson = LessonAt(_viewClass, dayIndex, slotIndex);
+                                var clash = _conflictCells.Contains((_viewClass, dayIndex, slotIndex));
+                                <td style="padding: .35rem">
+                                    <button type="button" class="jadwal-sel @(clash ? "is-bentrok" : "")
+                                                                 @(lesson is null ? "is-kosong" : "")"
+                                            @onclick="() => OpenCell(dayIndex, slotIndex)">
+                                        @if (lesson is null)
+                                        {
+                                            <span class="jadwal-sel__kosong">kosong</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="jadwal-sel__mapel">@lesson.Subject</span>
+                                            <span class="jadwal-sel__guru">@lesson.Teacher</span>
+                                        }
+                                    </button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-3 mt-5 pt-4 border-t" style="border-color: var(--rule-soft)">
+            <div>
+                <p class="sms-label m-0">Jam terisi kelas ini</p>
+                <p class="m-0 tabular font-semibold" style="color: var(--fg-strong)">
+                    @_lessons.Count(l => l.ClassName == _viewClass) dari @(_days.Count * _slots.Count)
+                </p>
+            </div>
+            <div>
+                <p class="sms-label m-0">Total seluruh kelas</p>
+                <p class="m-0 tabular font-semibold" style="color: var(--fg-strong)">@_lessons.Count</p>
+            </div>
+            <div>
+                <p class="sms-label m-0">Status</p>
+                <p class="m-0 font-semibold"
+                   style="color: @(_blocking > 0 ? "var(--bata)" : "var(--daun)")">
+                    @(_blocking > 0 ? $"{_blocking} bentrok" : "Siap disimpan")
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cell editor -->
+<Modal Open="_cellOpen" OpenChanged="_ => _cellOpen = false"
+       Title="@($"{_viewClass} · {(_editDay >= 0 ? _days[_editDay] : "")} {(_editSlot >= 0 ? _slots[_editSlot] : "")}")">
+    <ChildContent>
+        <div class="grid gap-4">
+            <div class="sms-field">
+                <label class="sms-label">Mata pelajaran</label>
+                <select class="sms-select" @bind="_editSubject" @bind:after="OnEditSubjectChanged">
+                    <option value="">— kosongkan —</option>
+                    @foreach (var subject in _subjects)
+                    {
+                        <option value="@subject">@subject</option>
+                    }
+                </select>
+            </div>
+
+            <div class="sms-field">
+                <label class="sms-label">Guru pengampu</label>
+                <select class="sms-select" @bind="_editTeacher" disabled="@string.IsNullOrEmpty(_editSubject)">
+                    <option value="">— pilih guru —</option>
+                    @foreach (var teacher in TeachersFor(_editSubject))
+                    {
+                        var busy = IsTeacherBusy(teacher, _editDay, _editSlot);
+                        <option value="@teacher">@teacher @(busy ? " (sedang mengajar kelas lain)" : "")</option>
+                    }
+                </select>
+                @if (!string.IsNullOrEmpty(_editSubject) && TeachersFor(_editSubject).Count == 0)
+                {
+                    <p class="text-xs m-0" style="color: var(--bata)">
+                        Tidak ada guru yang tercatat mengampu @_editSubject.
+                    </p>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_editTeacher) && IsTeacherBusy(_editTeacher, _editDay, _editSlot))
+            {
+                <p class="text-sm m-0 px-3 py-2 rounded"
+                   style="background: color-mix(in srgb, var(--bata) 10%, transparent); color: var(--bata)">
+                    @_editTeacher sudah mengajar di kelas lain pada jam ini. Menyimpan akan
+                    menimbulkan bentrok yang harus diperbaiki sebelum jadwal dapat disimpan.
+                </p>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _cellOpen = false">Batal</button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="ApplyCell">Terapkan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="_confirmSave"
+               Title="Simpan jadwal"
+               Message="@($"Seluruh {_existingCount} entri jadwal yang tersimpan akan diganti dengan {_lessons.Count} entri hasil simulasi ini.")"
+               ConfirmLabel="Simpan & Ganti"
+               OnConfirm="SaveAsync" />
+
+@code {
+    private enum Step { Setup, Result }
+
+    private Step _step = Step.Setup;
+
+    private List<string> _classes = new();
+    private List<string> _subjects = new();
+    private Dictionary<string, int> _periods = new();
+    private Dictionary<string, List<string>> _teacherSubjects = new();
+    private int _existingCount;
+
+    private int _dayCount = 5;
+    private int _slotCount = 8;
+    private int _maxPerDay = 6;
+    private bool _avoidRepeat = true;
+
+    private List<string> _days = new();
+    private List<string> _slots = new();
+
+    private List<ProposedLesson> _lessons = new();
+    private TimetableResult? _result;
+    private IReadOnlyList<TimetableConflict> _conflicts = Array.Empty<TimetableConflict>();
+    private HashSet<(string, int, int)> _conflictCells = new();
+    private int _blocking;
+
+    private string _viewClass = string.Empty;
+    private bool _generating, _saving, _confirmSave;
+
+    private bool _cellOpen;
+    private int _editDay = -1, _editSlot = -1;
+    private string _editSubject = string.Empty;
+    private string _editTeacher = string.Empty;
+
+    private static readonly string[] AllDays = { "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
+
+    private static readonly string[] AllSlots =
+    {
+        "07:00 - 07:40", "07:40 - 08:20", "08:20 - 09:00", "09:20 - 10:00",
+        "10:00 - 10:40", "10:40 - 11:20", "12:30 - 13:10", "13:10 - 13:50"
+    };
+
+    /// <summary>
+    /// The subjects that can actually be placed: hours above zero and at least one
+    /// teacher qualified to take them. A subject with no teacher is unschedulable by
+    /// definition, and its row's hours input is disabled — so submitting its hours
+    /// would fail validation with nothing the operator could do about it.
+    /// </summary>
+    private Dictionary<string, int> SchedulablePeriods =>
+        _periods.Where(p => p.Value > 0 && TeachersFor(p.Key).Count > 0)
+                .ToDictionary(p => p.Key, p => p.Value);
+
+    /// <summary>Subjects carrying hours that are dropped for want of a teacher.</summary>
+    private List<string> SkippedSubjects =>
+        _periods.Where(p => p.Value > 0 && TeachersFor(p.Key).Count == 0)
+                .Select(p => p.Key).OrderBy(n => n).ToList();
+
+    private int TotalPerClass => SchedulablePeriods.Values.Sum();
+    private int SlotsPerClass => _dayCount * _slotCount;
+
+    /// <summary>
+    /// The generator's own summary describes the board it produced. Once the operator
+    /// edits a cell that sentence can be false — so a board that now clashes reports
+    /// its current state instead of the one it was born with.
+    /// </summary>
+    private string Headline => _blocking > 0
+        ? $"Jadwal ini belum bisa disimpan: {_blocking} bentrok perlu diperbaiki."
+        : _result?.Summary ?? "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _classes = await db.ClassRooms.AsNoTracking()
+            .OrderBy(c => c.Name).Select(c => c.Name).ToListAsync();
+
+        var subjects = await db.Subjects.AsNoTracking().OrderBy(s => s.Name).ToListAsync();
+        _subjects = subjects.Select(s => s.Name).ToList();
+
+        // Credits already express weekly periods, so they seed the form.
+        _periods = subjects.ToDictionary(s => s.Name, s => Math.Max(0, s.Credits));
+
+        _teacherSubjects = (await db.Teachers.AsNoTracking()
+                .Where(t => t.Status == "Active" && t.Subject != null)
+                .ToListAsync())
+            .GroupBy(t => t.FullName)
+            .ToDictionary(g => g.Key, g => g.Select(t => t.Subject!).Distinct().ToList());
+
+        _existingCount = await db.ScheduleItems.CountAsync();
+        _viewClass = _classes.FirstOrDefault() ?? string.Empty;
+    }
+
+    private List<string> TeachersFor(string? subject) =>
+        string.IsNullOrWhiteSpace(subject)
+            ? new List<string>()
+            : _teacherSubjects
+                .Where(kv => kv.Value.Contains(subject, StringComparer.OrdinalIgnoreCase))
+                .Select(kv => kv.Key).OrderBy(n => n).ToList();
+
+    private void SetPeriods(string subject, string? raw)
+    {
+        _periods[subject] = int.TryParse(raw, out var value) ? Math.Clamp(value, 0, 12) : 0;
+    }
+
+    private TimetableRequest BuildRequest(int seed) => new()
+    {
+        Days = AllDays.Take(_dayCount).ToList(),
+        TimeSlots = AllSlots.Take(_slotCount).ToList(),
+        Classes = _classes,
+        SubjectPeriods = SchedulablePeriods,
+        TeacherSubjects = _teacherSubjects,
+        MaxPeriodsPerTeacherPerDay = _maxPerDay,
+        AvoidSameSubjectTwiceADay = _avoidRepeat,
+        Seed = seed
+    };
+
+    private async Task GenerateAsync() => await RunAsync(Environment.TickCount);
+
+    private async Task RerollAsync() => await RunAsync(Environment.TickCount + Random.Shared.Next(1000));
+
+    private async Task RunAsync(int seed)
+    {
+        _generating = true;
+        StateHasChanged();
+
+        var request = BuildRequest(seed);
+
+        // Solving is CPU-bound; off the UI thread so the circuit stays responsive.
+        _result = await Task.Run(() => Generator.Generate(request));
+
+        _lessons = _result.Lessons;
+        _days = request.Days;
+        _slots = request.TimeSlots;
+
+        if (_lessons.Count == 0 && _result.Unplaced.Count == 0)
+        {
+            // Validation rejected the request outright — stay on setup and explain.
+            Toasts.Error(_result.Summary);
+            _generating = false;
+            return;
+        }
+
+        Revalidate();
+        _step = Step.Result;
+        _generating = false;
+
+        if (_result.Success)
+        {
+            Toasts.Success(_result.Summary);
+        }
+        else
+        {
+            Toasts.Warn(_result.Summary);
+        }
+    }
+
+    private void Revalidate()
+    {
+        var request = BuildRequest(0);
+        _conflicts = Validator.Validate(_lessons, request);
+        _conflictCells = Validator.ConflictedCells(_lessons);
+        _blocking = _conflicts.Count(c => c.IsBlocking);
+    }
+
+    private ProposedLesson? LessonAt(string className, int day, int slot) =>
+        _lessons.FirstOrDefault(l => l.ClassName == className && l.DayIndex == day && l.SlotIndex == slot);
+
+    private bool IsTeacherBusy(string teacher, int day, int slot)
+    {
+        if (string.IsNullOrWhiteSpace(teacher) || day < 0 || slot < 0)
+        {
+            return false;
+        }
+
+        // Ignore the cell being edited — replacing its own occupant is not a clash.
+        return _lessons.Any(l => l.Teacher == teacher && l.DayIndex == day && l.SlotIndex == slot
+                                 && l.ClassName != _viewClass);
+    }
+
+    private void OpenCell(int day, int slot)
+    {
+        _editDay = day;
+        _editSlot = slot;
+
+        var lesson = LessonAt(_viewClass, day, slot);
+        _editSubject = lesson?.Subject ?? string.Empty;
+        _editTeacher = lesson?.Teacher ?? string.Empty;
+        _cellOpen = true;
+    }
+
+    private void OnEditSubjectChanged()
+    {
+        // Keep the teacher only if they actually teach the newly chosen subject.
+        var eligible = TeachersFor(_editSubject);
+
+        if (!eligible.Contains(_editTeacher))
+        {
+            _editTeacher = eligible.FirstOrDefault(t => !IsTeacherBusy(t, _editDay, _editSlot))
+                           ?? eligible.FirstOrDefault()
+                           ?? string.Empty;
+        }
+    }
+
+    private void ApplyCell()
+    {
+        _lessons.RemoveAll(l => l.ClassName == _viewClass && l.DayIndex == _editDay && l.SlotIndex == _editSlot);
+
+        if (!string.IsNullOrWhiteSpace(_editSubject))
+        {
+            _lessons.Add(new ProposedLesson
+            {
+                ClassName = _viewClass,
+                Subject = _editSubject,
+                Teacher = _editTeacher,
+                Day = _days[_editDay],
+                TimeSlot = _slots[_editSlot],
+                DayIndex = _editDay,
+                SlotIndex = _editSlot
+            });
+        }
+
+        Revalidate();
+        _cellOpen = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_blocking > 0)
+        {
+            Toasts.Error("Masih ada bentrok. Perbaiki dulu sebelum menyimpan.");
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Replace wholesale: a timetable is one coherent artefact, and merging a new
+            // week into an old one would leave orphaned lessons nobody asked for.
+            var existing = await db.ScheduleItems.ToListAsync();
+            db.ScheduleItems.RemoveRange(existing);
+
+            db.ScheduleItems.AddRange(_lessons.Select(l => new ScheduleItem
+            {
+                ClassName = l.ClassName,
+                Subject = l.Subject,
+                Teacher = l.Teacher,
+                Day = l.Day,
+                TimeSlot = l.TimeSlot
+            }));
+
+            await db.SaveChangesAsync();
+            await Audit.WriteAsync("Simpan jadwal otomatis",
+                $"{_lessons.Count} entri menggantikan {existing.Count} entri lama");
+
+            _existingCount = _lessons.Count;
+            Toasts.Success($"{_lessons.Count} entri jadwal disimpan.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal menyimpan jadwal: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

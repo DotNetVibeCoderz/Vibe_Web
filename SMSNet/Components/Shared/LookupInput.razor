@@ -1,0 +1,77 @@
+@* Type-ahead over a known list, backed by a native <datalist>.
+
+   A plain <select> would be wrong here: these fields hold names that may predate
+   the master-data list (or be typed for someone not yet enrolled), and a select
+   cannot express "one of these, or something else". The datalist keeps the
+   suggestions while leaving the field free text — and says so when the value is
+   not on the list, rather than silently accepting a typo. *@
+
+<div class="sms-lookup">
+    <input class="sms-input" list="@_listId" value="@Value" autocomplete="off"
+           placeholder="@Placeholder"
+           @oninput="OnInput" />
+
+    <datalist id="@_listId">
+        @foreach (var option in Options)
+        {
+            <option value="@option">@option</option>
+        }
+    </datalist>
+
+    @if (ShowHint && !string.IsNullOrWhiteSpace(Value))
+    {
+        @if (IsKnown)
+        {
+            <p class="sms-lookup__hint">
+                <Icon Name="check" Class="w-3 h-3 inline" /> cocok dengan data @(Noun)
+            </p>
+        }
+        else
+        {
+            <p class="sms-lookup__hint is-baru">
+                Tidak ada di daftar @Noun — akan disimpan apa adanya.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter] public IEnumerable<string> Options { get; set; } = Array.Empty<string>();
+
+    [Parameter] public string Placeholder { get; set; } = "Ketik untuk mencari…";
+
+    /// <summary>What the list contains, for the hint text — "siswa", "guru", …</summary>
+    [Parameter] public string Noun { get; set; } = "master";
+
+    [Parameter] public bool ShowHint { get; set; } = true;
+
+    /// <summary>Raised when the typed value matches a known option, so the host can
+    /// fill in related fields (a student's class, for instance).</summary>
+    [Parameter] public EventCallback<string> OnMatched { get; set; }
+
+    private readonly string _listId = $"lookup-{Guid.NewGuid():N}";
+
+    private bool IsKnown =>
+        Options.Any(o => string.Equals(o, Value, StringComparison.OrdinalIgnoreCase));
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? string.Empty;
+
+        Value = value;
+        await ValueChanged.InvokeAsync(value);
+
+        // Picking from the list arrives as a normal input event, so match on every
+        // keystroke rather than waiting for a change event that may never come.
+        var match = Options.FirstOrDefault(o => string.Equals(o, value, StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
+        {
+            await OnMatched.InvokeAsync(match);
+        }
+    }
+}

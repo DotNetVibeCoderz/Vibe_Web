@@ -1,37 +1,143 @@
 @page "/analytics/data"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Data Analytics</h1>
+<PageTitle>Data Analytics — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Analitik & Laporan" Title="Data Analytics"
+            Subtitle="Tren kehadiran, performa akademik, dan efisiensi operasional." />
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Kehadiran Keseluruhan" Value="@($"{_attendanceRate:0.#}%")"
+              Meta="@($"{_present} dari {_attendanceTotal}")" Icon="check"
+              Tone="@(_attendanceRate >= 90 ? "good" : "warn")" />
+    <StatTile Label="Ketuntasan Nilai" Value="@($"{_passRate:0.#}%")"
+              Meta="KKM 75" Icon="chart" Tone="@(_passRate >= 80 ? "good" : "warn")" />
+    <StatTile Label="Rasio Siswa : Guru" Value="@_ratio" Icon="users" Tone="brand" />
+    <StatTile Label="Keterisian Kelas" Value="@($"{_occupancy:0.#}%")" Icon="grid" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
+    <div class="sms-card">
+        <div class="sms-card__head"><h2 class="sms-card__title">Kehadiran per Status</h2></div>
+        <div style="height: 15rem"><canvas id="da-status"></canvas></div>
+    </div>
+    <div class="sms-card">
+        <div class="sms-card__head"><h2 class="sms-card__title">Rata-rata Nilai per Mata Pelajaran</h2></div>
+        <div style="height: 15rem"><canvas id="da-mapel"></canvas></div>
+    </div>
+</div>
 
 <div class="sms-card">
-    <h2 class="text-lg font-semibold mb-4">Tren Kehadiran & Performa</h2>
-    <div class="grid gap-4 md:grid-cols-3">
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="text-sm text-slate-500">Kehadiran Mingguan</p>
-            <p class="text-2xl font-semibold">@AttendanceWeekly%</p>
-        </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="text-sm text-slate-500">Siswa Berprestasi</p>
-            <p class="text-2xl font-semibold">@TopStudents</p>
-        </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="text-sm text-slate-500">Efisiensi Operasional</p>
-            <p class="text-2xl font-semibold">@Efficiency%</p>
-        </div>
+    <div class="sms-card__head"><h2 class="sms-card__title">Indikator Operasional</h2></div>
+
+    <div class="sms-table-wrap">
+        <table class="sms-table">
+            <thead>
+                <tr><th>Indikator</th><th class="sms-table__num">Nilai</th><th>Interpretasi</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _indicators)
+                {
+                    <tr>
+                        <td class="font-medium" style="color: var(--fg-strong)">@row.Name</td>
+                        <td class="sms-table__num font-semibold">@row.Value</td>
+                        <td style="color: var(--fg-muted)">@row.Note</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </div>
 
 @code {
-    private int AttendanceWeekly { get; set; }
-    private int TopStudents { get; set; }
-    private int Efficiency { get; set; }
+    private sealed record Indicator(string Name, string Value, string Note);
 
-    protected override Task OnInitializedAsync()
+    private int _attendanceTotal, _present;
+    private double _attendanceRate, _passRate, _occupancy;
+    private string _ratio = "—";
+
+    private List<Indicator> _indicators = new();
+    private List<string> _statusLabels = new();
+    private List<int> _statusSeries = new();
+    private List<string> _subjectLabels = new();
+    private List<int> _subjectSeries = new();
+
+    private bool _rendered;
+
+    protected override async Task OnInitializedAsync()
     {
-        AttendanceWeekly = 92;
-        TopStudents = Db.GradeRecords.Count(g => g.Score >= 90);
-        Efficiency = 85;
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _attendanceTotal = await db.AttendanceRecords.CountAsync();
+        _present = await db.AttendanceRecords.CountAsync(a => a.Status == "Present");
+        _attendanceRate = _attendanceTotal == 0 ? 0 : _present * 100.0 / _attendanceTotal;
+
+        var gradeCount = await db.GradeRecords.CountAsync();
+        var passed = await db.GradeRecords.CountAsync(g => g.Score >= 75);
+        _passRate = gradeCount == 0 ? 0 : passed * 100.0 / gradeCount;
+
+        var students = await db.Students.CountAsync(s => s.Status == "Active");
+        var teachers = await db.Teachers.CountAsync(t => t.Status == "Active");
+        _ratio = teachers == 0 ? "—" : $"{(double)students / teachers:0.#} : 1";
+
+        var capacity = await db.ClassRooms.SumAsync(c => (int?)c.Capacity) ?? 0;
+        _occupancy = capacity == 0 ? 0 : students * 100.0 / capacity;
+
+        var byStatus = await db.AttendanceRecords.AsNoTracking()
+            .GroupBy(a => a.Status)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync();
+        _statusLabels = byStatus.Select(x => x.Key).ToList();
+        _statusSeries = byStatus.Select(x => x.Count).ToList();
+
+        var bySubject = await db.GradeRecords.AsNoTracking()
+            .GroupBy(g => g.Subject)
+            .Select(g => new { g.Key, Avg = g.Average(x => x.Score) })
+            .OrderByDescending(x => x.Avg)
+            .ToListAsync();
+        _subjectLabels = bySubject.Select(x => x.Key).ToList();
+        _subjectSeries = bySubject.Select(x => (int)Math.Round(x.Avg)).ToList();
+
+        var pendingBills = await db.PaymentRecords.CountAsync(p => p.Status != "Paid");
+        var totalBills = await db.PaymentRecords.CountAsync();
+        var openTasks = await db.TaskExams.CountAsync(t => t.Status != "Closed");
+        var assets = await db.InventoryItems.SumAsync(i => (int?)i.Quantity) ?? 0;
+        var damaged = await db.InventoryItems.CountAsync(i => i.Condition == "Poor");
+
+        _indicators = new List<Indicator>
+        {
+            new("Rasio siswa terhadap guru", _ratio,
+                students / Math.Max(1, teachers) > 20 ? "Beban mengajar tinggi" : "Dalam batas wajar"),
+            new("Keterisian kelas", $"{_occupancy:0.#}%",
+                _occupancy > 95 ? "Mendekati kapasitas maksimum" : "Masih tersedia ruang"),
+            new("Ketuntasan nilai (KKM 75)", $"{_passRate:0.#}%",
+                _passRate >= 80 ? "Capaian baik" : "Perlu program remedial"),
+            new("Tagihan belum lunas", $"{pendingBills} dari {totalBills}",
+                pendingBills == 0 ? "Seluruh tagihan terselesaikan" : "Perlu penagihan lanjutan"),
+            new("Tugas & ujian aktif", openTasks.ToString(),
+                openTasks == 0 ? "Tidak ada yang berjalan" : "Sedang berlangsung"),
+            new("Total unit aset", assets.ToString(),
+                damaged > 0 ? $"{damaged} jenis aset dalam kondisi rusak" : "Seluruh aset layak pakai")
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_rendered)
+        {
+            return;
+        }
+
+        _rendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "da-status", "pie", _statusLabels, _statusSeries, "Catatan");
+            await JS.InvokeVoidAsync("smsnetChart.render", "da-mapel", "bar", _subjectLabels, _subjectSeries, "Rata-rata");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

@@ -1,0 +1,624 @@
+@page "/asisten"
+@attribute [Authorize]
+@using System.Security.Claims
+@using SMSNet.Services.Assistant
+@inject AssistantService Assistant
+@inject ChatUploadService Uploads
+@inject MarkdownRenderer Markdown
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>@Options.Name — SMSNet</PageTitle>
+
+<div class="sms-chat">
+
+    <!-- Sessions ------------------------------------------------------- -->
+    <aside class="sms-chat__rail @(_railOpen ? "is-open" : "")">
+        <div class="sms-chat__rail-head">
+            <span class="sms-eyebrow">Percakapan</span>
+            <button type="button" class="sms-btn sms-btn--quiet xl:hidden" @onclick="() => _railOpen = false"
+                    aria-label="Tutup daftar percakapan">
+                <Icon Name="close" />
+            </button>
+        </div>
+
+        <button type="button" class="sms-btn sms-btn--primary sms-btn--block" @onclick="NewSessionAsync">
+            <Icon Name="plus" />
+            <span>Percakapan baru</span>
+        </button>
+
+        <ul class="sms-chat__sessions">
+            @foreach (var session in _sessions)
+            {
+                <li>
+                    <button type="button"
+                            class="sms-chat__session @(session.Id == _activeId ? "is-active" : "")"
+                            @onclick="() => SelectSessionAsync(session.Id)">
+                        <span class="sms-chat__session-title">@session.Title</span>
+                        <span class="sms-chat__session-meta">@session.UpdatedAt.ToString("dd MMM, HH:mm")</span>
+                    </button>
+                </li>
+            }
+        </ul>
+
+        @if (_sessions.Count == 0)
+        {
+            <p class="text-xs px-2 py-4" style="color: var(--fg-faint)">
+                Belum ada percakapan. Mulai dengan tombol di atas.
+            </p>
+        }
+    </aside>
+
+    <!-- Thread --------------------------------------------------------- -->
+    <section class="sms-chat__main">
+
+        <header class="sms-chat__head">
+            <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm xl:hidden"
+                    @onclick="() => _railOpen = true" aria-label="Daftar percakapan">
+                <Icon Name="menu" />
+            </button>
+
+            <div class="sms-chat__identity">
+                <span class="sms-chat__avatar" aria-hidden="true">PD</span>
+                <div class="min-w-0">
+                    <p class="font-display font-semibold text-[0.95rem] leading-tight m-0"
+                       style="color: var(--fg-strong)">@Options.Name</p>
+                    <p class="text-[0.72rem] m-0 truncate" style="color: var(--fg-faint)">
+                        @Options.Tagline · @Options.Provider / @Options.ResolveModel()
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm"
+                        @onclick="() => _confirmReset = true" disabled="@(_activeId is null || _messages.Count == 0)"
+                        title="Kosongkan percakapan ini">
+                    <Icon Name="refresh" />
+                    <span class="hidden sm:inline">Reset</span>
+                </button>
+                <button type="button" class="sms-btn sms-btn--danger sms-btn--sm"
+                        @onclick="() => _confirmDelete = true" disabled="@(_activeId is null)"
+                        title="Hapus percakapan ini">
+                    <Icon Name="trash" />
+                    <span class="hidden sm:inline">Hapus</span>
+                </button>
+            </div>
+        </header>
+
+        @if (!_configured)
+        {
+            <div class="sms-chat__notice">
+                <Icon Name="warning" Class="w-4 h-4 flex-none" />
+                <span>@_configurationReason Sampai itu diisi, @Options.Name belum bisa menjawab.</span>
+            </div>
+        }
+
+        <div class="sms-chat__thread" id="chat-thread">
+            @if (_activeId is null)
+            {
+                <EmptyState Icon="chat"
+                            Title="Belum ada percakapan dipilih"
+                            Hint="Buat percakapan baru untuk mulai bertanya tentang data sekolah, jadwal, atau apa pun." />
+            }
+            else if (_messages.Count == 0)
+            {
+                <div class="sms-chat__welcome">
+                    <span class="sms-chat__avatar sms-chat__avatar--lg" aria-hidden="true">PD</span>
+                    <h2 class="font-display text-xl m-0" style="color: var(--fg-strong)">
+                        Selamat datang, saya @Options.Name.
+                    </h2>
+                    <p class="text-sm max-w-md" style="color: var(--fg-muted)">
+                        Tanyakan apa saja seputar sekolah — data siswa, jadwal pelajaran, rekap absensi,
+                        tagihan, sampai pencarian informasi di internet.
+                    </p>
+
+                    <div class="sms-chat__contoh">
+                        @foreach (var group in PromptGroups)
+                        {
+                            <section class="sms-chat__contoh-grup">
+                                <p class="sms-chat__contoh-judul">
+                                    <Icon Name="@group.Icon" Class="w-3.5 h-3.5" />
+                                    <span>@group.Title</span>
+                                </p>
+                                <div class="sms-chat__suggestions">
+                                    @foreach (var prompt in group.Prompts)
+                                    {
+                                        <button type="button" class="sms-chat__suggestion"
+                                                @onclick="() => UseSuggestionAsync(prompt)">@prompt</button>
+                                    }
+                                </div>
+                            </section>
+                        }
+                    </div>
+
+                    <p class="text-xs mt-4 m-0 max-w-lg" style="color: var(--fg-faint)">
+                        Pak Dedi membaca data sekolah yang sebenarnya lewat @FunctionCount fungsi —
+                        jadi angkanya diambil dari basis data, bukan dikarang.
+                    </p>
+                </div>
+            }
+            else
+            {
+                @foreach (var message in _messages)
+                {
+                    <article class="sms-msg sms-msg--@message.Role @(message.IsError ? "is-error" : "")">
+                        <div class="sms-msg__gutter" aria-hidden="true">
+                            @if (message.Role == "assistant")
+                            {
+                                <span class="sms-chat__avatar sms-chat__avatar--sm">PD</span>
+                            }
+                            else
+                            {
+                                <span class="sms-avatar">@_initials</span>
+                            }
+                        </div>
+
+                        <div class="sms-msg__body">
+                            <div class="sms-msg__meta">
+                                <span class="font-semibold" style="color: var(--fg-strong)">
+                                    @(message.Role == "assistant" ? Options.Name : "Anda")
+                                </span>
+                                <time datetime="@message.CreatedAt.ToString("o")">
+                                    @message.CreatedAt.ToString("HH:mm")
+                                </time>
+                            </div>
+
+                            @if (message.Role == "assistant")
+                            {
+                                <div class="sms-md">@((MarkupString)Markdown.ToHtml(message.Content))</div>
+                            }
+                            else
+                            {
+                                <p class="sms-msg__text">@message.Content</p>
+                            }
+
+                            @if (message.Attachments.Count > 0)
+                            {
+                                <div class="sms-msg__files">
+                                    @foreach (var file in message.Attachments)
+                                    {
+                                        if (file.Kind == AttachmentKind.Image)
+                                        {
+                                            <a href="@file.Url" target="_blank" rel="noopener">
+                                                <img src="@file.Url" alt="@file.FileName" class="sms-msg__image" />
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="@file.Url" target="_blank" rel="noopener" class="sms-chip">
+                                                <Icon Name="file" Class="w-3.5 h-3.5" />
+                                                <span>@file.FileName</span>
+                                            </a>
+                                        }
+                                    }
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(message.ToolsUsed))
+                            {
+                                <p class="sms-msg__tools">
+                                    <Icon Name="sparkle" Class="w-3 h-3" />
+                                    <span>Alat yang dipakai: @message.ToolsUsed</span>
+                                </p>
+                            }
+                        </div>
+                    </article>
+                }
+
+                @if (_busy)
+                {
+                    <article class="sms-msg sms-msg--assistant">
+                        <div class="sms-msg__gutter" aria-hidden="true">
+                            <span class="sms-chat__avatar sms-chat__avatar--sm">PD</span>
+                        </div>
+                        <div class="sms-msg__body">
+                            <div class="sms-typing" role="status" aria-label="@Options.Name sedang mengetik">
+                                <span></span><span></span><span></span>
+                            </div>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
+
+        <!-- Composer -->
+        <footer class="sms-chat__composer">
+            @if (_pending.Count > 0)
+            {
+                <div class="sms-chat__attachments">
+                    @foreach (var file in _pending)
+                    {
+                        <span class="sms-chip">
+                            <Icon Name="@(file.Kind == AttachmentKind.Image ? "image" : "file")" Class="w-3.5 h-3.5" />
+                            <span class="truncate max-w-[12rem]">@file.FileName</span>
+                            <span style="color: var(--fg-faint)">@ChatUploadService.Human(file.SizeBytes)</span>
+                            <button type="button" class="sms-chip__x" @onclick="() => _pending.Remove(file)"
+                                    aria-label="Hapus lampiran @file.FileName">×</button>
+                        </span>
+                    }
+                </div>
+            }
+
+            <div class="sms-chat__input-row">
+                <label class="sms-btn sms-btn--ghost sms-chat__attach"
+                       title="Lampirkan gambar atau dokumen">
+                    <Icon Name="paperclip" />
+                    <InputFile OnChange="OnFilesSelectedAsync" multiple class="sr-only"
+                               accept="@AcceptTypes" disabled="@(_busy || _activeId is null)" />
+                </label>
+
+                <textarea id="chat-input"
+                          class="sms-chat__textarea"
+                          rows="1"
+                          placeholder="@Placeholder"
+                          disabled="@(_busy || _activeId is null)"
+                          @bind="_draft"
+                          @bind:event="oninput"
+                          @onkeydown="OnKeyDownAsync"></textarea>
+
+                <button type="button" class="sms-btn sms-btn--accent sms-chat__send"
+                        @onclick="SendAsync"
+                        disabled="@(_busy || _activeId is null || (string.IsNullOrWhiteSpace(_draft) && _pending.Count == 0))"
+                        aria-label="Kirim pesan">
+                    <Icon Name="send" />
+                </button>
+            </div>
+
+            <p class="sms-chat__hint">
+                Enter untuk kirim · Shift+Enter baris baru · @Options.Name dapat keliru, periksa informasi penting.
+            </p>
+        </footer>
+    </section>
+</div>
+
+@if (_railOpen)
+{
+    <div class="sms-scrim xl:hidden" @onclick="() => _railOpen = false" aria-hidden="true"></div>
+}
+
+<ConfirmDialog @bind-Open="_confirmDelete"
+               Title="Hapus percakapan"
+               Message="Seluruh pesan dalam percakapan ini akan dihapus permanen."
+               Detail="@_activeTitle"
+               ConfirmLabel="Hapus"
+               OnConfirm="DeleteSessionAsync" />
+
+<ConfirmDialog @bind-Open="_confirmReset"
+               Title="Reset percakapan"
+               Message="Semua pesan dikosongkan, tetapi percakapan ini tetap ada."
+               Detail="@_activeTitle"
+               ConfirmLabel="Reset"
+               Destructive="false"
+               OnConfirm="ResetSessionAsync" />
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private sealed record PromptGroup(string Title, string Icon, string[] Prompts);
+
+    /// <summary>
+    /// Example prompts, grouped so the categories show what the assistant can actually
+    /// reach. Each group maps to a plugin, and every prompt here is answerable from the
+    /// seeded data — a suggestion that returns nothing teaches the wrong lesson.
+    /// </summary>
+    private static readonly PromptGroup[] PromptGroups =
+    {
+        new("Data sekolah", "database", new[]
+        {
+            "Ada berapa siswa aktif saat ini?",
+            "Cari siswa di kelas 8A",
+            "Siapa saja guru yang mengampu Matematika?",
+            "Tampilkan daftar kelas dan wali kelasnya"
+        }),
+
+        new("Jadwal & akademik", "calendar", new[]
+        {
+            "Tampilkan jadwal pelajaran kelas 8A hari Senin",
+            "Bagaimana rekap kehadiran 30 hari terakhir?",
+            "Berapa rata-rata nilai Matematika?",
+            "Tugas dan ujian apa yang tenggatnya paling dekat?"
+        }),
+
+        new("Keuangan & operasional", "coins", new[]
+        {
+            "Berapa total tunggakan SPP saat ini?",
+            "Tampilkan pembayaran yang masih berstatus Pending",
+            "Aset apa saja yang kondisinya rusak?"
+        }),
+
+        new("Hitung & waktu", "activity", new[]
+        {
+            "Hitung 15% dari 2.500.000",
+            "Sekarang tahun ajaran dan semester berapa?",
+            "Berapa hari lagi menuju 17 Agustus 2026?"
+        }),
+
+        new("Cari di internet", "search", new[]
+        {
+            "Cari kabar terbaru tentang Kurikulum Merdeka",
+            "Apa saja hari libur nasional Indonesia tahun ini?"
+        }),
+
+        new("Analisis gabungan", "sparkle", new[]
+        {
+            "Bandingkan kehadiran siswa dan guru bulan ini, sajikan sebagai tabel",
+            "Siswa mana yang nilainya di bawah KKM sekaligus menunggak pembayaran?",
+            "Ringkas kondisi sekolah hari ini dalam 5 poin"
+        })
+    };
+
+    private const int FunctionCount = 24;
+
+    private readonly List<PendingAttachment> _pending = new();
+    private List<ChatSession> _sessions = new();
+    private List<ChatMessage> _messages = new();
+
+    private AssistantUserContext _user = new();
+    private string _initials = "?";
+    private int? _activeId;
+    private string _draft = string.Empty;
+    private bool _busy;
+    private bool _railOpen;
+    private bool _confirmDelete;
+    private bool _confirmReset;
+    private bool _configured = true;
+    private string _configurationReason = string.Empty;
+    private bool _shouldScroll;
+
+    private CancellationTokenSource? _cts;
+
+    private AssistantOptions Options => Assistant.Options;
+
+    private string _activeTitle => _sessions.FirstOrDefault(s => s.Id == _activeId)?.Title ?? string.Empty;
+
+    private string Placeholder => _activeId is null
+        ? "Buat percakapan baru untuk mulai bertanya…"
+        : $"Tanya {Options.Name} tentang sekolah…";
+
+    private string AcceptTypes =>
+        string.Join(",", Options.Uploads.AllowedImageTypes.Concat(Options.Uploads.AllowedDocumentTypes));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await ResolveUserAsync();
+        _initials = Initials(_user.DisplayName);
+        _configured = Options.IsConfigured(out _configurationReason);
+
+        if (string.IsNullOrEmpty(_user.UserId))
+        {
+            return;
+        }
+
+        _sessions = await Assistant.ListSessionsAsync(_user.UserId);
+
+        if (_sessions.Count > 0)
+        {
+            await SelectSessionAsync(_sessions[0].Id);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_shouldScroll)
+        {
+            return;
+        }
+
+        _shouldScroll = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChat.scrollToBottom", "chat-thread", false);
+            await JS.InvokeVoidAsync("smsnetChat.enhanceCode", "chat-thread");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task<AssistantUserContext> ResolveUserAsync()
+    {
+        if (AuthState is null)
+        {
+            return new AssistantUserContext();
+        }
+
+        var principal = (await AuthState).User;
+
+        return new AssistantUserContext
+        {
+            UserId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty,
+            DisplayName = principal.FindFirst(AppUserClaimsPrincipalFactory.FullNameClaim)?.Value
+                          ?? principal.Identity?.Name
+                          ?? "Pengguna",
+            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray()
+        };
+    }
+
+    private async Task NewSessionAsync()
+    {
+        if (string.IsNullOrEmpty(_user.UserId))
+        {
+            return;
+        }
+
+        var session = await Assistant.CreateSessionAsync(_user.UserId);
+        _sessions.Insert(0, session);
+        _activeId = session.Id;
+        _messages = new List<ChatMessage>();
+        _pending.Clear();
+        _railOpen = false;
+        _shouldScroll = true;
+    }
+
+    private async Task SelectSessionAsync(int sessionId)
+    {
+        _activeId = sessionId;
+        _messages = await Assistant.GetMessagesAsync(_user.UserId, sessionId);
+        _pending.Clear();
+        _railOpen = false;
+        _shouldScroll = true;
+    }
+
+    private async Task DeleteSessionAsync()
+    {
+        if (_activeId is not { } id)
+        {
+            return;
+        }
+
+        if (await Assistant.DeleteSessionAsync(_user.UserId, id))
+        {
+            _sessions.RemoveAll(s => s.Id == id);
+            _activeId = null;
+            _messages.Clear();
+            Toasts.Success("Percakapan dihapus.");
+
+            if (_sessions.Count > 0)
+            {
+                await SelectSessionAsync(_sessions[0].Id);
+            }
+        }
+    }
+
+    private async Task ResetSessionAsync()
+    {
+        if (_activeId is not { } id)
+        {
+            return;
+        }
+
+        if (await Assistant.ResetSessionAsync(_user.UserId, id))
+        {
+            _messages.Clear();
+            var session = _sessions.FirstOrDefault(s => s.Id == id);
+            if (session is not null)
+            {
+                session.Title = "Percakapan baru";
+            }
+            Toasts.Success("Percakapan dikosongkan.");
+        }
+    }
+
+    private async Task OnFilesSelectedAsync(InputFileChangeEventArgs e)
+    {
+        var room = Options.Uploads.MaxFilesPerMessage - _pending.Count;
+
+        if (room <= 0)
+        {
+            Toasts.Warn($"Maksimal {Options.Uploads.MaxFilesPerMessage} lampiran per pesan.");
+            return;
+        }
+
+        foreach (var file in e.GetMultipleFiles(Options.Uploads.MaxFilesPerMessage).Take(room))
+        {
+            var outcome = await Uploads.SaveAsync(file);
+
+            if (outcome.Attachment is not null)
+            {
+                _pending.Add(outcome.Attachment);
+            }
+            else if (outcome.Error is not null)
+            {
+                Toasts.Error(outcome.Error);
+            }
+        }
+    }
+
+    private async Task UseSuggestionAsync(string suggestion)
+    {
+        _draft = suggestion;
+        await SendAsync();
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        // Enter sends; Shift+Enter is a newline, which is what a chat surface trains.
+        if (e.Key == "Enter" && !e.ShiftKey && !e.CtrlKey && !e.AltKey)
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (_busy || _activeId is not { } sessionId)
+        {
+            return;
+        }
+
+        var prompt = _draft?.Trim() ?? string.Empty;
+
+        if (prompt.Length == 0 && _pending.Count == 0)
+        {
+            return;
+        }
+
+        var attachments = _pending.ToList();
+
+        // Show the user's turn immediately — waiting for the round trip to render it
+        // makes the interface feel like it dropped the message.
+        _messages.Add(new ChatMessage
+        {
+            Role = "user",
+            Content = prompt,
+            CreatedAt = SchoolClock.LocalNow,
+            Attachments = attachments.Select(a => new ChatAttachment
+            {
+                FileName = a.FileName,
+                ContentType = a.ContentType,
+                Url = a.Url,
+                SizeBytes = a.SizeBytes,
+                Kind = a.Kind
+            }).ToList()
+        });
+
+        _draft = string.Empty;
+        _pending.Clear();
+        _busy = true;
+        _shouldScroll = true;
+
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            var reply = await Assistant.SendAsync(_user, sessionId, prompt, attachments, _cts.Token);
+            _messages.Add(reply);
+
+            // Refresh the rail so the auto-generated title and ordering catch up.
+            _sessions = await Assistant.ListSessionsAsync(_user.UserId);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer turn; nothing to report.
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal mengirim pesan: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            _shouldScroll = true;
+        }
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+        };
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

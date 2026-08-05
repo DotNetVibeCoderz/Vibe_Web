@@ -1,83 +1,190 @@
 @page "/"
 @attribute [Authorize]
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Administrasi</h1>
+<PageTitle>Dashboard — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-    <div class="sms-card">
-        <p class="text-sm text-slate-500">Total Siswa</p>
-        <p class="text-3xl font-semibold">@StudentCount</p>
+<PageHeader Eyebrow="Ringkasan" Title="Dashboard"
+            Subtitle="@($"Kondisi sekolah per {SchoolClock.Today:dd MMMM yyyy}")">
+    <Actions>
+        <a href="/asisten" class="sms-btn sms-btn--accent">
+            <Icon Name="sparkle" /><span>Tanya Pak Dedi</span>
+        </a>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Siswa Aktif" Value="@_activeStudents.ToString()"
+              Meta="@($"dari {_totalStudents} terdaftar")" Icon="users" Tone="brand" />
+    <StatTile Label="Guru Aktif" Value="@_teachers.ToString()"
+              Meta="@($"{_subjects} mata pelajaran")" Icon="teacher" />
+    <StatTile Label="Kehadiran Hari Ini" Value="@($"{_attendanceRate:0.#}%")"
+              Meta="@($"{_presentToday} dari {_attendanceToday} catatan")" Icon="check"
+              Tone="@(_attendanceRate >= 90 ? "good" : "warn")" />
+    <StatTile Label="Tunggakan" Value="@($"Rp{_outstanding:N0}")"
+              Meta="@($"{_pendingBills} tagihan belum lunas")" Icon="coins"
+              Tone="@(_outstanding > 0 ? "warn" : "good")" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3 mb-6">
+    <div class="sms-card lg:col-span-2">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Tren Kehadiran 14 Hari</h2>
+            <span class="sms-eyebrow">Akademik</span>
+        </div>
+        <div style="height: 16rem"><canvas id="chart-kehadiran"></canvas></div>
     </div>
+
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Total Guru</p>
-        <p class="text-3xl font-semibold">@TeacherCount</p>
-    </div>
-    <div class="sms-card">
-        <p class="text-sm text-slate-500">Kelas Aktif</p>
-        <p class="text-3xl font-semibold">@ClassCount</p>
-    </div>
-    <div class="sms-card">
-        <p class="text-sm text-slate-500">Transaksi SPP</p>
-        <p class="text-3xl font-semibold">@PaymentCount</p>
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Sebaran Nilai</h2>
+        </div>
+        <div style="height: 16rem"><canvas id="chart-nilai"></canvas></div>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
+<div class="grid gap-6 lg:grid-cols-2">
     <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Agenda Akademik</h2>
-        <ul class="space-y-3">
-            @foreach (var item in UpcomingEvents)
-            {
-                <li class="flex items-center justify-between">
-                    <div>
-                        <p class="font-medium">@item.Title</p>
-                        <p class="text-xs text-slate-500">@item.Location</p>
-                    </div>
-                    <span class="sms-badge">@item.Date.ToString("dd MMM")</span>
-                </li>
-            }
-        </ul>
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Agenda Mendatang</h2>
+            <a href="/events" class="sms-btn sms-btn--quiet sms-btn--sm">Lihat semua</a>
+        </div>
+
+        @if (_events.Count == 0)
+        {
+            <EmptyState Icon="flag" Title="Tidak ada agenda mendatang"
+                        Hint="Kegiatan yang dijadwalkan akan tampil di sini." />
+        }
+        else
+        {
+            <ul class="list-none m-0 p-0 space-y-3">
+                @foreach (var item in _events)
+                {
+                    <li class="flex items-center justify-between gap-3 pb-3 border-b last:border-0"
+                        style="border-color: var(--rule-soft)">
+                        <div class="min-w-0">
+                            <p class="m-0 font-medium truncate" style="color: var(--fg-strong)">@item.Title</p>
+                            <p class="m-0 text-xs" style="color: var(--fg-faint)">@item.Location · @item.Type</p>
+                        </div>
+                        <span class="sms-badge @(item.Date.Date == SchoolClock.Today ? "sms-badge--warn" : "")">
+                            @item.Date.ToString("dd MMM")
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
     </div>
+
     <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Notifikasi Terbaru</h2>
-        <ul class="space-y-3">
-            @foreach (var note in LatestNotifications)
-            {
-                <li>
-                    <p class="font-medium">@note.Title</p>
-                    <p class="text-xs text-slate-500">@note.Message</p>
-                </li>
-            }
-        </ul>
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Notifikasi Terbaru</h2>
+            <a href="/parent/notifications" class="sms-btn sms-btn--quiet sms-btn--sm">Lihat semua</a>
+        </div>
+
+        @if (_notifications.Count == 0)
+        {
+            <EmptyState Icon="bell" Title="Belum ada notifikasi" />
+        }
+        else
+        {
+            <ul class="list-none m-0 p-0 space-y-3">
+                @foreach (var note in _notifications)
+                {
+                    <li class="pb-3 border-b last:border-0" style="border-color: var(--rule-soft)">
+                        <div class="flex items-start justify-between gap-3">
+                            <p class="m-0 font-medium" style="color: var(--fg-strong)">@note.Title</p>
+                            <span class="text-xs tabular flex-none" style="color: var(--fg-faint)">
+                                @note.Date.ToString("dd MMM")
+                            </span>
+                        </div>
+                        <p class="m-0 text-sm mt-0.5" style="color: var(--fg-muted)">@note.Message</p>
+                        <span class="sms-badge mt-2">@note.Audience</span>
+                    </li>
+                }
+            </ul>
+        }
     </div>
 </div>
 
 @code {
-    private int StudentCount { get; set; }
-    private int TeacherCount { get; set; }
-    private int ClassCount { get; set; }
-    private int PaymentCount { get; set; }
-    private List<EventItem> UpcomingEvents { get; set; } = new();
-    private List<NotificationItem> LatestNotifications { get; set; } = new();
+    private int _totalStudents, _activeStudents, _teachers, _subjects;
+    private int _attendanceToday, _presentToday, _pendingBills;
+    private double _attendanceRate;
+    private decimal _outstanding;
 
-    protected override Task OnInitializedAsync()
+    private List<EventItem> _events = new();
+    private List<NotificationItem> _notifications = new();
+
+    private List<string> _attendanceLabels = new();
+    private List<int> _attendanceSeries = new();
+    private List<int> _gradeBuckets = new();
+
+    private bool _chartsRendered;
+
+    protected override async Task OnInitializedAsync()
     {
-        StudentCount = Db.Students.Count();
-        TeacherCount = Db.Teachers.Count();
-        ClassCount = Db.ClassRooms.Count();
-        PaymentCount = Db.PaymentRecords.Count();
+        await using var db = await DbFactory.CreateDbContextAsync();
 
-        UpcomingEvents = Db.Events
-            .OrderBy(e => e.Date)
-            .Take(4)
-            .ToList();
+        _totalStudents = await db.Students.CountAsync();
+        _activeStudents = await db.Students.CountAsync(s => s.Status == "Active");
+        _teachers = await db.Teachers.CountAsync(t => t.Status == "Active");
+        _subjects = await db.Subjects.CountAsync();
 
-        LatestNotifications = Db.Notifications
-            .OrderByDescending(n => n.Date)
-            .Take(4)
-            .ToList();
+        var today = SchoolClock.Today;
+        _attendanceToday = await db.AttendanceRecords.CountAsync(a => a.Date >= today && a.Date < today.AddDays(1));
+        _presentToday = await db.AttendanceRecords
+            .CountAsync(a => a.Date >= today && a.Date < today.AddDays(1) && a.Status == "Present");
+        _attendanceRate = _attendanceToday == 0 ? 0 : _presentToday * 100.0 / _attendanceToday;
 
-        return Task.CompletedTask;
+        _pendingBills = await db.PaymentRecords.CountAsync(p => p.Status != "Paid");
+        _outstanding = await db.PaymentRecords.Where(p => p.Status != "Paid")
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+        _events = await db.Events.AsNoTracking()
+            .Where(e => e.Date >= today).OrderBy(e => e.Date).Take(5).ToListAsync();
+
+        _notifications = await db.Notifications.AsNoTracking()
+            .OrderByDescending(n => n.Date).Take(5).ToListAsync();
+
+        // Attendance over the last fortnight.
+        for (var offset = 13; offset >= 0; offset--)
+        {
+            var day = today.AddDays(-offset);
+            _attendanceLabels.Add(day.ToString("dd/MM"));
+            _attendanceSeries.Add(await db.AttendanceRecords
+                .CountAsync(a => a.Date >= day && a.Date < day.AddDays(1) && a.Status == "Present"));
+        }
+
+        _gradeBuckets = new List<int>
+        {
+            await db.GradeRecords.CountAsync(g => g.Score < 70),
+            await db.GradeRecords.CountAsync(g => g.Score >= 70 && g.Score < 80),
+            await db.GradeRecords.CountAsync(g => g.Score >= 80 && g.Score < 90),
+            await db.GradeRecords.CountAsync(g => g.Score >= 90)
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Charts are drawn once; re-rendering them on every pass would restart the
+        // entry animation on each keystroke elsewhere on the page.
+        if (_chartsRendered)
+        {
+            return;
+        }
+
+        _chartsRendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "chart-kehadiran", "line",
+                _attendanceLabels, _attendanceSeries, "Hadir");
+
+            await JS.InvokeVoidAsync("smsnetChart.render", "chart-nilai", "doughnut",
+                new[] { "< 70", "70–79", "80–89", "90+" }, _gradeBuckets, "Jumlah siswa");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 }

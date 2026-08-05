@@ -2,75 +2,276 @@
 @attribute [Authorize]
 @inject UserManager<AppUser> UserManager
 @inject AuthenticationStateProvider AuthStateProvider
+@inject AuditService Audit
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Edit Profile</h1>
+<PageTitle>Profil Saya — SMSNet</PageTitle>
 
-<div class="sms-card max-w-xl">
-    @if (IsLoading)
-    {
-        <p>Loading...</p>
-    }
-    else
-    {
-        <EditForm Model="ProfileModel" OnValidSubmit="HandleSave">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
+<PageHeader Eyebrow="Akun" Title="Profil Saya"
+            Subtitle="Perbarui data diri dan kata sandi akun Anda." />
 
-            <div class="grid gap-4">
+@if (_loading)
+{
+    <div class="grid gap-4 lg:grid-cols-3">
+        <div class="sms-skeleton h-48"></div>
+        <div class="sms-skeleton h-48 lg:col-span-2"></div>
+    </div>
+}
+else
+{
+    <div class="grid gap-6 lg:grid-cols-3">
+        <!-- Identity -->
+        <div class="sms-card">
+            <div class="flex flex-col items-center text-center gap-3">
+                <span class="sms-avatar" style="width:4rem;height:4rem;font-size:1.25rem">@_initials</span>
                 <div>
-                    <label class="text-sm font-medium">Full Name</label>
-                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="ProfileModel.FullName" />
+                    <p class="font-display font-semibold text-lg m-0" style="color: var(--fg-strong)">
+                        @_profile.FullName
+                    </p>
+                    <p class="mono text-xs m-0" style="color: var(--fg-faint)">@_userName</p>
                 </div>
-                <div>
-                    <label class="text-sm font-medium">Phone</label>
-                    <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="ProfileModel.Phone" />
+                <div class="flex flex-wrap justify-center gap-1.5">
+                    @foreach (var role in _roles)
+                    {
+                        <span class="sms-badge sms-badge--info">@RoleLabel(role)</span>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Details -->
+        <div class="sms-card lg:col-span-2">
+            <div class="sms-card__head"><h2 class="sms-card__title">Data Diri</h2></div>
+
+            <EditForm Model="_profile" OnValidSubmit="SaveProfileAsync">
+                <DataAnnotationsValidator />
+
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field md:col-span-2">
+                        <label class="sms-label">Nama lengkap</label>
+                        <InputText class="sms-input" @bind-Value="_profile.FullName" />
+                        <ValidationMessage For="() => _profile.FullName" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Email</label>
+                        <InputText type="email" class="sms-input" @bind-Value="_profile.Email" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Telepon</label>
+                        <InputText class="sms-input" @bind-Value="_profile.Phone" />
+                    </div>
+                </div>
+
+                <div class="flex justify-end mt-5">
+                    <button type="submit" class="sms-btn sms-btn--primary" disabled="@_savingProfile">
+                        @(_savingProfile ? "Menyimpan…" : "Simpan Perubahan")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+
+    <div class="sms-card mt-6 max-w-2xl">
+        <div class="sms-card__head"><h2 class="sms-card__title">Ubah Kata Sandi</h2></div>
+
+        @if (_passwordErrors.Count > 0)
+        {
+            <ul class="validation-errors">
+                @foreach (var error in _passwordErrors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+
+        <EditForm Model="_password" OnValidSubmit="ChangePasswordAsync">
+            <DataAnnotationsValidator />
+
+            <div class="grid gap-4 md:grid-cols-3">
+                <div class="sms-field">
+                    <label class="sms-label">Kata sandi lama</label>
+                    <InputText type="password" class="sms-input" @bind-Value="_password.Current"
+                               autocomplete="current-password" />
+                    <ValidationMessage For="() => _password.Current" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Kata sandi baru</label>
+                    <InputText type="password" class="sms-input" @bind-Value="_password.New"
+                               autocomplete="new-password" />
+                    <ValidationMessage For="() => _password.New" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Ulangi kata sandi baru</label>
+                    <InputText type="password" class="sms-input" @bind-Value="_password.Confirm"
+                               autocomplete="new-password" />
+                    <ValidationMessage For="() => _password.Confirm" />
                 </div>
             </div>
 
-            <button type="submit" class="mt-6 px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
+            <div class="flex justify-end mt-5">
+                <button type="submit" class="sms-btn sms-btn--primary" disabled="@_savingPassword">
+                    @(_savingPassword ? "Memproses…" : "Ubah Kata Sandi")
+                </button>
+            </div>
         </EditForm>
-    }
-
-    @if (!string.IsNullOrWhiteSpace(Message))
-    {
-        <p class="mt-4 text-emerald-500">@Message</p>
-    }
-</div>
+    </div>
+}
 
 @code {
-    private ProfileInput ProfileModel { get; set; } = new();
-    private bool IsLoading { get; set; } = true;
-    private string? Message { get; set; }
+    private readonly ProfileInput _profile = new();
+    private readonly PasswordInput _password = new();
+    private readonly List<string> _passwordErrors = new();
+
+    private string _userName = string.Empty;
+    private string _initials = "?";
+    private string[] _roles = Array.Empty<string>();
+
+    private bool _loading = true;
+    private bool _savingProfile;
+    private bool _savingPassword;
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
-        if (user != null)
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(state.User);
+
+        if (user is not null)
         {
-            ProfileModel.FullName = user.FullName;
-            ProfileModel.Phone = user.PhoneNumber;
+            _profile.FullName = user.FullName;
+            _profile.Email = user.Email;
+            _profile.Phone = user.PhoneNumber;
+            _userName = user.UserName ?? string.Empty;
+            _initials = Initials(user.FullName);
+            _roles = (await UserManager.GetRolesAsync(user)).ToArray();
         }
-        IsLoading = false;
+
+        _loading = false;
     }
 
-    private async Task HandleSave()
+    private async Task SaveProfileAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
-        if (user != null)
+        _savingProfile = true;
+
+        try
         {
-            user.FullName = ProfileModel.FullName;
-            user.PhoneNumber = ProfileModel.Phone;
-            await UserManager.UpdateAsync(user);
-            Message = "Profil berhasil diperbarui.";
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = await UserManager.GetUserAsync(state.User);
+
+            if (user is null)
+            {
+                Toasts.Error("Sesi tidak ditemukan. Silakan masuk kembali.");
+                return;
+            }
+
+            user.FullName = _profile.FullName;
+            user.Email = _profile.Email;
+            user.PhoneNumber = _profile.Phone;
+
+            var result = await UserManager.UpdateAsync(user);
+
+            if (!result.Succeeded)
+            {
+                Toasts.Error(string.Join(" ", result.Errors.Select(e => e.Description)));
+                return;
+            }
+
+            _initials = Initials(user.FullName);
+            await Audit.RecordUpdateAsync("profil", user.UserName ?? string.Empty);
+
+            // The display name lives in the auth cookie, so it only refreshes on
+            // the next sign-in — say so rather than leaving a stale header unexplained.
+            Toasts.Success("Profil diperbarui. Nama di bilah atas ikut berubah setelah Anda masuk kembali.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal menyimpan profil: {ex.Message}");
+        }
+        finally
+        {
+            _savingProfile = false;
         }
     }
 
-    public class ProfileInput
+    private async Task ChangePasswordAsync()
     {
-        [Required]
+        _savingPassword = true;
+        _passwordErrors.Clear();
+
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = await UserManager.GetUserAsync(state.User);
+
+            if (user is null)
+            {
+                _passwordErrors.Add("Sesi tidak ditemukan. Silakan masuk kembali.");
+                return;
+            }
+
+            var result = await UserManager.ChangePasswordAsync(user, _password.Current, _password.New);
+
+            if (!result.Succeeded)
+            {
+                _passwordErrors.AddRange(result.Errors.Select(e => e.Description));
+                return;
+            }
+
+            _password.Current = _password.New = _password.Confirm = string.Empty;
+            await Audit.WriteAsync("Ubah kata sandi", user.UserName);
+            Toasts.Success("Kata sandi berhasil diubah.");
+        }
+        catch (Exception ex)
+        {
+            _passwordErrors.Add($"Gagal mengubah kata sandi: {ex.Message}");
+        }
+        finally
+        {
+            _savingPassword = false;
+        }
+    }
+
+    private static string RoleLabel(string role) => role switch
+    {
+        AppRoles.Admin => "Admin",
+        AppRoles.Guru => "Guru",
+        AppRoles.Siswa => "Siswa",
+        AppRoles.OrangTua => "Orang Tua",
+        _ => role
+    };
+
+    private static string Initials(string name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+        };
+    }
+
+    public sealed class ProfileInput
+    {
+        [Required(ErrorMessage = "Nama lengkap wajib diisi.")]
         public string FullName { get; set; } = string.Empty;
+
+        [EmailAddress(ErrorMessage = "Format email tidak valid.")]
+        public string? Email { get; set; }
+
         public string? Phone { get; set; }
+    }
+
+    public sealed class PasswordInput
+    {
+        [Required(ErrorMessage = "Kata sandi lama wajib diisi.")]
+        public string Current { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Kata sandi baru wajib diisi.")]
+        [MinLength(6, ErrorMessage = "Kata sandi minimal 6 karakter.")]
+        public string New { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Ulangi kata sandi baru.")]
+        [Compare(nameof(New), ErrorMessage = "Kedua kata sandi tidak sama.")]
+        public string Confirm { get; set; } = string.Empty;
     }
 }

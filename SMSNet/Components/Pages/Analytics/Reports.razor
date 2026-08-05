@@ -1,22 +1,221 @@
 @page "/analytics/reports"
 @attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Custom Reports</h1>
+<PageTitle>Custom Reports — SMSNet</PageTitle>
 
-<div class="sms-card">
-    <p class="text-sm text-slate-500">Buat laporan sesuai kebutuhan akademik, keuangan, dan SDM.</p>
-    <div class="mt-4 grid gap-4 md:grid-cols-3">
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Laporan Akademik</p>
-            <p class="text-xs text-slate-500">Rangkuman nilai dan absensi.</p>
+<PageHeader Eyebrow="Analitik & Laporan" Title="Custom Reports"
+            Subtitle="Susun laporan sesuai kebutuhan, lalu unduh sebagai CSV." />
+
+<div class="sms-card mb-6">
+    <div class="sms-card__head"><h2 class="sms-card__title">Pilih Sumber Data</h2></div>
+
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="src">Sumber</label>
+            <select id="src" class="sms-select" @bind="_source" @bind:after="LoadAsync">
+                @foreach (var source in Sources)
+                {
+                    <option value="@source.Key">@source.Label</option>
+                }
+            </select>
         </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Laporan Keuangan</p>
-            <p class="text-xs text-slate-500">Pendapatan, pengeluaran, dan cashflow.</p>
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Saring baris</label>
+            <input id="cari" class="sms-input" placeholder="Kata kunci…" @bind="_filter" @bind:event="oninput" />
         </div>
-        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-            <p class="font-medium">Laporan SDM</p>
-            <p class="text-xs text-slate-500">Kinerja guru dan staff.</p>
+        <div class="sms-field">
+            <label class="sms-label" for="limit">Jumlah baris</label>
+            <select id="limit" class="sms-select" @bind="_limit">
+                <option value="25">25 baris</option>
+                <option value="50">50 baris</option>
+                <option value="100">100 baris</option>
+                <option value="1000">Semua</option>
+            </select>
+        </div>
+        <div class="sms-field justify-end">
+            <button type="button" class="sms-btn sms-btn--primary" @onclick="ExportAsync">
+                <Icon Name="download" /><span>Unduh CSV</span>
+            </button>
         </div>
     </div>
 </div>
+
+<div class="sms-card">
+    <div class="sms-card__head">
+        <h2 class="sms-card__title">@CurrentSource.Label</h2>
+        <span class="text-xs" style="color: var(--fg-faint)">@FilteredRows.Count baris cocok</span>
+    </div>
+
+    @if (_headers.Count == 0)
+    {
+        <EmptyState Icon="layers" Title="Belum ada data pada sumber ini" />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        @foreach (var header in _headers)
+                        {
+                            <th>@header</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredRows.Take(_limit))
+                    {
+                        <tr>
+                            @foreach (var cell in row)
+                            {
+                                <td>@cell</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Source(string Key, string Label);
+
+    private static readonly Source[] Sources =
+    {
+        new("siswa", "Data Siswa"),
+        new("guru", "Data Guru"),
+        new("nilai", "Nilai Siswa"),
+        new("absensi", "Kehadiran"),
+        new("keuangan", "Transaksi Keuangan"),
+        new("jadwal", "Jadwal Pelajaran"),
+        new("inventaris", "Inventaris"),
+        new("kegiatan", "Kegiatan Sekolah")
+    };
+
+    private string _source = "siswa";
+    private string _filter = string.Empty;
+    private int _limit = 25;
+
+    private List<string> _headers = new();
+    private List<string[]> _rows = new();
+
+    private Source CurrentSource => Sources.First(s => s.Key == _source);
+
+    private List<string[]> FilteredRows => string.IsNullOrWhiteSpace(_filter)
+        ? _rows
+        : _rows.Where(r => r.Any(c => c.Contains(_filter, StringComparison.OrdinalIgnoreCase))).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        switch (_source)
+        {
+            case "guru":
+                _headers = new() { "Nama", "Mata Pelajaran", "Email", "Telepon", "Status" };
+                _rows = (await db.Teachers.AsNoTracking().OrderBy(t => t.FullName).ToListAsync())
+                    .Select(t => new[] { t.FullName, t.Subject ?? "—", t.Email ?? "—", t.Phone ?? "—", t.Status })
+                    .ToList();
+                break;
+
+            case "nilai":
+                _headers = new() { "Siswa", "Mata Pelajaran", "Nilai", "Ketuntasan", "Catatan" };
+                _rows = (await db.GradeRecords.AsNoTracking().OrderBy(g => g.StudentName).ToListAsync())
+                    .Select(g => new[]
+                    {
+                        g.StudentName, g.Subject, g.Score.ToString("0.##"),
+                        g.Score >= 75 ? "Tuntas" : "Belum tuntas", g.Notes ?? "—"
+                    }).ToList();
+                break;
+
+            case "absensi":
+                _headers = new() { "Nama", "Peran", "Tanggal", "Status", "Metode" };
+                _rows = (await db.AttendanceRecords.AsNoTracking().OrderByDescending(a => a.Date).ToListAsync())
+                    .Select(a => new[] { a.PersonName, a.Role, a.Date.ToString("yyyy-MM-dd"), a.Status, a.Method })
+                    .ToList();
+                break;
+
+            case "keuangan":
+                _headers = new() { "Siswa", "Kategori", "Nominal", "Tanggal", "Status" };
+                _rows = (await db.PaymentRecords.AsNoTracking().OrderByDescending(p => p.Date).ToListAsync())
+                    .Select(p => new[]
+                    {
+                        p.StudentName, p.Category, p.Amount.ToString("N0"),
+                        p.Date.ToString("yyyy-MM-dd"), p.Status == "Paid" ? "Lunas" : "Belum dibayar"
+                    }).ToList();
+                break;
+
+            case "jadwal":
+                _headers = new() { "Kelas", "Hari", "Jam", "Mata Pelajaran", "Guru" };
+                _rows = (await db.ScheduleItems.AsNoTracking().OrderBy(s => s.ClassName).ToListAsync())
+                    .Select(s => new[] { s.ClassName, s.Day, s.TimeSlot, s.Subject, s.Teacher })
+                    .ToList();
+                break;
+
+            case "inventaris":
+                _headers = new() { "Aset", "Kategori", "Jumlah", "Kondisi" };
+                _rows = (await db.InventoryItems.AsNoTracking().OrderBy(i => i.Name).ToListAsync())
+                    .Select(i => new[] { i.Name, i.Category, i.Quantity.ToString(), i.Condition })
+                    .ToList();
+                break;
+
+            case "kegiatan":
+                _headers = new() { "Kegiatan", "Tanggal", "Lokasi", "Jenis" };
+                _rows = (await db.Events.AsNoTracking().OrderBy(e => e.Date).ToListAsync())
+                    .Select(e => new[] { e.Title, e.Date.ToString("yyyy-MM-dd"), e.Location, e.Type })
+                    .ToList();
+                break;
+
+            default:
+                _headers = new() { "Nama", "Kelas", "Tanggal Lahir", "Gender", "Orang Tua", "Status" };
+                _rows = (await db.Students.AsNoTracking().OrderBy(s => s.FullName).ToListAsync())
+                    .Select(s => new[]
+                    {
+                        s.FullName, s.ClassName ?? "—", s.DateOfBirth.ToString("yyyy-MM-dd"),
+                        s.Gender ?? "—", s.ParentName ?? "—", s.Status
+                    }).ToList();
+                break;
+        }
+    }
+
+    private async Task ExportAsync()
+    {
+        var rows = FilteredRows;
+
+        if (rows.Count == 0)
+        {
+            Toasts.Warn("Tidak ada data untuk diekspor.");
+            return;
+        }
+
+        var lines = new List<string> { string.Join(",", _headers.Select(Quote)) };
+        lines.AddRange(rows.Select(r => string.Join(",", r.Select(Quote))));
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetDownload",
+                $"laporan-{_source}-{SchoolClock.Today:yyyyMMdd}.csv",
+                string.Join("\r\n", lines));
+
+            Toasts.Success($"{rows.Count} baris diekspor.");
+        }
+        catch (JSException ex)
+        {
+            Toasts.Error($"Gagal mengekspor: {ex.Message}");
+        }
+    }
+
+    private static string Quote(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+
+        var needs = value.Contains(',') || value.Contains('"') || value.Contains('\n');
+        return needs ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+    }
+}

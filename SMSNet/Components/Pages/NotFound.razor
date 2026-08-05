@@ -1,7 +1,19 @@
 @page "/not-found"
+@attribute [AllowAnonymous]
+@layout AuthLayout
 
-<div class="sms-card max-w-lg">
-    <h1 class="text-2xl font-semibold mb-2">Halaman Tidak Ditemukan</h1>
-    <p class="text-slate-500">Sepertinya halaman yang kamu cari tidak tersedia.</p>
-    <a class="mt-4 inline-flex px-4 py-2 rounded-lg bg-indigo-600 text-white" href="/">Kembali ke Dashboard</a>
+<PageTitle>Halaman Tidak Ditemukan — SMSNet</PageTitle>
+
+<div class="text-center">
+    <p class="font-display font-bold m-0"
+       style="font-size: 3.5rem; line-height: 1; color: var(--kunyit)">404</p>
+
+    <h1 class="sms-auth__title mt-3">Halaman tidak ditemukan</h1>
+    <p class="sms-auth__sub">
+        Alamat yang Anda buka tidak ada, atau halamannya sudah dipindahkan.
+    </p>
+
+    <div class="grid gap-2">
+        <a href="/" class="sms-btn sms-btn--primary sms-btn--block">Kembali ke Dashboard</a>
+    </div>
 </div>

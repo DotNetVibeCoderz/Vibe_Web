@@ -1,55 +1,92 @@
 @page "/auth/login"
 @attribute [AllowAnonymous]
-@inject NavigationManager Navigation
+@layout AuthLayout
+@inject NavigationManager Nav
 
-<h1 class="text-2xl font-semibold mb-6">Login</h1>
+<PageTitle>Masuk — SMSNet</PageTitle>
 
-<div class="sms-card max-w-lg">
-    @if (ShowError)
-    {
-        <p class="mb-4 text-rose-500">Username atau password salah.</p>
-    }
+<h1 class="sms-auth__title">Masuk</h1>
+<p class="sms-auth__sub">Gunakan akun yang diberikan sekolah.</p>
 
-    <form method="post" action="/account/login">
-        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+@if (_error)
+{
+    <p class="sms-auth__error" role="alert">
+        Username atau kata sandi salah. Periksa kembali, lalu coba lagi.
+    </p>
+}
 
-        <div class="space-y-4">
-            <div>
-                <label class="text-sm font-medium">Username</label>
-                <input name="UserName" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" />
-            </div>
-            <div>
-                <label class="text-sm font-medium">Password</label>
-                <input type="password" name="Password" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" />
-            </div>
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" name="RememberMe" value="true" />
-                    <label class="text-sm">Remember me</label>
-                </div>
-                <a class="text-sm text-indigo-600" href="/auth/reset-password">Lupa password?</a>
-            </div>
+@if (_loggedOut)
+{
+    <p class="sms-auth__hint" role="status" style="margin-top:0;margin-bottom:1.1rem">
+        Anda telah keluar dari sesi sebelumnya.
+    </p>
+}
+
+@* Sign-in posts to a controller rather than running in the circuit: an
+   interactive Blazor connection cannot write the auth cookie. *@
+<form method="post" action="/account/login">
+    <input type="hidden" name="returnUrl" value="@_returnUrl" />
+
+    <div class="grid gap-4">
+        <div class="sms-field">
+            <label class="sms-label" for="username">Username</label>
+            <input id="username" name="UserName" class="sms-input" required
+                   autocomplete="username" autofocus placeholder="admin" />
         </div>
 
-        <button type="submit" class="mt-6 px-4 py-2 rounded-lg bg-indigo-600 text-white">Login</button>
-    </form>
-</div>
+        <div class="sms-field">
+            <label class="sms-label" for="password">Kata sandi</label>
+            <input id="password" name="Password" type="password" class="sms-input" required
+                   autocomplete="current-password" placeholder="••••••••" />
+        </div>
+
+        <div class="flex items-center justify-between gap-3">
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color: var(--fg-muted)">
+                <input type="checkbox" name="RememberMe" value="true" />
+                <span>Ingat saya</span>
+            </label>
+            <a href="/auth/reset-password" class="text-sm font-medium" style="color: var(--brand)">
+                Lupa kata sandi?
+            </a>
+        </div>
+
+        <button type="submit" class="sms-btn sms-btn--primary sms-btn--block mt-1">
+            <Icon Name="login" /><span>Masuk</span>
+        </button>
+    </div>
+</form>
+
+<p class="sms-auth__hint">
+    <strong style="color: var(--fg-strong)">Akun demo:</strong>
+    <code class="mono">admin</code> / <code class="mono">admin123</code>
+</p>
+
+<p class="sms-auth__foot">
+    Belum punya akun? <a href="/auth/register">Daftar di sini</a>
+</p>
 
 @code {
-    private bool ShowError { get; set; }
-    private string ReturnUrl { get; set; } = "/";
+    private bool _error;
+    private bool _loggedOut;
+    private string _returnUrl = "/";
 
     protected override void OnInitialized()
     {
-        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-        if (query.TryGetValue("ReturnUrl", out var returnUrl))
+
+        if (query.TryGetValue("ReturnUrl", out var returnUrl) && !string.IsNullOrWhiteSpace(returnUrl))
         {
-            ReturnUrl = returnUrl.ToString();
+            var candidate = returnUrl.ToString();
+
+            // Only same-site paths — an absolute URL here would be an open redirect.
+            if (candidate.StartsWith('/') && !candidate.StartsWith("//"))
+            {
+                _returnUrl = candidate;
+            }
         }
-        if (query.ContainsKey("error"))
-        {
-            ShowError = true;
-        }
+
+        _error = query.ContainsKey("error");
+        _loggedOut = query.ContainsKey("loggedOut");
     }
 }

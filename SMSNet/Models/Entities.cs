@@ -13,6 +13,14 @@ public class Student
     public string? ParentName { get; set; }
     public string? Phone { get; set; }
     public string Status { get; set; } = "Active";
+
+    /// <summary>
+    /// The value printed on the student's card and read by the attendance scanner.
+    /// Stored rather than derived so a lost card can be reissued with a new code
+    /// while the old one stops working. Assigned by <c>QrCodeService</c>.
+    /// </summary>
+    [MaxLength(40)]
+    public string? QrCode { get; set; }
 }
 
 public class Teacher
@@ -24,6 +32,39 @@ public class Teacher
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string Status { get; set; } = "Active";
+
+    /// <summary>See <see cref="Student.QrCode"/>.</summary>
+    [MaxLength(40)]
+    public string? QrCode { get; set; }
+}
+
+/// <summary>
+/// The printable card layout, stored as editable HTML.
+/// <para>
+/// A default template ships as a file under <c>wwwroot/templates/</c>; saving from
+/// the admin screen writes a row here, which then wins. That way a fresh install
+/// works with no database content, and a school can restyle its cards without
+/// touching the filesystem.
+/// </para>
+/// </summary>
+public class CardTemplate
+{
+    public int Id { get; set; }
+
+    /// <summary>Which card this lays out: <c>siswa</c> or <c>guru</c>.</summary>
+    [Required, MaxLength(20)]
+    public string Kind { get; set; } = "siswa";
+
+    [Required, MaxLength(120)]
+    public string Name { get; set; } = "Kartu Siswa";
+
+    /// <summary>HTML with <c>{{PLACEHOLDER}}</c> tokens. See <c>CardTemplateService</c>.</summary>
+    public string Html { get; set; } = string.Empty;
+
+    [MaxLength(160)]
+    public string? UpdatedBy { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
 }
 
 public class ParentGuardian
@@ -83,6 +124,17 @@ public class GradeRecord
 {
     public int Id { get; set; }
     public string StudentName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The student's class, captured when the grade is entered.
+    /// <para>
+    /// Denormalised on purpose: a grade is a record of a moment. Reading the class
+    /// from the student row instead would silently rewrite last year's results when
+    /// a student is promoted.
+    /// </para>
+    /// </summary>
+    public string? ClassName { get; set; }
+
     public string Subject { get; set; } = string.Empty;
     public decimal Score { get; set; }
     public string? Notes { get; set; }
@@ -94,6 +146,9 @@ public class ELearningContent
     public string Title { get; set; } = string.Empty;
     public string ModuleType { get; set; } = string.Empty;
     public string? Description { get; set; }
+
+    /// <summary>Where the material actually lives — a video, a document, a quiz form.</summary>
+    public string? LinkUrl { get; set; }
 }
 
 public class TaskExam
@@ -103,6 +158,19 @@ public class TaskExam
     public string Type { get; set; } = "Quiz";
     public DateTime DueDate { get; set; }
     public string Status { get; set; } = "Open";
+
+    /// <summary>Optional link to the assignment or exam itself.</summary>
+    public string? LinkUrl { get; set; }
+
+    /// <summary>
+    /// Classes this applies to, comma-separated; empty means every class.
+    /// <para>
+    /// A joining table would be the normalised answer, but every relationship in
+    /// this schema is a display string and the seeder and all reporting pages join
+    /// by name — one real FK here would be the odd one out. See CLAUDE.md.
+    /// </para>
+    /// </summary>
+    public string? Classes { get; set; }
 }
 
 public class ForumPost
@@ -119,7 +187,20 @@ public class PerformanceReview
     public int Id { get; set; }
     public string TeacherName { get; set; } = string.Empty;
     public string KPI { get; set; } = string.Empty;
+
+    /// <summary>The achievement as typed — "95%", "4.2", or a letter grade.</summary>
     public string Score { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How <see cref="Score"/> should be read: <c>Persen</c>, <c>Skala</c> (0–5),
+    /// or <c>Teks</c>.
+    /// <para>
+    /// Without this the progress meter has to guess, and it guessed wrong: "4.2"
+    /// on a five-point scale was drawn as 4% rather than 84%. Storing the unit is
+    /// also what makes validation deterministic instead of heuristic.
+    /// </para>
+    /// </summary>
+    public string Unit { get; set; } = "Persen";
 }
 
 public class PaymentRecord
@@ -173,7 +254,22 @@ public class DocumentItem
     public int Id { get; set; }
     public string DocumentType { get; set; } = string.Empty;
     public string OwnerName { get; set; } = string.Empty;
+
+    /// <summary>URL of the document — an uploaded file under wwwroot, or an
+    /// external link.</summary>
     public string FilePath { get; set; } = string.Empty;
+
+    /// <summary>The name the file was uploaded under, for display. The stored path
+    /// is generated, so without this the list can only show an opaque filename.</summary>
+    public string? FileName { get; set; }
+
+    public long? SizeBytes { get; set; }
+
+    /// <summary>True when this app holds the file, false when it only links out.
+    /// Deleting the record removes the file only in the first case.</summary>
+    public bool IsUploaded { get; set; }
+
+    public DateTime? UploadedAt { get; set; }
 }
 
 public class AuditTrail

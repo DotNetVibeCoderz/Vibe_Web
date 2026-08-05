@@ -1,139 +1,240 @@
 @page "/academic/attendance"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inherits CrudPageBase<AttendanceRecord>
 
-<h1 class="text-2xl font-semibold mb-6">Absensi Siswa & Guru</h1>
+<PageTitle>Absensi — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Monitoring otomatis menggunakan barcode/RFID/biometrik</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Absensi</button>
+<PageHeader Eyebrow="Akademik" Title="Absensi"
+            Subtitle="Pencatatan kehadiran siswa dan guru — barcode, RFID, biometrik, atau manual.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Catat Kehadiran</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Catatan" Value="@Items.Count.ToString()" Icon="check" Tone="brand" />
+    <StatTile Label="Hadir" Value="@Items.Count(a => a.Status == "Present").ToString()"
+              Meta="@RateLabel" Icon="check" Tone="good" />
+    <StatTile Label="Tidak Hadir" Value="@Items.Count(a => a.Status != "Present").ToString()"
+              Icon="warning" Tone="warn" />
+    <StatTile Label="Hari Ini" Value="@Items.Count(a => a.Date.Date == SchoolClock.Today).ToString()" Icon="calendar" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-peran">Peran</label>
+            <select id="f-peran" class="sms-select" @bind="RoleFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                <option value="Siswa">Siswa</option>
+                <option value="Guru">Guru</option>
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-status">Status</label>
+            <select id="f-status" class="sms-select" @bind="StatusFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                <option value="Present">Hadir</option>
+                <option value="Absent">Tidak hadir</option>
+                <option value="Sick">Sakit</option>
+                <option value="Permit">Izin</option>
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-metode">Metode</label>
+            <select id="f-metode" class="sms-select" @bind="MethodFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                <option value="Barcode">Barcode</option>
+                <option value="RFID">RFID</option>
+                <option value="Biometrik">Biometrik</option>
+                <option value="Manual">Manual</option>
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">Peran</th>
-                <th class="py-2">Tanggal</th>
-                <th class="py-2">Status</th>
-                <th class="py-2">Metode</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var record in AttendanceRecords)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@record.PersonName</td>
-                    <td class="py-2">@record.Role</td>
-                    <td class="py-2">@record.Date.ToString("dd MMM yyyy")</td>
-                    <td class="py-2"><span class="sms-badge">@record.Status</span></td>
-                    <td class="py-2">@record.Method</td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditRecord(record)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteRecord(record.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveRecord">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama" @bind-Value="FormModel.PersonName" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Peran" @bind-Value="FormModel.Role" />
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
-                    <option>Present</option>
-                    <option>Absent</option>
-                    <option>Late</option>
-                </InputSelect>
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Method">
-                    <option>Barcode</option>
-                    <option>RFID</option>
-                    <option>Biometrik</option>
-                </InputSelect>
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 6; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="check" Title="Tidak ada catatan kehadiran"
+                    Hint="Catat kehadiran atau ubah filter pencarian." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Nama <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th>Peran</th>
+                        <th class="is-sortable" @onclick='() => SortBy("tanggal")'>Tanggal <span class="sort-caret">@SortCaret("tanggal")</span></th>
+                        <th>Status</th>
+                        <th>Metode</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var record in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@record.PersonName</td>
+                            <td>@record.Role</td>
+                            <td class="tabular">@record.Date.ToString("dd MMM yyyy")</td>
+                            <td><span class="sms-badge @StatusTone(record.Status)">@StatusLabel(record.Status)</span></td>
+                            <td><span class="sms-badge">@record.Method</span></td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(record)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(record)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="catatan" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Catat Kehadiran" : "Ubah Catatan Kehadiran")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-absensi">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama</label>
+                    <InputText class="sms-input" @bind-Value="Form.PersonName" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Peran</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Role">
+                            <option value="Siswa">Siswa</option>
+                            <option value="Guru">Guru</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Tanggal</label>
+                        <InputDate class="sms-input" @bind-Value="Form.Date" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Status</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Status">
+                            <option value="Present">Hadir</option>
+                            <option value="Absent">Tidak hadir</option>
+                            <option value="Sick">Sakit</option>
+                            <option value="Permit">Izin</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Metode</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Method">
+                            <option value="Barcode">Barcode</option>
+                            <option value="RFID">RFID</option>
+                            <option value="Biometrik">Biometrik</option>
+                            <option value="Manual">Manual</option>
+                        </InputSelect>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-absensi" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus catatan kehadiran"
+               Message="Catatan kehadiran ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<AttendanceRecord> AttendanceRecords { get; set; } = new();
-    private AttendanceRecord FormModel { get; set; } = new() { Date = DateTime.Today };
-    private bool ShowForm { get; set; }
+    private string RoleFilter = string.Empty;
+    private string StatusFilter = string.Empty;
+    private string MethodFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    private string RateLabel => Items.Count == 0
+        ? "belum ada data"
+        : $"{Items.Count(a => a.Status == "Present") * 100.0 / Items.Count:0.#}% kehadiran";
+
+    protected override string EntityLabel => "kehadiran";
+
+    protected override DbSet<AttendanceRecord> Table(ApplicationDbContext db) => db.AttendanceRecords;
+
+    protected override IEnumerable<string?> SearchableText(AttendanceRecord a) =>
+        new[] { a.PersonName, a.Role, a.Status, a.Method };
+
+    protected override string Describe(AttendanceRecord a) => $"{a.PersonName} ({a.Date:dd MMM yyyy})";
+
+    protected override int IdOf(AttendanceRecord a) => a.Id;
+
+    protected override AttendanceRecord NewEntity() => new()
     {
-        LoadRecords();
-        return Task.CompletedTask;
+        Date = SchoolClock.Today,
+        Role = "Siswa",
+        Status = "Present",
+        Method = "Barcode"
+    };
+
+    protected override AttendanceRecord CloneForEdit(AttendanceRecord a) => new()
+    {
+        Id = a.Id, PersonName = a.PersonName, Role = a.Role,
+        Date = a.Date, Status = a.Status, Method = a.Method
+    };
+
+    protected override IEnumerable<AttendanceRecord> ApplyFilters(IEnumerable<AttendanceRecord> items)
+    {
+        if (!string.IsNullOrWhiteSpace(RoleFilter)) items = items.Where(a => a.Role == RoleFilter);
+        if (!string.IsNullOrWhiteSpace(StatusFilter)) items = items.Where(a => a.Status == StatusFilter);
+        if (!string.IsNullOrWhiteSpace(MethodFilter)) items = items.Where(a => a.Method == MethodFilter);
+        return items;
     }
 
-    private void LoadRecords()
+    protected override IEnumerable<AttendanceRecord> ApplySort(IEnumerable<AttendanceRecord> items) => SortColumn switch
     {
-        AttendanceRecords = Db.AttendanceRecords.AsNoTracking()
-            .OrderByDescending(a => a.Date)
-            .ToList();
-    }
+        "nama" => SortAscending ? items.OrderBy(a => a.PersonName) : items.OrderByDescending(a => a.PersonName),
+        _ => SortAscending ? items.OrderBy(a => a.Date) : items.OrderByDescending(a => a.Date)
+    };
 
-    private void ShowAdd()
+    protected override string CsvHeader => "Id,Nama,Peran,Tanggal,Status,Metode";
+
+    protected override string CsvRow(AttendanceRecord a) =>
+        $"{a.Id},{Csv(a.PersonName)},{Csv(a.Role)},{a.Date:yyyy-MM-dd},{Csv(a.Status)},{Csv(a.Method)}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    private static string StatusLabel(string status) => status switch
     {
-        FormModel = new AttendanceRecord { Date = DateTime.Today };
-        ShowForm = true;
-    }
+        "Present" => "Hadir",
+        "Absent" => "Tidak hadir",
+        "Sick" => "Sakit",
+        "Permit" => "Izin",
+        _ => status
+    };
 
-    private void EditRecord(AttendanceRecord record)
+    private static string StatusTone(string status) => status switch
     {
-        FormModel = new AttendanceRecord
-        {
-            Id = record.Id,
-            PersonName = record.PersonName,
-            Role = record.Role,
-            Date = record.Date,
-            Status = record.Status,
-            Method = record.Method
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveRecord()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.AttendanceRecords.Add(FormModel);
-        }
-        else
-        {
-            Db.AttendanceRecords.Update(FormModel);
-        }
-
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadRecords();
-    }
-
-    private async Task DeleteRecord(int id)
-    {
-        var record = await Db.AttendanceRecords.FindAsync(id);
-        if (record != null)
-        {
-            Db.AttendanceRecords.Remove(record);
-            await Db.SaveChangesAsync();
-            LoadRecords();
-        }
-    }
-
-    private void Cancel()
-    {
-        FormModel = new AttendanceRecord { Date = DateTime.Today };
-        ShowForm = false;
-    }
+        "Present" => "sms-badge--good",
+        "Absent" => "sms-badge--bad",
+        _ => "sms-badge--warn"
+    };
 }

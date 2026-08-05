@@ -50,12 +50,20 @@ public class DbInitializer
         var classNames = new[] { "7A", "7B", "8A", "8B", "9A", "9B", "10A", "10B" };
         var subjects = new[] { "Matematika", "Bahasa Indonesia", "Bahasa Inggris", "IPA", "IPS", "Informatika", "Agama", "Seni" };
 
+        // Remembered so seeded grades carry the same class the student is in, rather
+        // than leaving every seeded row with a blank class.
+        var studentClass = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         for (var i = 1; i <= 40; i++)
         {
+            var name = $"Siswa {i:00}";
+            var className = classNames[random.Next(classNames.Length)];
+            studentClass[name] = className;
+
             _context.Students.Add(new Student
             {
-                FullName = $"Siswa {i:00}",
-                ClassName = classNames[random.Next(classNames.Length)],
+                FullName = name,
+                ClassName = className,
                 DateOfBirth = DateTime.Now.AddYears(-13).AddDays(random.Next(365)),
                 Gender = i % 2 == 0 ? "Perempuan" : "Laki-laki",
                 ParentName = $"Orang Tua {i:00}",
@@ -139,9 +147,12 @@ public class DbInitializer
 
         for (var i = 1; i <= 20; i++)
         {
+            var studentName = $"Siswa {i:00}";
+
             _context.GradeRecords.Add(new GradeRecord
             {
-                StudentName = $"Siswa {i:00}",
+                StudentName = studentName,
+                ClassName = studentClass.GetValueOrDefault(studentName),
                 Subject = subjects[random.Next(subjects.Length)],
                 Score = random.Next(60, 100),
                 Notes = "Perlu latihan tambahan pada topik tertentu"
@@ -150,8 +161,23 @@ public class DbInitializer
 
         _context.ELearningContents.AddRange(new[]
         {
-            new ELearningContent { Title = "Video Pembelajaran Matematika", ModuleType = "Video", Description = "Materi persamaan linear" },
-            new ELearningContent { Title = "Quiz Bahasa Inggris", ModuleType = "Quiz", Description = "Ulangan harian" }
+            new ELearningContent
+            {
+                Title = "Video Pembelajaran Matematika", ModuleType = "Video",
+                Description = "Materi persamaan linear",
+                LinkUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            },
+            new ELearningContent
+            {
+                Title = "Quiz Bahasa Inggris", ModuleType = "Quiz",
+                Description = "Ulangan harian",
+                LinkUrl = "https://forms.gle/contohkuisbahasainggris"
+            },
+            new ELearningContent
+            {
+                Title = "Modul IPA — Sistem Tata Surya", ModuleType = "Modul",
+                Description = "Bahan bacaan dan lembar kerja"
+            }
         });
 
         _context.TaskExams.AddRange(new[]
@@ -168,8 +194,10 @@ public class DbInitializer
 
         _context.PerformanceReviews.AddRange(new[]
         {
-            new PerformanceReview { TeacherName = "Guru 01", KPI = "Kehadiran", Score = "95%" },
-            new PerformanceReview { TeacherName = "Guru 02", KPI = "Hasil belajar", Score = "90%" }
+            new PerformanceReview { TeacherName = "Guru 01", KPI = "Kehadiran", Score = "95%", Unit = "Persen" },
+            new PerformanceReview { TeacherName = "Guru 02", KPI = "Penilaian Siswa", Score = "90%", Unit = "Persen" },
+            new PerformanceReview { TeacherName = "Guru 03", KPI = "Kelengkapan Perangkat Ajar", Score = "4.2", Unit = "Skala" },
+            new PerformanceReview { TeacherName = "Guru 04", KPI = "Kerja Sama Tim", Score = "Sangat Baik", Unit = "Teks" }
         });
 
         for (var i = 1; i <= 15; i++)

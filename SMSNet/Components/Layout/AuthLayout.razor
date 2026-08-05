@@ -1,0 +1,79 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+@* Sign-in surface. No sidebar: there is nothing to navigate to yet, and the
+   register motif carries the brand instead. *@
+
+<div class="sms-auth">
+    <aside class="sms-auth__aside">
+        <div class="sms-auth__brand">
+            <div class="sms-sidebar__mark" aria-hidden="true">SN</div>
+            <div>
+                <p class="font-display font-bold text-lg leading-tight m-0">SMSNet</p>
+                <p class="text-xs m-0" style="opacity:.7">Sistem Manajemen Sekolah</p>
+            </div>
+        </div>
+
+        <div class="sms-auth__pitch">
+            <h2 class="font-display font-bold m-0" style="font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.1rem)">
+                Satu buku induk untuk seluruh sekolah.
+            </h2>
+            <p class="mt-3 m-0" style="opacity:.78; max-width: 34ch">
+                Absensi pagi, nilai tengah semester, tagihan SPP, sampai agenda rapat orang tua —
+                tercatat pada satu tempat yang sama.
+            </p>
+
+            <ul class="sms-auth__list">
+                <li><span>Akademik</span> kurikulum, jadwal, absensi, dan rapor digital</li>
+                <li><span>Keuangan</span> SPP, inventaris, payroll, dan laporan</li>
+                <li><span>Portal</span> orang tua memantau anak tanpa datang ke sekolah</li>
+                <li><span>Pak Dedi</span> asisten yang menjawab dari data sekolah itu sendiri</li>
+            </ul>
+        </div>
+
+        <p class="text-xs m-0" style="opacity:.55">SMSNet &middot; Gravicode Studios</p>
+    </aside>
+
+    <main class="sms-auth__main">
+        <div class="sms-auth__panel">
+            <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm sms-auth__theme"
+                    @onclick="ToggleTheme" aria-label="Ganti tema">
+                <Icon Name="@(_isDark ? "sun" : "moon")" />
+            </button>
+
+            @Body
+        </div>
+    </main>
+</div>
+
+<Toaster />
+
+<div id="blazor-error-ui" data-nosnippet>
+    Terjadi kesalahan tak terduga.
+    <a href="." class="reload">Muat ulang</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool _isDark;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _isDark = await JS.InvokeAsync<string>("smsnetTheme.current") == "dark";
+            StateHasChanged();
+        }
+        catch (JSException) { }
+    }
+
+    private async Task ToggleTheme()
+    {
+        _isDark = await JS.InvokeAsync<string>("smsnetTheme.toggle") == "dark";
+    }
+}

@@ -1,0 +1,30 @@
+@* Standard page masthead: which module you're in, what this page is, and the
+   page-level actions. The eyebrow encodes the module — it isn't ornament. *@
+
+<header class="sms-page-head">
+    <div class="min-w-0">
+        @if (!string.IsNullOrWhiteSpace(Eyebrow))
+        {
+            <span class="sms-eyebrow">@Eyebrow</span>
+        }
+        <h1 class="sms-page-head__title">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="sms-page-head__sub">@Subtitle</p>
+        }
+    </div>
+
+    @if (Actions is not null)
+    {
+        <div class="flex items-center gap-2 flex-wrap">
+            @Actions
+        </div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Eyebrow { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

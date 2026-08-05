@@ -1,0 +1,305 @@
+@page "/admin/payment-gateways"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using SMSNet.Services.Payments
+@inject PaymentGatewayRegistry Registry
+@inject AuditService Audit
+@inject ToastService Toasts
+
+<PageTitle>Metode Pembayaran — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Administrasi & Keuangan" Title="Metode Pembayaran"
+            Subtitle="Aktifkan kanal pembayaran dan simpan kredensialnya. Pengaturan di sini menimpa nilai bawaan pada appsettings.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="LoadAsync">
+            <Icon Name="refresh" /><span>Muat ulang</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+@if (Registry.Options.SandboxMode)
+{
+    <div class="sms-card mb-6" style="border-color: color-mix(in srgb, var(--kunyit) 40%, var(--rule));
+                                      background: color-mix(in srgb, var(--kunyit) 8%, var(--bg-surface))">
+        <div class="flex items-start gap-3">
+            <span style="color: var(--kunyit)"><Icon Name="warning" Class="w-5 h-5" /></span>
+            <div>
+                <p class="font-semibold m-0" style="color: var(--fg-strong)">Mode sandbox aktif secara global</p>
+                <p class="text-sm m-0 mt-1" style="color: var(--fg-muted)">
+                    Tidak ada permintaan yang dikirim ke penyedia mana pun. Transaksi disimulasikan
+                    secara lokal sehingga seluruh alur dapat diuji tanpa akun merchant.
+                    Matikan lewat <code class="mono text-xs">Payments:SandboxMode</code> pada appsettings.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Kanal Tersedia" Value="@_configs.Count.ToString()" Icon="credit-card" Tone="brand" />
+    <StatTile Label="Aktif" Value="@_configs.Count(c => c.Enabled).ToString()" Icon="check" Tone="good" />
+    <StatTile Label="Butuh Kredensial"
+              Value="@_configs.Count(c => NeedsCredentials(c)).ToString()"
+              Meta="belum diisi" Icon="warning"
+              Tone="@(_configs.Any(NeedsCredentials) ? "warn" : "good")" />
+    <StatTile Label="Mode Sandbox" Value="@_configs.Count(c => c.SandboxMode).ToString()" Icon="settings" />
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2">
+    @foreach (var config in _configs)
+    {
+        <div class="sms-card sms-reveal">
+            <div class="flex items-start justify-between gap-3 mb-4">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="flex-none w-10 h-10 rounded-lg grid place-items-center"
+                          style="background: @(config.Enabled ? "color-mix(in srgb, var(--daun) 15%, transparent)" : "var(--bg-sunken)");
+                                 color: @(config.Enabled ? "var(--daun)" : "var(--fg-faint)")">
+                        <Icon Name="@IconFor(config.Key)" Class="w-5 h-5" />
+                    </span>
+                    <div class="min-w-0">
+                        <p class="font-display font-semibold m-0 truncate" style="color: var(--fg-strong)">
+                            @config.DisplayName
+                        </p>
+                        <p class="text-xs m-0 mono" style="color: var(--fg-faint)">@config.Key · @ChannelLabel(config.Key)</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col items-end gap-1">
+                    <span class="sms-badge @(config.Enabled ? "sms-badge--good" : "")">
+                        @(config.Enabled ? "Aktif" : "Nonaktif")
+                    </span>
+                    @if (config.SandboxMode)
+                    {
+                        <span class="sms-badge sms-badge--warn">Sandbox</span>
+                    }
+                </div>
+            </div>
+
+            @if (NeedsCredentials(config))
+            {
+                <p class="text-xs mb-3 px-2 py-1.5 rounded"
+                   style="background: color-mix(in srgb, var(--kunyit) 12%, transparent); color: var(--fg-strong)">
+                    Kredensial belum diisi — kanal ini akan berjalan dalam mode simulasi.
+                </p>
+            }
+
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-4">
+                <div>
+                    <dt class="text-xs" style="color: var(--fg-faint)">Biaya tetap</dt>
+                    <dd class="m-0 tabular">@config.FeeFlat.ToString("N0") IDR</dd>
+                </div>
+                <div>
+                    <dt class="text-xs" style="color: var(--fg-faint)">Biaya persentase</dt>
+                    <dd class="m-0 tabular">@config.FeePercent.ToString("0.##")%</dd>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(config.AccountDetail))
+                {
+                    <div class="col-span-2">
+                        <dt class="text-xs" style="color: var(--fg-faint)">Rekening / merchant</dt>
+                        <dd class="m-0 mono text-xs break-all">@config.AccountDetail</dd>
+                    </div>
+                }
+            </dl>
+
+            <div class="flex items-center gap-2">
+                <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm" @onclick="() => Edit(config)">
+                    <Icon Name="settings" /><span>Atur</span>
+                </button>
+                <button type="button"
+                        class="sms-btn sms-btn--sm @(config.Enabled ? "sms-btn--danger" : "sms-btn--primary")"
+                        @onclick="() => ToggleAsync(config)">
+                    @(config.Enabled ? "Nonaktifkan" : "Aktifkan")
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+<Modal Open="_showForm" OpenChanged="_ => _showForm = false" Wide="true"
+       Title="@($"Pengaturan {_form.DisplayName}")">
+    <ChildContent>
+        <EditForm Model="_form" OnValidSubmit="SaveAsync" id="form-gateway">
+            <div class="grid gap-4 md:grid-cols-2">
+                <div class="sms-field md:col-span-2">
+                    <label class="sms-label">Nama tampilan</label>
+                    <InputText class="sms-input" @bind-Value="_form.DisplayName" />
+                </div>
+
+                <div class="sms-field">
+                    <label class="sms-label">Urutan tampil</label>
+                    <InputNumber class="sms-input" @bind-Value="_form.SortOrder" />
+                </div>
+
+                <div class="sms-field">
+                    <label class="sms-label">Status</label>
+                    <InputSelect class="sms-select" @bind-Value="_enabledText">
+                        <option value="true">Aktif</option>
+                        <option value="false">Nonaktif</option>
+                    </InputSelect>
+                </div>
+
+                @if (RequiresCredentials(_form.Key))
+                {
+                    <div class="sms-field md:col-span-2">
+                        <label class="sms-label">Mode</label>
+                        <InputSelect class="sms-select" @bind-Value="_sandboxText">
+                            <option value="true">Sandbox — transaksi disimulasikan lokal</option>
+                            <option value="false">Produksi — memanggil API penyedia</option>
+                        </InputSelect>
+                    </div>
+
+                    <div class="sms-field">
+                        <label class="sms-label">Secret / Server key</label>
+                        <InputText type="password" class="sms-input" @bind-Value="_form.SecretKey"
+                                   placeholder="disimpan terenkripsi di basis data" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Client / Public key</label>
+                        <InputText class="sms-input" @bind-Value="_form.ApiKey" />
+                    </div>
+                    <div class="sms-field md:col-span-2">
+                        <label class="sms-label">Merchant ID</label>
+                        <InputText class="sms-input" @bind-Value="_form.MerchantId" />
+                    </div>
+                }
+                else
+                {
+                    <div class="sms-field md:col-span-2">
+                        <label class="sms-label">
+                            @(_form.Key == "qris" ? "Kode merchant QRIS" : "Nomor rekening sekolah")
+                        </label>
+                        <InputText class="sms-input" @bind-Value="_form.AccountDetail"
+                                   placeholder="@(_form.Key == "qris" ? "ID1234567890313" : "BCA 1234567890 a.n. Yayasan …")" />
+                    </div>
+                }
+
+                <div class="sms-field">
+                    <label class="sms-label">Biaya tetap (IDR)</label>
+                    <InputNumber class="sms-input" @bind-Value="_form.FeeFlat" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Biaya persentase (%)</label>
+                    <InputNumber class="sms-input" @bind-Value="_form.FeePercent" />
+                </div>
+
+                <div class="sms-field md:col-span-2">
+                    <label class="sms-label">Petunjuk untuk pembayar</label>
+                    <InputTextArea class="sms-textarea" rows="3" @bind-Value="_form.Instructions"
+                                   placeholder="Ditampilkan pada halaman pembayaran orang tua." />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _showForm = false">Batal</button>
+        <button type="submit" form="form-gateway" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+@code {
+    private List<PaymentGatewayConfig> _configs = new();
+    private PaymentGatewayConfig _form = new();
+    private bool _showForm;
+
+    // InputSelect binds cleanly to string; bool needs a shim.
+    private string _enabledText = "false";
+    private string _sandboxText = "true";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _configs = await Registry.GetAllConfigsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal memuat pengaturan pembayaran: {ex.Message}");
+        }
+    }
+
+    private void Edit(PaymentGatewayConfig config)
+    {
+        _form = new PaymentGatewayConfig
+        {
+            Id = config.Id,
+            Key = config.Key,
+            DisplayName = config.DisplayName,
+            Enabled = config.Enabled,
+            SortOrder = config.SortOrder,
+            SandboxMode = config.SandboxMode,
+            ApiKey = config.ApiKey,
+            SecretKey = config.SecretKey,
+            MerchantId = config.MerchantId,
+            AccountDetail = config.AccountDetail,
+            Instructions = config.Instructions,
+            FeeFlat = config.FeeFlat,
+            FeePercent = config.FeePercent
+        };
+
+        _enabledText = config.Enabled.ToString().ToLowerInvariant();
+        _sandboxText = config.SandboxMode.ToString().ToLowerInvariant();
+        _showForm = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _form.Enabled = _enabledText == "true";
+        _form.SandboxMode = _sandboxText == "true";
+
+        try
+        {
+            await Registry.SaveConfigAsync(_form);
+            await Audit.RecordUpdateAsync("metode pembayaran",
+                $"{_form.DisplayName} — {(_form.Enabled ? "aktif" : "nonaktif")}");
+
+            Toasts.Success($"Pengaturan {_form.DisplayName} disimpan.");
+            _showForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal menyimpan: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleAsync(PaymentGatewayConfig config)
+    {
+        config.Enabled = !config.Enabled;
+
+        try
+        {
+            await Registry.SaveConfigAsync(config);
+            await Audit.RecordUpdateAsync("metode pembayaran",
+                $"{config.DisplayName} — {(config.Enabled ? "diaktifkan" : "dinonaktifkan")}");
+
+            Toasts.Success($"{config.DisplayName} {(config.Enabled ? "diaktifkan" : "dinonaktifkan")}.");
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            config.Enabled = !config.Enabled;
+            Toasts.Error($"Gagal mengubah status: {ex.Message}");
+        }
+    }
+
+    private static bool RequiresCredentials(string key) => key is "midtrans" or "xendit" or "stripe";
+
+    private static bool NeedsCredentials(PaymentGatewayConfig c) =>
+        RequiresCredentials(c.Key) && string.IsNullOrWhiteSpace(c.SecretKey);
+
+    private static string IconFor(string key) => key switch
+    {
+        "qris" => "grid",
+        "manual" => "receipt",
+        "stripe" => "credit-card",
+        _ => "wallet"
+    };
+
+    private static string ChannelLabel(string key) => key switch
+    {
+        "qris" => "Pindai QR",
+        "manual" => "Transfer manual",
+        _ => "Halaman penyedia"
+    };
+}

@@ -1,6 +1,41 @@
 @page "/error"
+@attribute [AllowAnonymous]
+@layout AuthLayout
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpContextAccessor? HttpContextAccessor
 
-<div class="sms-card max-w-lg">
-    <h1 class="text-2xl font-semibold mb-2">Terjadi Kesalahan</h1>
-    <p class="text-slate-500">Mohon coba kembali atau hubungi admin sistem.</p>
+<PageTitle>Terjadi Kesalahan — SMSNet</PageTitle>
+
+<div class="text-center">
+    <span style="color: var(--bata)"><Icon Name="warning" Class="w-11 h-11 mx-auto" /></span>
+
+    <h1 class="sms-auth__title mt-4">Terjadi kesalahan</h1>
+    <p class="sms-auth__sub">
+        Permintaan Anda tidak dapat diselesaikan. Coba lagi beberapa saat lagi,
+        atau hubungi administrator sekolah bila terus berulang.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_requestId))
+    {
+        <p class="sms-auth__hint text-left">
+            <strong style="color: var(--fg-strong)">Kode permintaan</strong><br />
+            <code class="mono">@_requestId</code><br />
+            <span class="text-xs">Sertakan kode ini saat melapor agar mudah ditelusuri di log.</span>
+        </p>
+    }
+
+    <div class="grid gap-2 mt-5">
+        <a href="/" class="sms-btn sms-btn--primary sms-btn--block">Kembali ke Dashboard</a>
+    </div>
 </div>
+
+@code {
+    private string? _requestId;
+
+    protected override void OnInitialized()
+    {
+        // The trace identifier is what ties this screen to a line in the server log.
+        _requestId = System.Diagnostics.Activity.Current?.Id
+                     ?? HttpContextAccessor?.HttpContext?.TraceIdentifier;
+    }
+}

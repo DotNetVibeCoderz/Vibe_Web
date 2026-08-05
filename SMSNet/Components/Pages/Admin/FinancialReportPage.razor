@@ -1,124 +1,167 @@
 @page "/admin/financial-report"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<FinancialReport>
 
-<h1 class="text-2xl font-semibold mb-6">Laporan Keuangan</h1>
+<PageTitle>Laporan Keuangan Periode — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Analitik pendapatan dan pengeluaran sekolah.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Laporan</button>
+<PageHeader Eyebrow="Administrasi & Keuangan" Title="Laporan Keuangan Periode"
+            Subtitle="Rekapitulasi pendapatan dan pengeluaran sekolah per periode.">
+    <Actions>
+        <a href="/reports/finance" class="sms-btn sms-btn--ghost">
+            <Icon Name="trend" /><span>Analisis Lengkap</span>
+        </a>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Laporan</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Pendapatan" Value="@Money(Items.Sum(r => r.Income))" Icon="coins" Tone="good" />
+    <StatTile Label="Total Pengeluaran" Value="@Money(Items.Sum(r => r.Expense))" Icon="receipt" Tone="warn" />
+    <StatTile Label="Surplus" Value="@Money(Surplus)"
+              Meta="pendapatan − pengeluaran" Icon="trend"
+              Tone="@(Surplus >= 0 ? "good" : "warn")" />
+    <StatTile Label="Periode Tercatat" Value="@Items.Count.ToString()" Icon="calendar" Tone="brand" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Judul laporan…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Judul</th>
-                <th class="py-2">Pendapatan</th>
-                <th class="py-2">Pengeluaran</th>
-                <th class="py-2">Periode</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var report in Reports)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@report.Title</td>
-                    <td class="py-2">@report.Income.ToString("C0")</td>
-                    <td class="py-2">@report.Expense.ToString("C0")</td>
-                    <td class="py-2">@report.Period.ToString("MMM yyyy")</td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditReport(report)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteReport(report.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveReport">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Judul laporan" @bind-Value="FormModel.Title" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pendapatan" @bind-Value="FormModel.Income" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Pengeluaran" @bind-Value="FormModel.Expense" />
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Period" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 4; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="trend" Title="Belum ada laporan periode"
+                    Hint="Tambahkan rekapitulasi bulanan atau triwulanan." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("judul")'>Laporan <span class="sort-caret">@SortCaret("judul")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("periode")'>Periode <span class="sort-caret">@SortCaret("periode")</span></th>
+                        <th class="sms-table__num">Pendapatan</th>
+                        <th class="sms-table__num">Pengeluaran</th>
+                        <th class="sms-table__num">Surplus</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var report in Paged)
+                    {
+                        var surplus = report.Income - report.Expense;
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@report.Title</td>
+                            <td class="tabular">@report.Period.ToString("MMMM yyyy")</td>
+                            <td class="sms-table__num">@Money(report.Income)</td>
+                            <td class="sms-table__num">@Money(report.Expense)</td>
+                            <td class="sms-table__num font-semibold"
+                                style="color: @(surplus >= 0 ? "var(--daun)" : "var(--bata)")">
+                                @Money(surplus)
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(report)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(report)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="laporan" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Laporan" : "Ubah Laporan")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-laporan">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Judul laporan</label>
+                    <InputText class="sms-input" @bind-Value="Form.Title" placeholder="Laporan Bulanan" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Periode</label>
+                    <InputDate class="sms-input" @bind-Value="Form.Period" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Pendapatan (IDR)</label>
+                        <InputNumber class="sms-input" @bind-Value="Form.Income" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Pengeluaran (IDR)</label>
+                        <InputNumber class="sms-input" @bind-Value="Form.Expense" />
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-laporan" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus laporan"
+               Message="Laporan periode ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<FinancialReport> Reports { get; set; } = new();
-    private FinancialReport FormModel { get; set; } = new() { Period = DateTime.Today.AddMonths(-1) };
-    private bool ShowForm { get; set; }
+    private decimal Surplus => Items.Sum(r => r.Income) - Items.Sum(r => r.Expense);
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadReports();
-        return Task.CompletedTask;
-    }
+    protected override string EntityLabel => "laporan keuangan";
 
-    private void LoadReports()
-    {
-        Reports = Db.FinancialReports.AsNoTracking().ToList();
-    }
+    protected override DbSet<FinancialReport> Table(ApplicationDbContext db) => db.FinancialReports;
 
-    private void ShowAdd()
-    {
-        FormModel = new FinancialReport { Period = DateTime.Today.AddMonths(-1) };
-        ShowForm = true;
-    }
+    protected override IEnumerable<string?> SearchableText(FinancialReport r) => new[] { r.Title };
 
-    private void EditReport(FinancialReport report)
-    {
-        FormModel = new FinancialReport
-        {
-            Id = report.Id,
-            Title = report.Title,
-            Income = report.Income,
-            Expense = report.Expense,
-            Period = report.Period
-        };
-        ShowForm = true;
-    }
+    protected override string Describe(FinancialReport r) => $"{r.Title} ({r.Period:MMMM yyyy})";
 
-    private async Task SaveReport()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.FinancialReports.Add(FormModel);
-        }
-        else
-        {
-            Db.FinancialReports.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadReports();
-    }
+    protected override int IdOf(FinancialReport r) => r.Id;
 
-    private async Task DeleteReport(int id)
+    protected override FinancialReport NewEntity() => new()
     {
-        var report = await Db.FinancialReports.FindAsync(id);
-        if (report != null)
-        {
-            Db.FinancialReports.Remove(report);
-            await Db.SaveChangesAsync();
-            LoadReports();
-        }
-    }
+        Period = new DateTime(SchoolClock.Today.Year, SchoolClock.Today.Month, 1)
+    };
 
-    private void Cancel()
+    protected override FinancialReport CloneForEdit(FinancialReport r) => new()
     {
-        FormModel = new FinancialReport { Period = DateTime.Today.AddMonths(-1) };
-        ShowForm = false;
-    }
+        Id = r.Id, Title = r.Title, Income = r.Income, Expense = r.Expense, Period = r.Period
+    };
+
+    protected override IEnumerable<FinancialReport> ApplySort(IEnumerable<FinancialReport> items) => SortColumn switch
+    {
+        "judul" => SortAscending ? items.OrderBy(r => r.Title) : items.OrderByDescending(r => r.Title),
+        _ => SortAscending ? items.OrderBy(r => r.Period) : items.OrderByDescending(r => r.Period)
+    };
+
+    protected override string CsvHeader => "Id,Laporan,Periode,Pendapatan,Pengeluaran,Surplus";
+
+    protected override string CsvRow(FinancialReport r) =>
+        $"{r.Id},{Csv(r.Title)},{r.Period:yyyy-MM},{r.Income:0},{r.Expense:0},{r.Income - r.Expense:0}";
+
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
 }

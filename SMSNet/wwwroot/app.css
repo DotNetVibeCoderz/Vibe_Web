@@ -1,91 +1,1659 @@
-h1:focus {
-    outline: none;
+/* ==========================================================================
+   SMSNet Design System — "Buku Induk"
+   The visual language is the school register: a ruled grid, tabular figures,
+   and a marigold index tab marking where you are.
+   ========================================================================== */
+
+/* --- Tokens -------------------------------------------------------------- */
+
+:root {
+    /* Core palette */
+    --tinta: #101a2e; /* ink — text, dark surfaces */
+    --dongker: #1b3a6b; /* SMP uniform navy — primary */
+    --dongker-lift: #24508f;
+    --kunyit: #e8a317; /* turmeric — accent, active, achievement */
+    --kunyit-deep: #c8860a;
+    --kapur: #f4f5f7; /* chalk — page background */
+    --garis: #d8dce4; /* the ruled line */
+    --daun: #2f7d5c; /* success, present, paid */
+    --bata: #b3452f; /* alert, absent, overdue */
+
+    /* Semantic surfaces (light) */
+    --bg-page: var(--kapur);
+    --bg-surface: #ffffff;
+    --bg-sunken: #eceef2;
+    --bg-inset: #f8f9fb;
+    --fg-strong: var(--tinta);
+    --fg: #2c3648;
+    --fg-muted: #5b6678;
+    --fg-faint: #8792a4;
+    --rule: var(--garis);
+    --rule-soft: #e6e9ee;
+    --brand: var(--dongker);
+    --brand-fg: #ffffff;
+    --accent: var(--kunyit);
+
+    /* Elevation — low and tight; this is a document, not a dashboard toy */
+    --lift-1: 0 1px 2px rgba(16, 26, 46, .06), 0 1px 1px rgba(16, 26, 46, .04);
+    --lift-2: 0 4px 12px rgba(16, 26, 46, .08), 0 1px 3px rgba(16, 26, 46, .06);
+    --lift-3: 0 16px 40px rgba(16, 26, 46, .16), 0 4px 12px rgba(16, 26, 46, .08);
+
+    --radius: 10px;
+    --radius-lg: 14px;
+    --radius-sm: 6px;
+
+    --ease: cubic-bezier(.2, .7, .3, 1);
+    --dur: 180ms;
 }
 
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+html.dark {
+    --bg-page: #0d1420;
+    --bg-surface: #16202f;
+    --bg-sunken: #101927;
+    --bg-inset: #1b2637;
+    --fg-strong: #eef2f8;
+    --fg: #cdd6e3;
+    --fg-muted: #94a1b5;
+    --fg-faint: #6b7a91;
+    --rule: #263448;
+    --rule-soft: #1e2b3d;
+    --brand: #4d80cf;
+    --brand-fg: #0d1420;
+    --accent: #f0b53f;
+    --daun: #3f9b73;
+    --bata: #d8674e;
+
+    --lift-1: 0 1px 2px rgba(0, 0, 0, .4);
+    --lift-2: 0 4px 14px rgba(0, 0, 0, .45);
+    --lift-3: 0 18px 48px rgba(0, 0, 0, .6);
 }
 
-.invalid {
-    outline: 1px solid #e50000;
+/* --- Base ---------------------------------------------------------------- */
+
+html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
 }
 
-.validation-message {
-    color: #e50000;
+body {
+    background-color: var(--bg-page);
+    color: var(--fg);
+    font-family: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-.blazor-error-boundary {
-    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
-    padding: 1rem 1rem 1rem 3.7rem;
-    color: white;
+h1, h2, h3, h4, .font-display {
+    font-family: "Bricolage Grotesque", "Public Sans", ui-sans-serif, sans-serif;
+    color: var(--fg-strong);
+    font-weight: 600;
+    letter-spacing: -0.018em;
+    line-height: 1.15;
 }
 
-.blazor-error-boundary::after {
-    content: "An error has occurred.";
+/* Numerals everywhere in the app are tabular — this is a register. */
+.tabular, table, .sms-stat__value, time {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
 }
 
-.darker-border-checkbox.form-check-input {
-    border-color: #929292;
+.mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-    color: var(--bs-secondary-color);
-    text-align: end;
+::selection {
+    background: var(--kunyit);
+    color: var(--tinta);
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-    text-align: start;
+/* Focus: a single, unmistakable marigold ring. Never removed. */
+:focus-visible {
+    outline: 2px solid var(--kunyit);
+    outline-offset: 2px;
+    border-radius: 3px;
 }
 
-html.light body {
-    background-color: #f8fafc;
-    color: #0f172a;
+h1:focus { outline: none; }
+
+/* --- Page header --------------------------------------------------------- */
+
+.sms-page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--rule);
 }
+
+.sms-page-head__title {
+    font-size: clamp(1.4rem, 1.1rem + 1.1vw, 1.95rem);
+    margin: 0;
+}
+
+.sms-page-head__sub {
+    margin: .3rem 0 0;
+    color: var(--fg-muted);
+    font-size: .875rem;
+}
+
+/* The eyebrow marks which module you're in — it encodes section, not decoration. */
+.sms-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .688rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+}
+
+.sms-eyebrow::before {
+    content: "";
+    width: 14px;
+    height: 2px;
+    background: var(--kunyit);
+    border-radius: 2px;
+}
+
+/* --- Card ---------------------------------------------------------------- */
 
 .sms-card {
-    background-color: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 1rem;
-    padding: 1.5rem;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-lg);
+    padding: 1.35rem;
+    box-shadow: var(--lift-1);
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
-html.light .sms-card {
-    background-color: #ffffff;
-    border-color: #e2e8f0;
+.sms-card--flush { padding: 0; overflow: hidden; }
+
+.sms-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
 }
 
-.dark .sms-card {
-    background-color: #1e293b;
-    border-color: #334155;
+.sms-card__title {
+    font-size: 1rem;
+    font-weight: 650;
+    margin: 0;
 }
+
+/* --- Stat tile ----------------------------------------------------------- */
+
+.sms-stat {
+    position: relative;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-lg);
+    padding: 1.15rem 1.25rem;
+    box-shadow: var(--lift-1);
+    overflow: hidden;
+    transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+/* A hairline of colour keys the tile to its module. */
+.sms-stat::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--accent);
+    opacity: .85;
+}
+
+.sms-stat--brand::before { background: var(--brand); }
+.sms-stat--good::before { background: var(--daun); }
+.sms-stat--warn::before { background: var(--bata); }
+
+.sms-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--lift-2);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--rule));
+}
+
+.sms-stat__label {
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin: 0 0 .4rem;
+}
+
+.sms-stat__value {
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-size: clamp(1.65rem, 1.3rem + 1.3vw, 2.1rem);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--fg-strong);
+    margin: 0;
+}
+
+.sms-stat__meta {
+    margin: .45rem 0 0;
+    font-size: .78rem;
+    color: var(--fg-faint);
+}
+
+/* --- Register table ------------------------------------------------------
+   The signature surface. Ruled rows, tabular figures, a marigold cursor on
+   the row under the pointer — the way a finger tracks a line in the book.
+   ------------------------------------------------------------------------ */
+
+.sms-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius);
+    border: 1px solid var(--rule);
+    background: var(--bg-surface);
+}
+
+.sms-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .875rem;
+}
+
+.sms-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-inset);
+    text-align: left;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    padding: .7rem .9rem;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+}
+
+.sms-table thead th.is-sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--dur) var(--ease);
+}
+
+.sms-table thead th.is-sortable:hover { color: var(--fg-strong); }
+
+.sms-table thead th .sort-caret {
+    display: inline-block;
+    margin-left: .35rem;
+    color: var(--kunyit);
+    transition: transform var(--dur) var(--ease);
+}
+
+.sms-table tbody td {
+    padding: .7rem .9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    color: var(--fg);
+    vertical-align: middle;
+}
+
+.sms-table tbody tr {
+    position: relative;
+    transition: background-color 120ms var(--ease);
+}
+
+.sms-table tbody tr:hover { background: var(--bg-inset); }
+
+/* the marigold cursor */
+.sms-table tbody tr::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--kunyit);
+    transform: scaleY(0);
+    transform-origin: center;
+    transition: transform 160ms var(--ease);
+}
+
+.sms-table tbody tr:hover::after { transform: scaleY(1); }
+
+.sms-table tbody tr:last-child td { border-bottom: none; }
+
+.sms-table__num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.sms-table__empty {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--fg-faint);
+}
+
+/* --- Badge --------------------------------------------------------------- */
 
 .sms-badge {
     display: inline-flex;
     align-items: center;
-    border-radius: 9999px;
-    padding: 0.25rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background-color: #e2e8f0;
+    gap: .35rem;
+    border-radius: 999px;
+    padding: .2rem .6rem;
+    font-size: .72rem;
+    font-weight: 650;
+    letter-spacing: .01em;
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+    border: 1px solid transparent;
+    white-space: nowrap;
 }
 
-.dark .sms-badge {
-    background-color: #334155;
+.sms-badge::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    flex: none;
 }
 
-.sms-gauge {
-    width: 120px;
-    height: 120px;
-    border-radius: 9999px;
-    display: flex;
+.sms-badge--good {
+    background: color-mix(in srgb, var(--daun) 14%, transparent);
+    color: var(--daun);
+    border-color: color-mix(in srgb, var(--daun) 30%, transparent);
+}
+
+.sms-badge--warn {
+    background: color-mix(in srgb, var(--kunyit) 16%, transparent);
+    color: var(--kunyit-deep);
+    border-color: color-mix(in srgb, var(--kunyit) 34%, transparent);
+}
+
+html.dark .sms-badge--warn { color: var(--kunyit); }
+
+.sms-badge--bad {
+    background: color-mix(in srgb, var(--bata) 13%, transparent);
+    color: var(--bata);
+    border-color: color-mix(in srgb, var(--bata) 30%, transparent);
+}
+
+.sms-badge--info {
+    background: color-mix(in srgb, var(--brand) 13%, transparent);
+    color: var(--brand);
+    border-color: color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.sms-btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    color: #0f172a;
-    background: conic-gradient(#4f46e5 0%, #e2e8f0 0%);
+    gap: .45rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    padding: .5rem .9rem;
+    font-family: inherit;
+    font-size: .85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+                color var(--dur) var(--ease), transform 80ms var(--ease), box-shadow var(--dur) var(--ease);
 }
 
-.dark .sms-gauge {
-    color: #e2e8f0;
+.sms-btn:active { transform: translateY(1px); }
+
+.sms-btn:disabled,
+.sms-btn[aria-disabled="true"] {
+    opacity: .5;
+    cursor: not-allowed;
+    transform: none;
 }
+
+.sms-btn--primary {
+    background: var(--brand);
+    color: var(--brand-fg);
+    box-shadow: var(--lift-1);
+}
+
+.sms-btn--primary:hover:not(:disabled) { background: var(--dongker-lift); }
+html.dark .sms-btn--primary:hover:not(:disabled) { background: #5f92e0; }
+
+.sms-btn--accent {
+    background: var(--kunyit);
+    color: var(--tinta);
+    box-shadow: var(--lift-1);
+}
+
+.sms-btn--accent:hover:not(:disabled) { background: var(--kunyit-deep); color: #fff; }
+
+.sms-btn--ghost {
+    background: transparent;
+    border-color: var(--rule);
+    color: var(--fg);
+}
+
+.sms-btn--ghost:hover:not(:disabled) {
+    border-color: var(--fg-faint);
+    background: var(--bg-inset);
+}
+
+.sms-btn--quiet {
+    background: transparent;
+    color: var(--fg-muted);
+    padding: .35rem .5rem;
+}
+
+.sms-btn--quiet:hover:not(:disabled) { color: var(--fg-strong); background: var(--bg-inset); }
+
+.sms-btn--danger {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--bata) 35%, transparent);
+    color: var(--bata);
+}
+
+.sms-btn--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--bata) 12%, transparent); }
+
+.sms-btn--sm { padding: .3rem .6rem; font-size: .78rem; }
+.sms-btn--block { width: 100%; }
+
+/* --- Form controls ------------------------------------------------------- */
+
+.sms-field { display: flex; flex-direction: column; gap: .35rem; }
+
+.sms-label {
+    font-size: .78rem;
+    font-weight: 620;
+    color: var(--fg-muted);
+    letter-spacing: .01em;
+}
+
+.sms-input,
+.sms-select,
+.sms-textarea {
+    width: 100%;
+    background: var(--bg-surface);
+    color: var(--fg-strong);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    padding: .5rem .7rem;
+    font-family: inherit;
+    font-size: .875rem;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.sms-input::placeholder, .sms-textarea::placeholder { color: var(--fg-faint); }
+
+.sms-input:hover, .sms-select:hover, .sms-textarea:hover { border-color: var(--fg-faint); }
+
+.sms-input:focus, .sms-select:focus, .sms-textarea:focus {
+    outline: none;
+    border-color: var(--kunyit);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kunyit) 22%, transparent);
+}
+
+.sms-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238792a4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right .55rem center;
+    background-size: 12px;
+    padding-right: 1.9rem;
+}
+
+.sms-textarea { resize: vertical; min-height: 5rem; line-height: 1.5; }
+
+/* Blazor validation states, restyled onto the token system */
+.valid.modified:not([type=checkbox]) { border-color: var(--daun); }
+
+.invalid {
+    border-color: var(--bata) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--bata) 18%, transparent);
+}
+
+.validation-message {
+    color: var(--bata);
+    font-size: .78rem;
+    font-weight: 550;
+}
+
+.validation-errors {
+    margin: 0 0 1rem;
+    padding: .7rem .9rem;
+    list-style: none;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bata) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--bata) 28%, transparent);
+    color: var(--bata);
+    font-size: .82rem;
+}
+
+/* --- Toolbar (search / filter row above a table) ------------------------- */
+
+.sms-toolbar {
+    display: grid;
+    gap: .8rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: end;
+    margin-bottom: 1.1rem;
+}
+
+/* --- Sidebar navigation --------------------------------------------------
+   The signature: an index tab. The active item gets a solid marigold tab that
+   sits proud of the rail, the way a plastic divider sticks out of a register.
+   ------------------------------------------------------------------------ */
+
+.sms-nav-group + .sms-nav-group { margin-top: 1.15rem; }
+
+.sms-nav-group__label {
+    display: block;
+    padding: 0 .75rem;
+    margin-bottom: .3rem;
+    font-size: .658rem;
+    font-weight: 750;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+}
+
+.sms-nav-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .45rem .75rem .45rem 1rem;
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-size: .855rem;
+    font-weight: 550;
+    text-decoration: none;
+    transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.sms-nav-link::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--kunyit);
+    transform: translateY(-50%);
+    transition: height 200ms var(--ease);
+}
+
+.sms-nav-link:hover {
+    color: var(--fg-strong);
+    background: var(--bg-inset);
+}
+
+.sms-nav-link:hover::before { height: 40%; }
+
+.sms-nav-link.active {
+    color: var(--fg-strong);
+    background: var(--bg-inset);
+    font-weight: 650;
+}
+
+.sms-nav-link.active::before { height: 68%; }
+
+.sms-nav-link__icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    opacity: .75;
+}
+
+.sms-nav-link.active .sms-nav-link__icon { opacity: 1; color: var(--kunyit); }
+
+/* --- Shell --------------------------------------------------------------- */
+
+.sms-shell { min-height: 100vh; display: flex; background: var(--bg-page); }
+
+.sms-sidebar {
+    width: 17rem;
+    flex: none;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+}
+
+.sms-sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    padding: 1.1rem 1.15rem;
+    border-bottom: 1px solid var(--rule);
+}
+
+.sms-sidebar__mark {
+    width: 2.2rem;
+    height: 2.2rem;
+    flex: none;
+    border-radius: 8px;
+    background: var(--dongker);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-weight: 700;
+    font-size: .82rem;
+    letter-spacing: -.03em;
+    position: relative;
+}
+
+/* the register tab, echoed in the logo mark */
+.sms-sidebar__mark::after {
+    content: "";
+    position: absolute;
+    right: -3px;
+    top: 7px;
+    width: 4px;
+    height: 11px;
+    border-radius: 0 2px 2px 0;
+    background: var(--kunyit);
+}
+
+.sms-sidebar__nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem .7rem 1.5rem;
+    scrollbar-width: thin;
+}
+
+.sms-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .8rem 1.25rem;
+    background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--rule);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+}
+
+.sms-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.sms-content { flex: 1; padding: 1.5rem 1.25rem 3rem; }
+
+@media (min-width: 1024px) {
+    .sms-content { padding: 2rem 2rem 4rem; }
+    .sms-topbar { padding: .85rem 2rem; }
+}
+
+/* Mobile: sidebar becomes an off-canvas drawer */
+@media (max-width: 1023px) {
+    .sms-sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 60;
+        transform: translateX(-100%);
+        transition: transform 240ms var(--ease);
+        box-shadow: var(--lift-3);
+    }
+
+    .sms-sidebar.is-open { transform: translateX(0); }
+
+    .sms-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgba(16, 26, 46, .45);
+        backdrop-filter: blur(2px);
+        animation: sms-fade 180ms var(--ease);
+    }
+}
+
+/* --- Avatar / identity --------------------------------------------------- */
+
+.sms-avatar {
+    width: 2rem;
+    height: 2rem;
+    flex: none;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--brand) 16%, transparent);
+    color: var(--brand);
+    font-weight: 700;
+    font-size: .75rem;
+    border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+/* --- Modal --------------------------------------------------------------- */
+
+.sms-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(16, 26, 46, .5);
+    backdrop-filter: blur(3px);
+    animation: sms-fade 160ms var(--ease);
+}
+
+.sms-modal {
+    width: 100%;
+    max-width: 34rem;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--lift-3);
+    animation: sms-pop 200ms var(--ease);
+}
+
+.sms-modal--wide { max-width: 52rem; }
+
+.sms-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.35rem;
+    border-bottom: 1px solid var(--rule);
+}
+
+.sms-modal__body { padding: 1.35rem; }
+
+.sms-modal__foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: .6rem;
+    padding: 1rem 1.35rem;
+    border-top: 1px solid var(--rule);
+    background: var(--bg-inset);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* --- Toast --------------------------------------------------------------- */
+
+.sms-toast-stack {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    max-width: min(24rem, calc(100vw - 2rem));
+}
+
+.sms-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .75rem .9rem;
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--brand);
+    box-shadow: var(--lift-2);
+    font-size: .85rem;
+    animation: sms-slide-in 220ms var(--ease);
+}
+
+.sms-toast--good { border-left-color: var(--daun); }
+.sms-toast--bad { border-left-color: var(--bata); }
+.sms-toast--warn { border-left-color: var(--kunyit); }
+
+/* --- Segmented control / tabs ------------------------------------------- */
+
+.sms-segment {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    background: var(--bg-sunken);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--rule);
+}
+
+.sms-segment__item {
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: .32rem .7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.sms-segment__item:hover { color: var(--fg-strong); }
+
+.sms-segment__item.is-active {
+    background: var(--bg-surface);
+    color: var(--fg-strong);
+    box-shadow: var(--lift-1);
+}
+
+/* --- Gauge (attendance rate etc.) ---------------------------------------- */
+
+.sms-gauge {
+    width: 116px;
+    height: 116px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    position: relative;
+    background: conic-gradient(var(--kunyit) var(--pct, 0%), var(--bg-sunken) 0);
+}
+
+.sms-gauge::after {
+    content: "";
+    position: absolute;
+    inset: 10px;
+    border-radius: 999px;
+    background: var(--bg-surface);
+}
+
+.sms-gauge__value {
+    position: relative;
+    z-index: 1;
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: var(--fg-strong);
+}
+
+/* --- Progress bar -------------------------------------------------------- */
+
+.sms-meter {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bg-sunken);
+    overflow: hidden;
+}
+
+.sms-meter__fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--kunyit);
+    transition: width 400ms var(--ease);
+}
+
+/* --- Empty state --------------------------------------------------------- */
+
+.sms-empty {
+    display: grid;
+    place-items: center;
+    gap: .5rem;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    color: var(--fg-muted);
+}
+
+.sms-empty__title { font-weight: 650; color: var(--fg-strong); }
+.sms-empty__hint { font-size: .85rem; max-width: 32ch; }
+
+/* --- Skeleton ------------------------------------------------------------ */
+
+.sms-skeleton {
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-sunken) 25%, var(--bg-inset) 37%, var(--bg-sunken) 63%);
+    background-size: 400% 100%;
+    animation: sms-shimmer 1.3s ease-in-out infinite;
+}
+
+/* --- Motion -------------------------------------------------------------- */
+
+@keyframes sms-fade { from { opacity: 0 } to { opacity: 1 } }
+
+@keyframes sms-pop {
+    from { opacity: 0; transform: translateY(8px) scale(.985) }
+    to { opacity: 1; transform: none }
+}
+
+@keyframes sms-slide-in {
+    from { opacity: 0; transform: translateX(14px) }
+    to { opacity: 1; transform: none }
+}
+
+@keyframes sms-shimmer {
+    from { background-position: 100% 50% }
+    to { background-position: 0 50% }
+}
+
+@keyframes sms-rise {
+    from { opacity: 0; transform: translateY(10px) }
+    to { opacity: 1; transform: none }
+}
+
+/* Page-load reveal — a short orchestrated stagger, not scattered effects. */
+.sms-reveal { animation: sms-rise 380ms var(--ease) backwards; }
+.sms-reveal:nth-child(1) { animation-delay: 20ms }
+.sms-reveal:nth-child(2) { animation-delay: 60ms }
+.sms-reveal:nth-child(3) { animation-delay: 100ms }
+.sms-reveal:nth-child(4) { animation-delay: 140ms }
+.sms-reveal:nth-child(5) { animation-delay: 180ms }
+.sms-reveal:nth-child(6) { animation-delay: 220ms }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* --- Scrollbars ---------------------------------------------------------- */
+
+* { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px }
+*::-webkit-scrollbar-track { background: transparent }
+*::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; border: 3px solid transparent; background-clip: content-box }
+*::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); background-clip: content-box; border: 3px solid transparent }
+
+/* --- Blazor framework surfaces ------------------------------------------ */
+
+.blazor-error-boundary {
+    background: var(--bata);
+    padding: 1rem 1rem 1rem 1rem;
+    color: white;
+    border-radius: var(--radius);
+}
+
+.blazor-error-boundary::after { content: "Terjadi kesalahan pada komponen ini." }
+
+#blazor-error-ui {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: none;
+    padding: .8rem 1.25rem;
+    background: var(--kunyit);
+    color: var(--tinta);
+    font-size: .875rem;
+    font-weight: 600;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, .2);
+}
+
+#blazor-error-ui .dismiss { cursor: pointer; float: right; font-size: 1.1rem; line-height: 1 }
+#blazor-error-ui .reload { color: var(--tinta); text-decoration: underline }
+
+/* ==========================================================================
+   Auth surface — sign in, register, reset
+   Split screen: the brand panel carries the pitch, the form panel stays quiet.
+   ========================================================================== */
+
+.sms-auth {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+    .sms-auth { grid-template-columns: 1.05fr 1fr; }
+}
+
+.sms-auth__aside {
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 2.5rem;
+    background:
+        radial-gradient(120% 90% at 12% 8%, #24508f 0%, transparent 55%),
+        linear-gradient(160deg, #1b3a6b 0%, #101a2e 100%);
+    color: #eef2f8;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Ruled-register motif, very faint — the same grid the tables use. */
+.sms-auth__aside::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+        to bottom, transparent 0 34px, rgba(255, 255, 255, .05) 34px 35px);
+    pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+    .sms-auth__aside { display: flex; }
+}
+
+.sms-auth__brand { display: flex; align-items: center; gap: .8rem; position: relative; z-index: 1; }
+
+.sms-auth__pitch { position: relative; z-index: 1; }
+
+.sms-auth__list {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: .7rem;
+    max-width: 40ch;
+}
+
+.sms-auth__list li {
+    padding-left: 1.1rem;
+    position: relative;
+    font-size: .875rem;
+    opacity: .8;
+    line-height: 1.5;
+}
+
+.sms-auth__list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .55em;
+    width: 5px;
+    height: 5px;
+    border-radius: 2px;
+    background: var(--kunyit);
+}
+
+.sms-auth__list span {
+    display: block;
+    font-weight: 700;
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--kunyit);
+    opacity: 1;
+    margin-bottom: 1px;
+}
+
+.sms-auth__main {
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    background: var(--bg-page);
+}
+
+.sms-auth__panel {
+    position: relative;
+    width: 100%;
+    max-width: 26rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-lg);
+    padding: 2rem 1.75rem;
+    box-shadow: var(--lift-2);
+    animation: sms-rise 360ms var(--ease) backwards;
+}
+
+.sms-auth__theme { position: absolute; top: .8rem; right: .8rem; padding: .35rem; }
+
+.sms-auth__title {
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 .3rem;
+    color: var(--fg-strong);
+}
+
+.sms-auth__sub { margin: 0 0 1.5rem; font-size: .875rem; color: var(--fg-muted); }
+
+.sms-auth__foot {
+    margin: 1.5rem 0 0;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule-soft);
+    font-size: .82rem;
+    color: var(--fg-muted);
+    text-align: center;
+}
+
+.sms-auth__foot a { color: var(--brand); font-weight: 600; text-decoration: none; }
+.sms-auth__foot a:hover { text-decoration: underline; }
+
+.sms-auth__hint {
+    margin-top: 1rem;
+    padding: .7rem .85rem;
+    border-radius: var(--radius-sm);
+    background: var(--bg-inset);
+    border: 1px dashed var(--rule);
+    font-size: .78rem;
+    color: var(--fg-muted);
+}
+
+.sms-auth__error {
+    margin: 0 0 1.1rem;
+    padding: .7rem .85rem;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bata) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--bata) 30%, transparent);
+    color: var(--bata);
+    font-size: .84rem;
+    font-weight: 550;
+}
+
+/* Print: reports should come out as documents, not app screenshots. */
+@media print {
+    .sms-sidebar, .sms-topbar, .sms-toast-stack, .sms-page-head .sms-btn { display: none !important; }
+    .sms-content { padding: 0 !important; }
+    .sms-card, .sms-stat { box-shadow: none !important; break-inside: avoid; }
+    body { background: #fff !important; }
+}
+
+/* ==========================================================================
+   Penjadwalan otomatis — sel jadwal yang dapat disunting
+   ========================================================================== */
+
+.jadwal-sel {
+    width: 100%;
+    min-height: 3.4rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    padding: .45rem .55rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease),
+                transform 80ms var(--ease);
+}
+
+.jadwal-sel:hover {
+    border-color: var(--kunyit);
+    background: var(--bg-inset);
+    transform: translateY(-1px);
+}
+
+.jadwal-sel__mapel {
+    font-size: .8rem;
+    font-weight: 650;
+    color: var(--fg-strong);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.jadwal-sel__guru {
+    font-size: .7rem;
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.jadwal-sel.is-kosong {
+    border-style: dashed;
+    background: transparent;
+}
+
+.jadwal-sel__kosong {
+    font-size: .72rem;
+    color: var(--fg-faint);
+    font-style: italic;
+}
+
+/* A clash is the one thing that must be impossible to overlook. */
+.jadwal-sel.is-bentrok {
+    border-color: var(--bata);
+    border-width: 2px;
+    background: color-mix(in srgb, var(--bata) 10%, transparent);
+}
+
+.jadwal-sel.is-bentrok .jadwal-sel__mapel { color: var(--bata); }
+
+/* --- Rich text editor ----------------------------------------------------- */
+
+.sms-editor {
+    border: 1px solid var(--rule);
+    border-radius: .6rem;
+    background: var(--bg-surface);
+    overflow: hidden;
+}
+
+.sms-editor__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .15rem;
+    padding: .3rem;
+    border-bottom: 1px solid var(--rule-soft);
+    background: var(--bg-inset);
+}
+
+.sms-editor__grup {
+    display: flex;
+    gap: .1rem;
+    padding-right: .3rem;
+    margin-right: .2rem;
+    border-right: 1px solid var(--rule-soft);
+}
+
+.sms-editor__grup:last-child {
+    border-right: 0;
+    margin-right: 0;
+    padding-right: 0;
+}
+
+.sms-editor__tombol {
+    min-width: 1.85rem;
+    height: 1.85rem;
+    display: grid;
+    place-items: center;
+    padding: 0 .35rem;
+    border: 0;
+    border-radius: .35rem;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: .82rem;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+}
+
+.sms-editor__tombol:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    color: var(--brand);
+}
+
+.sms-editor__isi {
+    min-height: 9rem;
+    max-height: 22rem;
+    overflow-y: auto;
+    padding: .75rem .85rem;
+    font-size: .875rem;
+    line-height: 1.65;
+    color: var(--fg);
+    outline: none;
+}
+
+/* Without this the field looks identical whether it is empty or focused.
+
+   The editor seeds an empty paragraph, so :empty never matches — editor.js marks
+   emptiness with .is-kosong instead. The placeholder sits on the container rather
+   than the child because attr() can only read an attribute from the element its
+   pseudo-element belongs to, and is absolute so it never displaces the caret. */
+.sms-editor__isi { position: relative; }
+
+.sms-editor__isi.is-kosong::before {
+    content: attr(data-placeholder);
+    position: absolute;
+    color: var(--fg-faint);
+    pointer-events: none;
+}
+
+.sms-editor__isi:focus {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 25%, transparent);
+}
+
+.sms-editor__isi > :first-child { margin-top: 0; }
+.sms-editor__isi > :last-child { margin-bottom: 0; }
+.sms-editor__isi p { margin: 0 0 .6rem; }
+
+.sms-editor__isi h1,
+.sms-editor__isi h2,
+.sms-editor__isi h3 {
+    margin: .8rem 0 .4rem;
+    font-weight: 700;
+    color: var(--fg-strong);
+}
+
+.sms-editor__isi h3 { font-size: 1.02rem; }
+/* Tailwind's preflight strips list markers globally, which would leave a bulleted
+   list indistinguishable from plain indented lines — the one thing the button the
+   user just pressed was supposed to do. */
+.sms-editor__isi ul,
+.sms-editor__isi ol { margin: 0 0 .6rem; padding-left: 1.35rem; }
+.sms-editor__isi ul { list-style: disc outside; }
+.sms-editor__isi ol { list-style: decimal outside; }
+.sms-editor__isi li { margin: .15rem 0; display: list-item; }
+.sms-editor__isi a { color: var(--brand); text-decoration: underline; }
+
+.sms-editor__isi blockquote {
+    margin: .5rem 0;
+    padding: .2rem 0 .2rem .8rem;
+    border-left: 3px solid color-mix(in srgb, var(--kunyit) 60%, transparent);
+    color: var(--fg-muted);
+}
+
+.sms-editor__isi pre {
+    margin: .5rem 0;
+    padding: .6rem .75rem;
+    border-radius: .4rem;
+    background: var(--bg-inset);
+    font-size: .8rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.sms-editor__isi img { max-width: 100%; height: auto; border-radius: .4rem; }
+
+/* Read-only rendering of stored rich text, outside the editor. */
+.sms-prosa { font-size: .875rem; line-height: 1.65; color: var(--fg-muted); }
+.sms-prosa > :first-child { margin-top: 0; }
+.sms-prosa > :last-child { margin-bottom: 0; }
+.sms-prosa p { margin: 0 0 .6rem; }
+
+.sms-prosa h1,
+.sms-prosa h2,
+.sms-prosa h3 {
+    margin: .8rem 0 .4rem;
+    font-weight: 700;
+    color: var(--fg-strong);
+    font-size: 1rem;
+}
+
+.sms-prosa ul,
+.sms-prosa ol { margin: 0 0 .6rem; padding-left: 1.35rem; }
+.sms-prosa ul { list-style: disc outside; }
+.sms-prosa ol { list-style: decimal outside; }
+.sms-prosa li { margin: .15rem 0; display: list-item; }
+.sms-prosa a { color: var(--brand); text-decoration: underline; }
+
+.sms-prosa blockquote {
+    margin: .5rem 0;
+    padding: .2rem 0 .2rem .8rem;
+    border-left: 3px solid color-mix(in srgb, var(--kunyit) 60%, transparent);
+}
+
+.sms-prosa pre {
+    margin: .5rem 0;
+    padding: .6rem .75rem;
+    border-radius: .4rem;
+    background: var(--bg-inset);
+    font-size: .8rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.sms-prosa img { max-width: 100%; height: auto; border-radius: .4rem; }
+
+.sms-prosa table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: .5rem 0;
+    font-size: .82rem;
+}
+
+.sms-prosa th,
+.sms-prosa td {
+    border: 1px solid var(--rule);
+    padding: .35rem .5rem;
+    text-align: left;
+}
+
+/* --- Comment threads ------------------------------------------------------ */
+
+.sms-komentar {
+    margin-top: .9rem;
+    padding-top: .8rem;
+    border-top: 1px solid var(--rule-soft);
+}
+
+.sms-komentar__head {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+}
+
+.sms-komentar__list {
+    list-style: none;
+    margin: .6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: .7rem;
+}
+
+.sms-komentar__item { display: flex; gap: .55rem; align-items: flex-start; }
+
+.sms-avatar--sm { width: 1.6rem; height: 1.6rem; font-size: .62rem; }
+
+.sms-komentar__meta { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+
+.sms-komentar__nama { font-size: .8rem; font-weight: 600; color: var(--fg-strong); }
+
+.sms-komentar__waktu { font-size: .68rem; color: var(--fg-faint); }
+
+.sms-komentar__hapus {
+    border: 0;
+    background: transparent;
+    color: var(--fg-faint);
+    cursor: pointer;
+    padding: .1rem;
+    border-radius: .25rem;
+    display: inline-grid;
+    place-items: center;
+    transition: color .12s ease, background .12s ease;
+}
+
+.sms-komentar__hapus:hover {
+    color: var(--bata);
+    background: color-mix(in srgb, var(--bata) 12%, transparent);
+}
+
+.sms-komentar__isi {
+    margin: .15rem 0 0;
+    font-size: .84rem;
+    line-height: 1.55;
+    color: var(--fg-muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.sms-komentar__lampiran { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+
+.sms-komentar__gambar {
+    display: block;
+    width: 5.5rem;
+    height: 5.5rem;
+    border-radius: .4rem;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+}
+
+.sms-komentar__gambar img { width: 100%; height: 100%; object-fit: cover; }
+
+.sms-komentar__berkas {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    max-width: 15rem;
+    padding: .3rem .55rem;
+    border: 1px solid var(--rule);
+    border-radius: .4rem;
+    background: var(--bg-inset);
+    font-size: .75rem;
+    color: var(--fg-muted);
+    text-decoration: none;
+    transition: border-color .12s ease, color .12s ease;
+}
+
+.sms-komentar__berkas:hover { border-color: var(--brand); color: var(--brand); }
+
+.sms-komentar__ukuran { font-size: .66rem; color: var(--fg-faint); flex: none; }
+
+.sms-komentar__tulis {
+    margin-top: .75rem;
+    padding: .5rem;
+    border: 1px solid var(--rule);
+    border-radius: .5rem;
+    background: var(--bg-inset);
+}
+
+.sms-komentar__aksi { display: flex; align-items: center; gap: .2rem; margin-top: .4rem; }
+
+.sms-komentar__antre { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+
+.sms-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    max-width: 12rem;
+    padding: .2rem .45rem;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--bg-surface);
+    font-size: .7rem;
+    color: var(--fg-muted);
+}
+
+.sms-chip button {
+    border: 0;
+    background: transparent;
+    color: var(--fg-faint);
+    cursor: pointer;
+    font-size: .9rem;
+    line-height: 1;
+    padding: 0 .1rem;
+}
+
+.sms-chip button:hover { color: var(--bata); }
+
+.sms-emoji {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: .1rem;
+    margin-top: .4rem;
+    padding: .35rem;
+    border: 1px solid var(--rule);
+    border-radius: .4rem;
+    background: var(--bg-surface);
+}
+
+.sms-emoji button {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+    padding: .2rem;
+    border-radius: .25rem;
+    transition: background .1s ease, transform .1s ease;
+}
+
+.sms-emoji button:hover {
+    background: color-mix(in srgb, var(--brand) 14%, transparent);
+    transform: scale(1.15);
+}
+
+@media (max-width: 640px) {
+    .sms-emoji { grid-template-columns: repeat(7, 1fr); }
+}
+
+/* --- Segmented control ---------------------------------------------------- */
+
+.sms-segment {
+    display: inline-flex;
+    padding: .2rem;
+    border: 1px solid var(--rule);
+    border-radius: .5rem;
+    background: var(--bg-inset);
+    gap: .15rem;
+}
+
+.sms-segment button {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .35rem .7rem;
+    border: 0;
+    border-radius: .35rem;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: .78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+}
+
+.sms-segment button:hover { color: var(--fg-strong); }
+
+.sms-segment button.is-aktif {
+    background: var(--bg-surface);
+    color: var(--brand);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .08);
+}
+
+/* --- Upload dropzone ------------------------------------------------------ */
+
+.sms-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+    padding: 1.4rem 1rem;
+    border: 1.5px dashed var(--rule);
+    border-radius: .55rem;
+    background: var(--bg-inset);
+    color: var(--fg-muted);
+    font-size: .82rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+
+.sms-dropzone:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 6%, var(--bg-inset));
+}
+
+.sms-dropzone__hint { font-size: .7rem; color: var(--fg-faint); }
+
+/* --- Multi-class picker --------------------------------------------------- */
+
+.sms-pilih-kelas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.sms-pilih-kelas__item {
+    padding: .3rem .7rem;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--bg-surface);
+    color: var(--fg-muted);
+    font-size: .78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.sms-pilih-kelas__item:hover { border-color: var(--brand); color: var(--brand); }
+
+.sms-pilih-kelas__item.is-aktif {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
+}
+
+/* --- Lookup (datalist-backed combo) --------------------------------------- */
+
+.sms-lookup { position: relative; }
+
+.sms-lookup__hint {
+    margin: .2rem 0 0;
+    font-size: .7rem;
+    color: var(--fg-faint);
+}
+
+.sms-lookup__hint.is-baru { color: var(--kunyit-deep); }

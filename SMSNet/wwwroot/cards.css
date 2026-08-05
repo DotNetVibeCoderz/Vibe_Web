@@ -1,0 +1,298 @@
+/* ==========================================================================
+   Kartu ber-QR — tampilan layar dan cetak
+   Ukuran mengikuti ID-1 (85.6 × 54 mm) agar muat di holder tanda pengenal biasa.
+   ========================================================================== */
+
+.kartu-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(86mm, 1fr));
+    gap: 6mm;
+}
+
+.kartu {
+    position: relative;
+    width: 85.6mm;
+    height: 54mm;
+    box-sizing: border-box;
+    padding: 4.5mm 5mm 3mm;
+    border-radius: 3mm;
+    background: #ffffff;
+    border: 1px solid var(--garis, #d8dce4);
+    color: #101a2e;
+    font-family: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    /* The card is a physical artefact: it always prints on white, never in the
+       viewer's dark theme. */
+    color-scheme: light only;
+}
+
+/* The register tab, carried onto the card itself. */
+.kartu__pita {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3.5mm;
+    background: linear-gradient(180deg, #1b3a6b 0%, #1b3a6b 62%, #e8a317 62%, #e8a317 100%);
+}
+
+.kartu--guru .kartu__pita {
+    background: linear-gradient(180deg, #2f7d5c 0%, #2f7d5c 62%, #e8a317 62%, #e8a317 100%);
+}
+
+.kartu__isi {
+    display: flex;
+    gap: 3mm;
+    flex: 1;
+    padding-left: 3mm;
+    min-height: 0;
+}
+
+.kartu__kiri { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.kartu__kanan {
+    flex: none;
+    width: 24mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1mm;
+}
+
+.kartu__sekolah { display: flex; align-items: center; gap: 2mm; margin-bottom: 2.5mm; }
+
+.kartu__logo {
+    flex: none;
+    width: 7mm;
+    height: 7mm;
+    border-radius: 1.5mm;
+    background: #1b3a6b;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-weight: 700;
+    font-size: 2.6mm;
+    letter-spacing: -0.02em;
+}
+
+.kartu--guru .kartu__logo { background: #2f7d5c; }
+
+.kartu__namasekolah {
+    margin: 0;
+    font-weight: 700;
+    font-size: 2.9mm;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+}
+
+.kartu__tahun { margin: 0; font-size: 2.2mm; color: #5b6678; }
+
+.kartu__nama {
+    margin: 0 0 1.8mm;
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-weight: 700;
+    font-size: 4.4mm;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    /* Long Indonesian names must not push the QR off the card. */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+/* Sits directly under the name rather than being pushed to the foot of the card —
+   a gap that size reads as a mistake on a piece of print. */
+.kartu__data { margin: 0; padding: 0; display: grid; gap: 0.9mm; }
+
+.kartu__data > div { display: grid; grid-template-columns: 13mm 1fr; align-items: baseline; gap: 1mm; }
+
+.kartu__data dt {
+    margin: 0;
+    font-size: 2.1mm;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8792a4;
+}
+
+.kartu__data dd {
+    margin: 0;
+    font-size: 2.6mm;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kartu__qr { width: 22mm; height: 22mm; display: block; }
+
+.kartu__kode {
+    margin: 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 2.1mm;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #2c3648;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.kartu__catatan {
+    margin: auto 0 0;   /* pinned to the foot, whatever the content above it */
+    padding-left: 3mm;
+    padding-top: 1.5mm;
+    font-size: 1.9mm;
+    color: #8792a4;
+    text-align: center;
+}
+
+/* --- Screen preview ------------------------------------------------------ */
+
+.kartu-preview {
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background: var(--bg-inset);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    overflow-x: auto;
+}
+
+.kartu-preview .kartu { box-shadow: 0 4px 14px rgba(16, 26, 46, .14); }
+
+/* --- Print ---------------------------------------------------------------
+   Only the card sheet reaches the printer; everything else is suppressed.
+   ------------------------------------------------------------------------ */
+
+@media print {
+    @page { size: A4 portrait; margin: 10mm; }
+
+    body * { visibility: hidden; }
+
+    #lembar-kartu, #lembar-kartu * { visibility: visible; }
+
+    #lembar-kartu {
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        background: #fff;
+    }
+
+    .kartu-grid {
+        grid-template-columns: repeat(2, 85.6mm);
+        gap: 5mm;
+        justify-content: start;
+    }
+
+    .kartu {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        box-shadow: none;
+        /* Browsers drop background colours when printing unless asked not to;
+           without this the coloured spine disappears. */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+/* ==========================================================================
+   Pemindai absensi QR
+   ========================================================================== */
+
+.pindai {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+    .pindai { grid-template-columns: minmax(0, 27rem) minmax(0, 1fr); }
+}
+
+.pindai__kamera {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--tinta);
+}
+
+.pindai__kamera video,
+.pindai__kamera canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Aiming frame — corner brackets rather than a full box, so the code stays visible. */
+.pindai__bidik {
+    position: absolute;
+    inset: 18%;
+    pointer-events: none;
+    border-radius: 6px;
+    box-shadow: 0 0 0 100vmax rgba(16, 26, 46, .45);
+}
+
+.pindai__bidik::before,
+.pindai__bidik::after {
+    content: "";
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border: 3px solid var(--kunyit);
+}
+
+.pindai__bidik::before { top: -3px; left: -3px; border-right: none; border-bottom: none; border-radius: 6px 0 0 0; }
+.pindai__bidik::after { bottom: -3px; right: -3px; border-left: none; border-top: none; border-radius: 0 0 6px 0; }
+
+.pindai__kosong {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    padding: 1.5rem;
+    color: #94a1b5;
+    gap: .6rem;
+}
+
+.pindai__hasil {
+    display: flex;
+    align-items: flex-start;
+    gap: .7rem;
+    padding: .85rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--rule);
+    background: var(--bg-inset);
+    animation: sms-rise 240ms var(--ease) backwards;
+}
+
+.pindai__hasil--ok {
+    border-color: color-mix(in srgb, var(--daun) 40%, transparent);
+    background: color-mix(in srgb, var(--daun) 10%, transparent);
+}
+
+.pindai__hasil--ulang {
+    border-color: color-mix(in srgb, var(--kunyit) 45%, transparent);
+    background: color-mix(in srgb, var(--kunyit) 12%, transparent);
+}
+
+.pindai__hasil--gagal {
+    border-color: color-mix(in srgb, var(--bata) 40%, transparent);
+    background: color-mix(in srgb, var(--bata) 10%, transparent);
+}
+
+.pindai__kode-input {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.05rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+/* The most recent scan is highlighted briefly so a queue operator can see it land. */
+@keyframes pindai-sorot {
+    from { background: color-mix(in srgb, var(--kunyit) 26%, transparent); }
+    to { background: transparent; }
+}
+
+.pindai__baru { animation: pindai-sorot 1.6s var(--ease); }

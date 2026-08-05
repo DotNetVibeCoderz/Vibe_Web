@@ -1,153 +1,340 @@
 @page "/academic/grades"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inherits CrudPageBase<GradeRecord>
 
-<h1 class="text-2xl font-semibold mb-6">Penilaian & Rapor Digital</h1>
+<PageTitle>Penilaian & Rapor — SMSNet</PageTitle>
 
-<div class="grid gap-6 lg:grid-cols-2">
-    <div class="sms-card space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Input Nilai</h2>
-            <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah</button>
-        </div>
-        <table class="min-w-full text-sm">
-            <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                    <th class="py-2">Siswa</th>
-                    <th class="py-2">Mata Pelajaran</th>
-                    <th class="py-2">Nilai</th>
-                    <th class="py-2">Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var grade in GradeItems)
-                {
-                    <tr class="border-b border-slate-100 dark:border-slate-800">
-                        <td class="py-2">@grade.StudentName</td>
-                        <td class="py-2">@grade.Subject</td>
-                        <td class="py-2">@grade.Score</td>
-                        <td class="py-2 flex gap-2">
-                            <button class="text-indigo-600" @onclick="() => EditGrade(grade)">Edit</button>
-                            <button class="text-rose-600" @onclick="() => DeleteGrade(grade.Id)">Hapus</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+<PageHeader Eyebrow="Akademik" Title="Penilaian & Rapor"
+            Subtitle="Input nilai, analisis hasil belajar, dan bahan rapor digital.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Input Nilai</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-        @if (ShowForm)
-        {
-            <EditForm Model="FormModel" OnValidSubmit="SaveGrade">
-                <DataAnnotationsValidator />
-                <div class="grid gap-3">
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama siswa" @bind-Value="FormModel.StudentName" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Mata pelajaran" @bind-Value="FormModel.Subject" />
-                    <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nilai" @bind-Value="FormModel.Score" />
-                    <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Catatan" @bind-Value="FormModel.Notes" />
-                </div>
-                <div class="mt-3 flex gap-2">
-                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                    <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-                </div>
-            </EditForm>
-        }
-    </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Analisis Hasil Belajar</h2>
-        <ul class="space-y-3">
-            <li class="flex items-center justify-between">
-                <span>Rata-rata Nilai</span>
-                <span class="sms-badge">@AverageScore.ToString("0.0")</span>
-            </li>
-            <li class="flex items-center justify-between">
-                <span>Nilai Tertinggi</span>
-                <span class="sms-badge">@MaxScore</span>
-            </li>
-            <li class="flex items-center justify-between">
-                <span>Nilai Terendah</span>
-                <span class="sms-badge">@MinScore</span>
-            </li>
-            <li class="flex items-center justify-between">
-                <span>Status Rapor Online</span>
-                <span class="sms-badge">Aktif</span>
-            </li>
-        </ul>
-    </div>
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Nilai" Value="@Items.Count.ToString()" Icon="chart" Tone="brand" />
+    <StatTile Label="Rata-rata" Value="@Average.ToString("0.##")"
+              Meta="seluruh mata pelajaran" Icon="activity"
+              Tone="@(Average >= 75 ? "good" : "warn")" />
+    <StatTile Label="Nilai Tertinggi" Value="@(Items.Count == 0 ? "—" : Items.Max(g => g.Score).ToString("0.##"))" Icon="trend" Tone="good" />
+    <StatTile Label="Di Bawah KKM (75)" Value="@Items.Count(g => g.Score < 75).ToString()" Icon="warning" Tone="warn" />
 </div>
 
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama siswa atau mata pelajaran…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-mapel">Mata pelajaran</label>
+            <select id="f-mapel" class="sms-select" @bind="SubjectFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                @foreach (var mapel in Items.Select(g => g.Subject).Distinct().OrderBy(s => s))
+                {
+                    <option value="@mapel">@mapel</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kelas">Kelas</label>
+            <select id="f-kelas" class="sms-select" @bind="ClassFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                @foreach (var kelas in Items.Where(g => !string.IsNullOrWhiteSpace(g.ClassName))
+                                            .Select(g => g.ClassName!).Distinct().OrderBy(c => c))
+                {
+                    <option value="@kelas">@kelas</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kkm">Ketuntasan</label>
+            <select id="f-kkm" class="sms-select" @bind="PassFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                <option value="pass">Tuntas (≥ 75)</option>
+                <option value="fail">Belum tuntas (&lt; 75)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">@for (var i = 0; i < 6; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="chart" Title="Belum ada nilai" Hint="Input nilai siswa untuk mulai menyusun rapor." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("siswa")'>Siswa <span class="sort-caret">@SortCaret("siswa")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("kelas")'>Kelas <span class="sort-caret">@SortCaret("kelas")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("mapel")'>Mata Pelajaran <span class="sort-caret">@SortCaret("mapel")</span></th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("nilai")'>Nilai <span class="sort-caret">@SortCaret("nilai")</span></th>
+                        <th>Ketuntasan</th>
+                        <th>Catatan</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var nilai in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@nilai.StudentName</td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(nilai.ClassName))
+                                {
+                                    <span style="color: var(--fg-faint)">—</span>
+                                }
+                                else
+                                {
+                                    <span class="sms-badge">@nilai.ClassName</span>
+                                }
+                            </td>
+                            <td>@nilai.Subject</td>
+                            <td class="sms-table__num font-semibold">@nilai.Score.ToString("0.##")</td>
+                            <td>
+                                <span class="sms-badge @(nilai.Score >= 75 ? "sms-badge--good" : "sms-badge--bad")">
+                                    @(nilai.Score >= 75 ? "Tuntas" : "Belum tuntas")
+                                </span>
+                            </td>
+                            <td style="color: var(--fg-muted)">@(nilai.Notes ?? "—")</td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(nilai)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(nilai)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="nilai" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
+</div>
+
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Input Nilai" : "Ubah Nilai")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveGradeAsync" id="form-nilai">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="grid gap-4 md:grid-cols-3">
+                    <div class="sms-field md:col-span-2">
+                        <label class="sms-label">Nama siswa</label>
+                        <LookupInput Value="@Form.StudentName" ValueChanged="OnStudentChanged"
+                                     Options="_studentNames" Noun="siswa"
+                                     Placeholder="Ketik nama siswa…" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Kelas</label>
+                        <LookupInput Value="@Form.ClassName" ValueChanged="v => Form.ClassName = v"
+                                     Options="_classNames" Noun="kelas" ShowHint="false"
+                                     Placeholder="Kelas" />
+                        <p class="text-xs m-0" style="color: var(--fg-faint)">
+                            Terisi otomatis dari data siswa.
+                        </p>
+                    </div>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Mata pelajaran</label>
+                        <LookupInput Value="@Form.Subject" ValueChanged="v => Form.Subject = v"
+                                     Options="_subjectNames" Noun="mata pelajaran"
+                                     Placeholder="Ketik mata pelajaran…" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Nilai (0–100)</label>
+                        <InputNumber class="sms-input" @bind-Value="Form.Score" />
+                        @if (_scoreError is not null)
+                        {
+                            <p class="text-xs m-0" style="color: var(--bata)">@_scoreError</p>
+                        }
+                    </div>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Catatan guru</label>
+                    <InputTextArea class="sms-textarea" rows="3" @bind-Value="Form.Notes" />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="SaveGradeAsync">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus nilai"
+               Message="Data nilai ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<GradeRecord> GradeItems { get; set; } = new();
-    private GradeRecord FormModel { get; set; } = new();
-    private decimal AverageScore { get; set; }
-    private decimal MaxScore { get; set; }
-    private decimal MinScore { get; set; }
-    private bool ShowForm { get; set; }
+    private string SubjectFilter = string.Empty;
+    private string ClassFilter = string.Empty;
+    private string PassFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    private List<string> _studentNames = new();
+    private List<string> _subjectNames = new();
+    private List<string> _classNames = new();
+
+    /// <summary>Student name → their current class, for filling the class field in.</summary>
+    private Dictionary<string, string> _studentClass = new(StringComparer.OrdinalIgnoreCase);
+
+    private string? _scoreError;
+
+    private decimal Average => Items.Count == 0 ? 0 : Items.Average(g => g.Score);
+
+    protected override async Task OnInitializedAsync()
     {
-        LoadGrades();
-        return Task.CompletedTask;
+        await base.OnInitializedAsync();
+        await LoadLookupsAsync();
     }
 
-    private void LoadGrades()
+    private async Task LoadLookupsAsync()
     {
-        GradeItems = Db.GradeRecords.AsNoTracking().ToList();
-        if (Db.GradeRecords.Any())
+        try
         {
-            AverageScore = Db.GradeRecords.Average(g => g.Score);
-            MaxScore = Db.GradeRecords.Max(g => g.Score);
-            MinScore = Db.GradeRecords.Min(g => g.Score);
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var students = await db.Students.AsNoTracking()
+                .OrderBy(s => s.FullName)
+                .Select(s => new { s.FullName, s.ClassName })
+                .ToListAsync();
+
+            _studentNames = students.Select(s => s.FullName).Distinct().ToList();
+
+            // Last one wins on a duplicate name — the alternative is throwing, and a
+            // duplicate name must not stop a teacher entering marks.
+            _studentClass = students
+                .Where(s => !string.IsNullOrWhiteSpace(s.ClassName))
+                .GroupBy(s => s.FullName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Last().ClassName!, StringComparer.OrdinalIgnoreCase);
+
+            _subjectNames = await db.Subjects.AsNoTracking()
+                .OrderBy(s => s.Name).Select(s => s.Name).ToListAsync();
+
+            _classNames = await db.ClassRooms.AsNoTracking()
+                .OrderBy(c => c.Name).Select(c => c.Name).ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal memuat data acuan: {ex.Message}");
         }
     }
 
-    private void ShowAdd()
+    /// <summary>Filling the class from the roster is the whole point of the lookup —
+    /// but only when the field is empty or still holds the previous student's class,
+    /// so a deliberate override is never overwritten.</summary>
+    private void OnStudentChanged(string value)
     {
-        FormModel = new GradeRecord();
-        ShowForm = true;
+        var previous = Form.StudentName;
+        Form.StudentName = value;
+
+        if (!_studentClass.TryGetValue(value, out var kelas))
+        {
+            return;
+        }
+
+        var wasAuto = string.IsNullOrWhiteSpace(Form.ClassName)
+                      || (_studentClass.TryGetValue(previous ?? string.Empty, out var previousClass)
+                          && string.Equals(Form.ClassName, previousClass, StringComparison.OrdinalIgnoreCase));
+
+        if (wasAuto)
+        {
+            Form.ClassName = kelas;
+        }
     }
 
-    private void EditGrade(GradeRecord grade)
+    protected override void OnFormOpened() => _scoreError = null;
+
+    private async Task SaveGradeAsync()
     {
-        FormModel = new GradeRecord
+        if (string.IsNullOrWhiteSpace(Form.StudentName))
         {
-            Id = grade.Id,
-            StudentName = grade.StudentName,
-            Subject = grade.Subject,
-            Score = grade.Score,
-            Notes = grade.Notes
+            _scoreError = "Nama siswa belum diisi.";
+            return;
+        }
+
+        if (Form.Score < 0 || Form.Score > 100)
+        {
+            _scoreError = "Nilai harus di antara 0 dan 100.";
+            return;
+        }
+
+        _scoreError = null;
+
+        // A grade with no class cannot be grouped in any report, so fall back to the
+        // roster if the teacher typed a name the lookup only matched after the fact.
+        if (string.IsNullOrWhiteSpace(Form.ClassName)
+            && _studentClass.TryGetValue(Form.StudentName, out var kelas))
+        {
+            Form.ClassName = kelas;
+        }
+
+        await SaveAsync();
+    }
+
+    protected override string EntityLabel => "nilai";
+
+    protected override DbSet<GradeRecord> Table(ApplicationDbContext db) => db.GradeRecords;
+
+    protected override IEnumerable<string?> SearchableText(GradeRecord g) =>
+        new[] { g.StudentName, g.ClassName, g.Subject, g.Notes };
+
+    protected override string Describe(GradeRecord g) => $"{g.StudentName} — {g.Subject}";
+
+    protected override int IdOf(GradeRecord g) => g.Id;
+
+    protected override GradeRecord CloneForEdit(GradeRecord g) => new()
+    {
+        Id = g.Id, StudentName = g.StudentName, ClassName = g.ClassName,
+        Subject = g.Subject, Score = g.Score, Notes = g.Notes
+    };
+
+    protected override IEnumerable<GradeRecord> ApplyFilters(IEnumerable<GradeRecord> items)
+    {
+        if (!string.IsNullOrWhiteSpace(SubjectFilter)) items = items.Where(g => g.Subject == SubjectFilter);
+        if (!string.IsNullOrWhiteSpace(ClassFilter)) items = items.Where(g => g.ClassName == ClassFilter);
+
+        items = PassFilter switch
+        {
+            "pass" => items.Where(g => g.Score >= 75),
+            "fail" => items.Where(g => g.Score < 75),
+            _ => items
         };
-        ShowForm = true;
+
+        return items;
     }
 
-    private async Task SaveGrade()
+    protected override IEnumerable<GradeRecord> ApplySort(IEnumerable<GradeRecord> items) => SortColumn switch
     {
-        if (FormModel.Id == 0)
-        {
-            Db.GradeRecords.Add(FormModel);
-        }
-        else
-        {
-            Db.GradeRecords.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadGrades();
-    }
+        "kelas" => SortAscending ? items.OrderBy(g => g.ClassName) : items.OrderByDescending(g => g.ClassName),
+        "mapel" => SortAscending ? items.OrderBy(g => g.Subject) : items.OrderByDescending(g => g.Subject),
+        "nilai" => SortAscending ? items.OrderBy(g => g.Score) : items.OrderByDescending(g => g.Score),
+        _ => SortAscending ? items.OrderBy(g => g.StudentName) : items.OrderByDescending(g => g.StudentName)
+    };
 
-    private async Task DeleteGrade(int id)
-    {
-        var grade = await Db.GradeRecords.FindAsync(id);
-        if (grade != null)
-        {
-            Db.GradeRecords.Remove(grade);
-            await Db.SaveChangesAsync();
-            LoadGrades();
-        }
-    }
+    protected override string CsvHeader => "Id,Siswa,Kelas,MataPelajaran,Nilai,Ketuntasan,Catatan";
 
-    private void Cancel()
-    {
-        FormModel = new GradeRecord();
-        ShowForm = false;
-    }
+    protected override string CsvRow(GradeRecord g) =>
+        $"{g.Id},{Csv(g.StudentName)},{Csv(g.ClassName)},{Csv(g.Subject)},{CsvNumber(g.Score)}," +
+        $"{(g.Score >= 75 ? "Tuntas" : "Belum tuntas")},{Csv(g.Notes)}";
+
+    private void ResetPage() => CurrentPage = 1;
 }

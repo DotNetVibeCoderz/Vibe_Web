@@ -1,0 +1,38 @@
+<!--
+  Template Kartu Guru SMSNet
+  =========================
+  Placeholder sama dengan kartu siswa, kecuali:
+    {{KELAS}}  berisi mata pelajaran yang diampu
+    {{WALI}}   berisi alamat email
+    {{NIS}}    berisi NIP
+-->
+<div class="kartu kartu--guru">
+  <div class="kartu__pita"></div>
+
+  <div class="kartu__isi">
+    <div class="kartu__kiri">
+      <div class="kartu__sekolah">
+        <span class="kartu__logo">SN</span>
+        <div>
+          <p class="kartu__namasekolah">{{SEKOLAH}}</p>
+          <p class="kartu__tahun">Tenaga Pendidik</p>
+        </div>
+      </div>
+
+      <p class="kartu__nama">{{NAMA}}</p>
+
+      <dl class="kartu__data">
+        <div><dt>NIP</dt><dd>{{NIS}}</dd></div>
+        <div><dt>Mapel</dt><dd>{{KELAS}}</dd></div>
+        <div><dt>Email</dt><dd>{{WALI}}</dd></div>
+      </dl>
+    </div>
+
+    <div class="kartu__kanan">
+      <img class="kartu__qr" src="{{QR}}" alt="Kode QR {{NAMA}}" />
+      <p class="kartu__kode">{{KODE}}</p>
+    </div>
+  </div>
+
+  <p class="kartu__catatan">Kartu ini berfungsi sebagai alat absensi. Simpan baik-baik.</p>
+</div>

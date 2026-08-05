@@ -1,0 +1,203 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@* Rich-text field. The value is HTML; the host is responsible for sanitising it
+   before it is stored — see HtmlContentSanitizer. *@
+
+<div class="sms-editor">
+    <div class="sms-editor__bar" role="toolbar" aria-label="Format teks">
+        @foreach (var group in Groups)
+        {
+            <div class="sms-editor__grup">
+                @foreach (var tool in group)
+                {
+                    @* Suppressing mousedown keeps focus — and therefore the caret — in
+                       the editor, so formatting applies where the user was typing. *@
+                    <button type="button" class="sms-editor__tombol" title="@tool.Title"
+                            @onmousedown:preventDefault="true"
+                            @onclick="() => ExecAsync(tool.Command, tool.Value)">
+                        @((MarkupString)tool.Glyph)
+                    </button>
+                }
+            </div>
+        }
+        <div class="sms-editor__grup">
+            <button type="button" class="sms-editor__tombol" title="Sisipkan tautan"
+                    @onmousedown:preventDefault="true"
+                    @onclick="() => _linkOpen = true">
+                <Icon Name="link" />
+            </button>
+            <button type="button" class="sms-editor__tombol" title="Hapus format"
+                    @onmousedown:preventDefault="true"
+                    @onclick="ClearFormatAsync">
+                <span style="font-size:.7rem;letter-spacing:-.02em">Tx</span>
+            </button>
+        </div>
+    </div>
+
+    @* Blazor must not manage the children of a contenteditable: re-rendering it
+       would move the caret on every keystroke. The div stays empty here and its
+       content is owned entirely by editor.js. *@
+    <div id="@_id" class="sms-editor__isi" contenteditable="true"
+         role="textbox" aria-multiline="true" data-placeholder="@Placeholder"></div>
+</div>
+
+<Modal Open="_linkOpen" OpenChanged="_ => _linkOpen = false" Title="Sisipkan tautan">
+    <ChildContent>
+        <div class="sms-field">
+            <label class="sms-label">Alamat tautan</label>
+            <input class="sms-input" placeholder="https://…" @bind="_linkUrl" @bind:event="oninput" />
+            @if (_linkError is not null)
+            {
+                <p class="text-xs m-0" style="color: var(--bata)">@_linkError</p>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="() => _linkOpen = false">Batal</button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="InsertLinkAsync">Sisipkan</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter] public string Placeholder { get; set; } = "Tulis di sini…";
+
+    private readonly string _id = $"editor-{Guid.NewGuid():N}";
+    private DotNetObjectReference<RichTextEditor>? _ref;
+    private bool _ready;
+    private string? _lastPushed;
+
+    private bool _linkOpen;
+    private string _linkUrl = string.Empty;
+    private string? _linkError;
+
+    private sealed record Tool(string Title, string Command, string? Value, string Glyph);
+
+    private static readonly Tool[][] Groups =
+    {
+        new[]
+        {
+            new Tool("Tebal", "bold", null, "<b>B</b>"),
+            new Tool("Miring", "italic", null, "<i>I</i>"),
+            new Tool("Garis bawah", "underline", null, "<u>U</u>"),
+            new Tool("Coret", "strikeThrough", null, "<s>S</s>")
+        },
+        new[]
+        {
+            new Tool("Judul", "formatBlock", "<h3>", "H"),
+            new Tool("Kutipan", "formatBlock", "<blockquote>", "&rdquo;"),
+            new Tool("Kode", "formatBlock", "<pre>", "&lt;/&gt;")
+        },
+        new[]
+        {
+            new Tool("Daftar berpoin", "insertUnorderedList", null, "&bull;&nbsp;&#8801;"),
+            new Tool("Daftar bernomor", "insertOrderedList", null, "1.&nbsp;&#8801;")
+        }
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ref = DotNetObjectReference.Create(this);
+            _lastPushed = Value;
+
+            try
+            {
+                await JS.InvokeVoidAsync("smsnetEditor.init", _id, _ref, Value ?? string.Empty);
+                _ready = true;
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+
+            return;
+        }
+
+        // A host that swaps the bound record (add → edit) changes Value from the
+        // outside; push that in, but never echo back what the user just typed.
+        if (_ready && Value != _lastPushed)
+        {
+            _lastPushed = Value;
+
+            try
+            {
+                await JS.InvokeVoidAsync("smsnetEditor.setHtml", _id, Value ?? string.Empty);
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnHtmlChanged(string html)
+    {
+        _lastPushed = html;
+        Value = html;
+        await ValueChanged.InvokeAsync(html);
+    }
+
+    private Task ClearFormatAsync() => ExecAsync("removeFormat", null);
+
+    private async Task ExecAsync(string command, string? value)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetEditor.exec", _id, command, value);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task InsertLinkAsync()
+    {
+        var url = (_linkUrl ?? string.Empty).Trim();
+
+        if (url.Length == 0)
+        {
+            _linkError = "Alamat tautan belum diisi.";
+            return;
+        }
+
+        // Default to https rather than letting a bare "example.com" become a
+        // relative link inside the app.
+        if (!url.Contains("://", StringComparison.Ordinal))
+        {
+            url = "https://" + url;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            _linkError = "Gunakan alamat http:// atau https://.";
+            return;
+        }
+
+        _linkError = null;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetEditor.link", _id, parsed.ToString());
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+
+        _linkUrl = string.Empty;
+        _linkOpen = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetEditor.destroy", _id);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+
+        _ref?.Dispose();
+    }
+}

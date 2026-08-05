@@ -1,0 +1,32 @@
+# --- Secrets -----------------------------------------------------------------
+# testkey.txt holds live API credentials. It must never reach the repository.
+testkey.txt
+*.key
+appsettings.*.Local.json
+.env
+
+# --- Build output ------------------------------------------------------------
+bin/
+obj/
+publish/
+
+# --- Local database ----------------------------------------------------------
+# Schema is created by EnsureCreated() on first run, so this is disposable.
+smsnet.db
+smsnet.db-shm
+smsnet.db-wal
+
+# --- Uploads -----------------------------------------------------------------
+# Chat attachments and documents written at runtime.
+wwwroot/uploads/
+
+# --- IDE ---------------------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# --- OS ----------------------------------------------------------------------
+Thumbs.db
+.DS_Store

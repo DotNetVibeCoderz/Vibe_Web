@@ -1,16 +1,47 @@
+@using SMSNet.Components.Layout
+
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
         <Found Context="routeData">
-            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
                 <NotAuthorized>
-                    <LayoutView Layout="typeof(Layout.MainLayout)">
-                        <div class="sms-card">
-                            <h1 class="text-xl font-semibold">Akses Ditolak</h1>
-                            <p class="text-slate-500">Silakan login untuk mengakses halaman ini.</p>
-                            <a class="mt-4 inline-flex px-4 py-2 bg-indigo-600 text-white rounded-lg" href="/auth/login">Ke Login</a>
+                    @* Anonymous visitors are sent to sign in with a return path;
+                       signed-in users who simply lack the role are told so in place,
+                       because bouncing them to a login form they already passed is
+                       confusing. *@
+                    @if (context.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <LayoutView Layout="typeof(MainLayout)">
+                            <div class="sms-card max-w-xl mx-auto text-center py-10">
+                                <span style="color: var(--kunyit)">
+                                    <Icon Name="shield" Class="w-10 h-10 mx-auto" />
+                                </span>
+                                <h1 class="font-display text-xl font-bold mt-4 mb-2"
+                                    style="color: var(--fg-strong)">Akses Ditolak</h1>
+                                <p class="text-sm m-0" style="color: var(--fg-muted)">
+                                    Peran akun Anda tidak mencakup halaman ini.
+                                    Hubungi administrator sekolah bila Anda memerlukan aksesnya.
+                                </p>
+                                <div class="flex justify-center gap-2 mt-5">
+                                    <a class="sms-btn sms-btn--primary" href="/">Ke Dashboard</a>
+                                    <a class="sms-btn sms-btn--ghost" href="/asisten">Tanya Pak Dedi</a>
+                                </div>
+                            </div>
+                        </LayoutView>
+                    }
+                </NotAuthorized>
+                <Authorizing>
+                    <LayoutView Layout="typeof(MainLayout)">
+                        <div class="space-y-3">
+                            <div class="sms-skeleton h-8 w-64"></div>
+                            <div class="sms-skeleton h-32"></div>
                         </div>
                     </LayoutView>
-                </NotAuthorized>
+                </Authorizing>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />
         </Found>

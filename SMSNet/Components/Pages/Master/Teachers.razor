@@ -1,146 +1,213 @@
 @page "/master/teachers"
 @attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
-@inject ApplicationDbContext Db
-@inject IJSRuntime JSRuntime
+@inherits CrudPageBase<Teacher>
 
-<h1 class="text-2xl font-semibold mb-6">Master Data - Guru</h1>
+<PageTitle>Master Data Guru — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex flex-wrap gap-4">
-        <InputText class="w-full md:w-64 rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" placeholder="Cari nama guru" />
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
-        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Guru</button>
-    </div>
+<PageHeader Eyebrow="Master Data" Title="Guru"
+            Subtitle="Data induk tenaga pendidik: mata pelajaran yang diampu dan kontak.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Guru</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">Mata Pelajaran</th>
-                <th class="py-2">Email</th>
-                <th class="py-2">Status</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var teacher in FilteredTeachers)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@teacher.FullName</td>
-                    <td class="py-2">@teacher.Subject</td>
-                    <td class="py-2">@teacher.Email</td>
-                    <td class="py-2"><span class="sms-badge">@teacher.Status</span></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditTeacher(teacher)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteTeacher(teacher.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+<div class="grid gap-4 md:grid-cols-3 mb-6">
+    <StatTile Label="Total Guru" Value="@Items.Count.ToString()" Icon="teacher" Tone="brand" />
+    <StatTile Label="Aktif" Value="@Items.Count(t => t.Status == "Active").ToString()" Icon="check" Tone="good" />
+    <StatTile Label="Mata Pelajaran Diampu"
+              Value="@Items.Select(t => t.Subject).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().Count().ToString()"
+              Icon="book" />
 </div>
 
-@if (ShowForm)
-{
-    <div class="sms-card mt-6 max-w-xl">
-        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
-        <EditForm Model="FormModel" OnValidSubmit="SaveTeacher">
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama, mata pelajaran, atau email…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="filter-mapel">Mata pelajaran</label>
+            <select id="filter-mapel" class="sms-select" @bind="SubjectFilter" @bind:after="ResetPage">
+                <option value="">Semua mata pelajaran</option>
+                @foreach (var mapel in Items.Select(t => t.Subject).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s))
+                {
+                    <option value="@mapel">@mapel</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="filter-status">Status</label>
+            <select id="filter-status" class="sms-select" @bind="StatusFilter" @bind:after="ResetPage">
+                <option value="">Semua status</option>
+                <option value="Active">Aktif</option>
+                <option value="Inactive">Tidak aktif</option>
+            </select>
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="teacher" Title="Tidak ada guru yang cocok"
+                    Hint="Ubah kata kunci atau filter, atau tambahkan guru baru." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Nama <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("mapel")'>Mata Pelajaran <span class="sort-caret">@SortCaret("mapel")</span></th>
+                        <th>Email</th>
+                        <th>Telepon</th>
+                        <th class="is-sortable" @onclick='() => SortBy("status")'>Status <span class="sort-caret">@SortCaret("status")</span></th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var guru in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@guru.FullName</td>
+                            <td>@(guru.Subject ?? "—")</td>
+                            <td class="mono text-xs">@(guru.Email ?? "—")</td>
+                            <td class="tabular">@(guru.Phone ?? "—")</td>
+                            <td>
+                                <span class="sms-badge @(guru.Status == "Active" ? "sms-badge--good" : "")">
+                                    @(guru.Status == "Active" ? "Aktif" : "Tidak aktif")
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(guru)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(guru)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="guru" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
+</div>
+
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Guru" : "Ubah Data Guru")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-guru">
             <DataAnnotationsValidator />
-            <ValidationSummary />
+            <ValidationSummary class="validation-errors" />
+
             <div class="grid gap-4">
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama guru" @bind-Value="FormModel.FullName" />
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Mata pelajaran" @bind-Value="FormModel.Subject" />
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Email" @bind-Value="FormModel.Email" />
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Status" @bind-Value="FormModel.Status" />
-            </div>
-            <div class="mt-4 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+                <div class="sms-field">
+                    <label class="sms-label">Nama lengkap</label>
+                    <InputText class="sms-input" @bind-Value="Form.FullName" />
+                    <ValidationMessage For="() => Form.FullName" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Mata pelajaran</label>
+                    <InputText class="sms-input" @bind-Value="Form.Subject" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Email</label>
+                        <InputText type="email" class="sms-input" @bind-Value="Form.Email" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Telepon</label>
+                        <InputText class="sms-input" @bind-Value="Form.Phone" />
+                    </div>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Status</label>
+                    <InputSelect class="sms-select" @bind-Value="Form.Status">
+                        <option value="Active">Aktif</option>
+                        <option value="Inactive">Tidak aktif</option>
+                    </InputSelect>
+                </div>
             </div>
         </EditForm>
-    </div>
-}
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-guru" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen"
+               Title="Hapus data guru"
+               Message="Data guru ini akan dihapus permanen dari basis data."
+               Detail="@PendingDeleteLabel"
+               OnConfirm="ConfirmDeleteAsync" />
 
 @code {
-    private List<Teacher> TeacherItems { get; set; } = new();
-    private string SearchText { get; set; } = string.Empty;
-    private Teacher FormModel { get; set; } = new();
-    private string FormTitle => FormModel.Id == 0 ? "Tambah Guru" : "Edit Guru";
-    private bool ShowForm { get; set; }
+    private string SubjectFilter = string.Empty;
+    private string StatusFilter = string.Empty;
 
-    private List<Teacher> FilteredTeachers => TeacherItems
-        .Where(t => string.IsNullOrWhiteSpace(SearchText) || t.FullName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-        .ToList();
+    protected override string EntityLabel => "guru";
 
-    protected override Task OnInitializedAsync()
+    protected override DbSet<Teacher> Table(ApplicationDbContext db) => db.Teachers;
+
+    protected override IEnumerable<string?> SearchableText(Teacher t) =>
+        new[] { t.FullName, t.Subject, t.Email, t.Phone };
+
+    protected override string Describe(Teacher t) => t.FullName;
+
+    protected override int IdOf(Teacher t) => t.Id;
+
+    protected override Teacher NewEntity() => new() { Status = "Active" };
+
+    protected override Teacher CloneForEdit(Teacher t) => new()
     {
-        LoadTeachers();
-        return Task.CompletedTask;
-    }
+        Id = t.Id,
+        FullName = t.FullName,
+        Subject = t.Subject,
+        Email = t.Email,
+        Phone = t.Phone,
+        Status = t.Status
+    };
 
-    private void LoadTeachers()
+    protected override IEnumerable<Teacher> ApplyFilters(IEnumerable<Teacher> items)
     {
-        TeacherItems = Db.Teachers.AsNoTracking().ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new Teacher();
-        ShowForm = true;
-    }
-
-    private void EditTeacher(Teacher teacher)
-    {
-        FormModel = new Teacher
+        if (!string.IsNullOrWhiteSpace(SubjectFilter))
         {
-            Id = teacher.Id,
-            FullName = teacher.FullName,
-            Subject = teacher.Subject,
-            Email = teacher.Email,
-            Status = teacher.Status
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveTeacher()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.Teachers.Add(FormModel);
+            items = items.Where(t => t.Subject == SubjectFilter);
         }
-        else
+
+        if (!string.IsNullOrWhiteSpace(StatusFilter))
         {
-            Db.Teachers.Update(FormModel);
+            items = items.Where(t => t.Status == StatusFilter);
         }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadTeachers();
+
+        return items;
     }
 
-    private async Task DeleteTeacher(int id)
+    protected override IEnumerable<Teacher> ApplySort(IEnumerable<Teacher> items) => SortColumn switch
     {
-        var teacher = await Db.Teachers.FindAsync(id);
-        if (teacher != null)
-        {
-            Db.Teachers.Remove(teacher);
-            await Db.SaveChangesAsync();
-            LoadTeachers();
-        }
-    }
+        "mapel" => SortAscending ? items.OrderBy(t => t.Subject) : items.OrderByDescending(t => t.Subject),
+        "status" => SortAscending ? items.OrderBy(t => t.Status) : items.OrderByDescending(t => t.Status),
+        _ => SortAscending ? items.OrderBy(t => t.FullName) : items.OrderByDescending(t => t.FullName)
+    };
 
-    private void Cancel()
-    {
-        FormModel = new Teacher();
-        ShowForm = false;
-    }
+    protected override string CsvHeader => "Id,Nama,MataPelajaran,Email,Telepon,Status";
 
-    private async Task ExportCsv()
-    {
-        var rows = new List<string> { "Id,FullName,Subject,Email,Status" };
-        foreach (var teacher in FilteredTeachers)
-        {
-            rows.Add($"{teacher.Id},\"{teacher.FullName}\",{teacher.Subject},{teacher.Email},{teacher.Status}");
-        }
-        await JSRuntime.InvokeVoidAsync("smsnetDownload", "teachers.csv", string.Join("\n", rows));
-    }
+    protected override string CsvRow(Teacher t) =>
+        $"{t.Id},{Csv(t.FullName)},{Csv(t.Subject)},{Csv(t.Email)},{Csv(t.Phone)},{Csv(t.Status)}";
+
+    private void ResetPage() => CurrentPage = 1;
 }

@@ -1,0 +1,352 @@
+@using SMSNet.Models
+@using SMSNet.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject CommentService Comments
+@inject UploadService Uploads
+@inject AuthenticationStateProviderAccessor UserAccessor
+@inject ToastService Toasts
+
+@* Discussion thread for one host record. Used by forum topics and KPI indicators. *@
+
+<div class="sms-komentar">
+    <div class="sms-komentar__head">
+        <Icon Name="message" Class="w-4 h-4" />
+        <span>@(_comments.Count == 0 ? "Belum ada komentar" : $"{_comments.Count} komentar")</span>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="sms-skeleton h-12 mt-2"></div>
+    }
+    else
+    {
+        <ul class="sms-komentar__list">
+            @foreach (var comment in _comments)
+            {
+                <li class="sms-komentar__item">
+                    <span class="sms-avatar sms-avatar--sm flex-none">@Initials(comment.AuthorName)</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="sms-komentar__meta">
+                            <span class="sms-komentar__nama">@comment.AuthorName</span>
+                            <span class="sms-komentar__waktu">@Relative(comment.CreatedAt)</span>
+                            @if (CommentService.CanDelete(comment, _user))
+                            {
+                                <button type="button" class="sms-komentar__hapus"
+                                        title="Hapus komentar"
+                                        @onclick="() => AskDelete(comment)">
+                                    <Icon Name="trash" />
+                                </button>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(comment.Body))
+                        {
+                            @* Escaped, never MarkupString: comment bodies are untrusted input. *@
+                            <p class="sms-komentar__isi">@comment.Body</p>
+                        }
+
+                        @if (comment.Attachments.Count > 0)
+                        {
+                            <div class="sms-komentar__lampiran">
+                                @foreach (var file in comment.Attachments)
+                                {
+                                    if (file.IsImage)
+                                    {
+                                        <a href="@file.Url" target="_blank" rel="noopener noreferrer"
+                                           class="sms-komentar__gambar">
+                                            <img src="@file.Url" alt="@file.FileName" loading="lazy" />
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <a href="@file.Url" target="_blank" rel="noopener noreferrer"
+                                           class="sms-komentar__berkas">
+                                            <Icon Name="file" />
+                                            <span class="truncate">@file.FileName</span>
+                                            <span class="sms-komentar__ukuran">@UploadService.Human(file.SizeBytes)</span>
+                                        </a>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+
+        @if (Disabled)
+        {
+            <p class="text-xs m-0 mt-2" style="color: var(--fg-faint)">
+                Simpan dulu untuk dapat berkomentar.
+            </p>
+        }
+        else
+        {
+            <div class="sms-komentar__tulis">
+                <textarea class="sms-textarea" rows="2" placeholder="Tulis komentar…"
+                          value="@_draft" @oninput="e => _draft = e.Value?.ToString() ?? string.Empty"
+                          @ref="_draftBox"></textarea>
+
+                @if (_pending.Count > 0)
+                {
+                    <div class="sms-komentar__antre">
+                        @foreach (var file in _pending)
+                        {
+                            <span class="sms-chip">
+                                <Icon Name="@(file.IsImage ? "image" : "file")" />
+                                <span class="truncate">@file.FileName</span>
+                                <button type="button" title="Buang"
+                                        @onclick="() => _pending.Remove(file)">×</button>
+                            </span>
+                        }
+                    </div>
+                }
+
+                @if (_emojiOpen)
+                {
+                    <div class="sms-emoji">
+                        @foreach (var emoji in Emojis)
+                        {
+                            <button type="button" @onclick="() => AddEmoji(emoji)">@emoji</button>
+                        }
+                    </div>
+                }
+
+                <div class="sms-komentar__aksi">
+                    <label class="sms-btn sms-btn--quiet" title="Lampirkan berkas atau gambar">
+                        <Icon Name="paperclip" />
+                        <InputFile OnChange="OnFilesSelected" multiple accept="@Uploads.AcceptAttribute"
+                                   style="display:none" />
+                    </label>
+                    <button type="button" class="sms-btn sms-btn--quiet" title="Emoji"
+                            @onclick="() => _emojiOpen = !_emojiOpen">
+                        <Icon Name="smile" />
+                    </button>
+                    <span class="flex-1"></span>
+                    <button type="button" class="sms-btn sms-btn--primary sms-btn--sm"
+                            disabled="@(_posting || (string.IsNullOrWhiteSpace(_draft) && _pending.Count == 0))"
+                            @onclick="PostAsync">
+                        @(_posting ? "Mengirim…" : "Kirim")
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<ConfirmDialog @bind-Open="_confirmOpen" Title="Hapus komentar"
+               Message="Komentar ini akan dihapus permanen beserta lampirannya."
+               Detail="@_pendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
+@code {
+    /// <summary>Which kind of record this thread belongs to — see <see cref="CommentThreads"/>.</summary>
+    [Parameter, EditorRequired] public string ThreadType { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public int ThreadId { get; set; }
+
+    /// <summary>Set while the host record is unsaved, so there is nothing to attach to yet.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public EventCallback<int> OnCountChanged { get; set; }
+
+    private List<Comment> _comments = new();
+    private readonly List<StoredFile> _pending = new();
+    private System.Security.Claims.ClaimsPrincipal? _user;
+
+    private string _draft = string.Empty;
+    private ElementReference _draftBox;
+    private bool _loading = true, _posting, _emojiOpen, _confirmOpen;
+    private Comment? _toDelete;
+    private string _pendingDeleteLabel = string.Empty;
+
+    private int _loadedThreadId = -1;
+
+    private static readonly string[] Emojis =
+    {
+        "👍", "🙏", "👏", "🎉", "✅", "❤️", "😊", "😀", "😂", "🤔",
+        "😢", "😍", "🔥", "⭐", "💡", "📌", "⚠️", "❓", "💯", "🚀"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await UserAccessor.GetUserAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // The host reuses this component as the user moves between records, so reload
+        // whenever it is pointed somewhere new.
+        if (_loadedThreadId != ThreadId)
+        {
+            _loadedThreadId = ThreadId;
+            _draft = string.Empty;
+            _pending.Clear();
+            _emojiOpen = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Disabled || ThreadId <= 0)
+        {
+            _comments = new List<Comment>();
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+
+        try
+        {
+            _comments = await Comments.ListAsync(ThreadType, ThreadId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal memuat komentar: {ex.Message}");
+            _comments = new List<Comment>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        var room = Uploads.Settings.MaxFilesPerItem - _pending.Count;
+
+        if (room <= 0)
+        {
+            Toasts.Warn($"Maksimal {Uploads.Settings.MaxFilesPerItem} lampiran per komentar.");
+            return;
+        }
+
+        foreach (var file in e.GetMultipleFiles(Uploads.Settings.MaxFilesPerItem).Take(room))
+        {
+            var result = await Uploads.SaveAsync(file, "uploads/komentar");
+
+            if (result.Error is not null)
+            {
+                Toasts.Error(result.Error);
+            }
+            else if (result.File is not null)
+            {
+                _pending.Add(result.File);
+            }
+        }
+    }
+
+    private void AddEmoji(string emoji)
+    {
+        _draft += emoji;
+        _emojiOpen = false;
+    }
+
+    private async Task PostAsync()
+    {
+        if (_posting || (string.IsNullOrWhiteSpace(_draft) && _pending.Count == 0))
+        {
+            return;
+        }
+
+        _posting = true;
+
+        try
+        {
+            await Comments.AddAsync(ThreadType, ThreadId, _user, _draft, _pending);
+
+            _draft = string.Empty;
+            _pending.Clear();
+            _emojiOpen = false;
+
+            await LoadAsync();
+            await OnCountChanged.InvokeAsync(_comments.Count);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal mengirim komentar: {ex.Message}");
+        }
+        finally
+        {
+            _posting = false;
+        }
+    }
+
+    private void AskDelete(Comment comment)
+    {
+        _toDelete = comment;
+        _pendingDeleteLabel = Excerpt(comment);
+        _confirmOpen = true;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_toDelete is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // The service re-checks authority; the hidden button is only the first gate.
+            var deleted = await Comments.DeleteAsync(_toDelete.Id, _user);
+
+            if (deleted)
+            {
+                Toasts.Success("Komentar dihapus.");
+                await LoadAsync();
+                await OnCountChanged.InvokeAsync(_comments.Count);
+            }
+            else
+            {
+                Toasts.Error("Komentar ini hanya dapat dihapus oleh penulisnya atau admin.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Gagal menghapus komentar: {ex.Message}");
+        }
+        finally
+        {
+            _toDelete = null;
+        }
+    }
+
+    private static string Excerpt(Comment c)
+    {
+        var body = string.IsNullOrWhiteSpace(c.Body)
+            ? $"{c.Attachments.Count} lampiran"
+            : c.Body;
+
+        return body.Length <= 80 ? body : body[..80] + "…";
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+        };
+    }
+
+    /// <summary>"5 menit lalu" reads better than a timestamp on a busy thread; older
+    /// comments fall back to the date, where the exact time stops mattering.</summary>
+    private static string Relative(DateTime when)
+    {
+        var span = SchoolClock.LocalNow - when;
+
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "baru saja",
+            { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes} menit lalu",
+            { TotalHours: < 24 } => $"{(int)span.TotalHours} jam lalu",
+            { TotalDays: < 7 } => $"{(int)span.TotalDays} hari lalu",
+            _ => when.ToString("dd MMM yyyy, HH:mm")
+        };
+    }
+}

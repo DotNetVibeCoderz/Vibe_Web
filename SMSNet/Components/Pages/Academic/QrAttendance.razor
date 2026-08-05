@@ -1,0 +1,453 @@
+@page "/academic/attendance-qr"
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@using SMSNet.Services.Attendance
+@inject QrAttendanceService Scans
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Absensi QR — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Akademik" Title="Absensi QR"
+            Subtitle="@($"Pindai kartu siswa atau guru — {SchoolClock.Today:dddd, dd MMMM yyyy}")">
+    <Actions>
+        <a href="/master/cards" class="sms-btn sms-btn--ghost">
+            <Icon Name="grid" /><span>Kartu Ber-QR</span>
+        </a>
+        <a href="/academic/attendance" class="sms-btn sms-btn--ghost">
+            <Icon Name="check" /><span>Absensi Manual</span>
+        </a>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Hadir Hari Ini" Value="@_total.ToString()" Icon="check" Tone="brand" />
+    <StatTile Label="Siswa" Value="@_students.ToString()" Icon="users" Tone="good" />
+    <StatTile Label="Guru" Value="@_teachers.ToString()" Icon="teacher" />
+    <StatTile Label="Lewat QR" Value="@_viaQr.ToString()"
+              Meta="@($"dari {_total} catatan")" Icon="grid" />
+</div>
+
+<div class="pindai">
+    <!-- Scanner panel -->
+    <div class="sms-card">
+        <div class="sms-segment w-full mb-4" role="tablist">
+            <button type="button" role="tab" class="sms-segment__item flex-1 @(_mode == Mode.Camera ? "is-active" : "")"
+                    @onclick="() => SwitchModeAsync(Mode.Camera)">
+                <Icon Name="image" Class="w-3.5 h-3.5 inline mr-1" />Kamera
+            </button>
+            <button type="button" role="tab" class="sms-segment__item flex-1 @(_mode == Mode.Manual ? "is-active" : "")"
+                    @onclick="() => SwitchModeAsync(Mode.Manual)">
+                <Icon Name="edit" Class="w-3.5 h-3.5 inline mr-1" />Scanner / Ketik
+            </button>
+        </div>
+
+        @if (_mode == Mode.Camera)
+        {
+            <div class="pindai__kamera mb-3">
+                <video id="pindai-video" playsinline muted></video>
+
+                @if (_cameraOn)
+                {
+                    <div class="pindai__bidik" aria-hidden="true"></div>
+                }
+                else
+                {
+                    <div class="pindai__kosong">
+                        <Icon Name="image" Class="w-8 h-8" />
+                        <p class="m-0 text-sm">Kamera belum aktif</p>
+                        @if (!string.IsNullOrWhiteSpace(_cameraError))
+                        {
+                            <p class="m-0 text-xs" style="color: var(--bata); max-width: 26ch">@_cameraError</p>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="flex gap-2">
+                @if (_cameraOn)
+                {
+                    <button type="button" class="sms-btn sms-btn--danger sms-btn--block" @onclick="StopCameraAsync">
+                        <Icon Name="close" /><span>Hentikan Kamera</span>
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="sms-btn sms-btn--primary sms-btn--block" @onclick="StartCameraAsync">
+                        <Icon Name="eye" /><span>Nyalakan Kamera</span>
+                    </button>
+                }
+            </div>
+
+            <p class="text-xs mt-3 m-0" style="color: var(--fg-faint)">
+                Arahkan kode QR ke dalam bingkai. Kamera memerlukan HTTPS atau localhost.
+                @if (!string.IsNullOrWhiteSpace(_engine))
+                {
+                    <span> Mesin pemindai: <span class="mono">@_engine</span>.</span>
+                }
+            </p>
+        }
+        else
+        {
+            <div class="sms-field mb-3">
+                <label class="sms-label" for="kode">Kode kartu</label>
+                <input id="kode" class="sms-input pindai__kode-input" placeholder="SIS-000007-K4M9"
+                       @bind="_manualCode" @bind:event="oninput" @onkeydown="OnManualKeyDown"
+                       autocomplete="off" />
+            </div>
+
+            <button type="button" class="sms-btn sms-btn--primary sms-btn--block"
+                    @onclick="() => SubmitAsync(_manualCode)"
+                    disabled="@string.IsNullOrWhiteSpace(_manualCode)">
+                <Icon Name="check" /><span>Catat Kehadiran</span>
+            </button>
+
+            <p class="text-xs mt-3 m-0" style="color: var(--fg-faint)">
+                Alat pemindai genggam bekerja seperti papan ketik — arahkan ke kartu dan kodenya
+                terisi sendiri lalu tercatat otomatis. Kode juga boleh diketik manual; huruf besar-kecil
+                dan tanda hubung tidak berpengaruh.
+            </p>
+        }
+
+        @if (_lastResult is not null)
+        {
+            <div class="pindai__hasil mt-4 @ResultClass(_lastResult.Outcome)">
+                <span class="flex-none mt-0.5" style="color: @ResultColour(_lastResult.Outcome)">
+                    <Icon Name="@ResultIcon(_lastResult.Outcome)" Class="w-4 h-4" />
+                </span>
+                <div class="min-w-0">
+                    <p class="m-0 font-semibold text-sm" style="color: var(--fg-strong)">
+                        @_lastResult.Message
+                    </p>
+                    @if (_lastResult.Target is not null)
+                    {
+                        <p class="m-0 text-xs mt-0.5" style="color: var(--fg-muted)">
+                            @_lastResult.Target.Role@(string.IsNullOrWhiteSpace(_lastResult.Target.Detail)
+                                ? "" : $" · {_lastResult.Target.Detail}")
+                            · <span class="mono">@_lastResult.Target.QrCode</span>
+                        </p>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Today's list -->
+    <div class="sms-card">
+        <div class="sms-card__head">
+            <h2 class="sms-card__title">Sudah Hadir Hari Ini</h2>
+            <button type="button" class="sms-btn sms-btn--quiet sms-btn--sm" @onclick="RefreshAsync">
+                <Icon Name="refresh" /><span class="hidden sm:inline">Muat ulang</span>
+            </button>
+        </div>
+
+        <div class="sms-toolbar">
+            <div class="sms-field">
+                <label class="sms-label" for="cari">Cari nama</label>
+                <input id="cari" class="sms-input" placeholder="Nama siswa atau guru…"
+                       value="@_search" @oninput="OnSearchInput" />
+            </div>
+            <div class="sms-field">
+                <label class="sms-label" for="peran">Peran</label>
+                <select id="peran" class="sms-select" @bind="_roleFilter" @bind:after="RefreshAsync">
+                    <option value="">Semua</option>
+                    <option value="Siswa">Siswa</option>
+                    <option value="Guru">Guru</option>
+                </select>
+            </div>
+        </div>
+
+        @if (_today.Count == 0)
+        {
+            <EmptyState Icon="check"
+                        Title="@(string.IsNullOrWhiteSpace(_search) ? "Belum ada yang absen hari ini" : "Tidak ada yang cocok")"
+                        Hint="@(string.IsNullOrWhiteSpace(_search)
+                                ? "Pindai kartu pertama untuk memulai."
+                                : "Ubah kata kunci pencarian.")" />
+        }
+        else
+        {
+            <div class="sms-table-wrap" style="max-height: 30rem">
+                <table class="sms-table">
+                    <thead>
+                        <tr>
+                            <th>Jam</th>
+                            <th>Nama</th>
+                            <th>Peran</th>
+                            <th>Metode</th>
+                            <th class="text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in _today)
+                        {
+                            <tr class="@(entry.RecordId == _highlightId ? "pindai__baru" : "")">
+                                <td class="tabular font-semibold" style="color: var(--fg-strong)">
+                                    @entry.Time.ToString("HH:mm")
+                                </td>
+                                <td class="font-medium">@entry.Name</td>
+                                <td><span class="sms-badge">@entry.Role</span></td>
+                                <td>
+                                    <span class="sms-badge @(entry.Method == "QR" ? "sms-badge--info" : "")">
+                                        @entry.Method
+                                    </span>
+                                </td>
+                                <td class="text-right">
+                                    <button type="button" class="sms-btn sms-btn--quiet"
+                                            style="color: var(--bata)" title="Batalkan catatan ini"
+                                            @onclick="() => AskRemove(entry)">
+                                        <Icon Name="trash" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="text-xs mt-3 m-0" style="color: var(--fg-faint)">
+                @_today.Count catatan ditampilkan.
+            </p>
+        }
+    </div>
+</div>
+
+<ConfirmDialog @bind-Open="_confirmRemove"
+               Title="Batalkan catatan kehadiran"
+               Message="Catatan kehadiran ini akan dihapus. Kartu yang sama dapat dipindai ulang setelahnya."
+               Detail="@_removeLabel"
+               ConfirmLabel="Batalkan"
+               OnConfirm="RemoveAsync" />
+
+@code {
+    private enum Mode { Camera, Manual }
+
+    private Mode _mode = Mode.Manual;
+    private bool _cameraOn;
+    private string? _cameraError;
+    private string? _engine;
+
+    private string _manualCode = string.Empty;
+    private string _search = string.Empty;
+    private string _roleFilter = string.Empty;
+
+    private List<TodayEntry> _today = new();
+    private ScanResult? _lastResult;
+    private int _total, _students, _teachers, _viaQr;
+    private int _highlightId;
+
+    private bool _confirmRemove;
+    private TodayEntry? _pendingRemove;
+    private string _removeLabel = string.Empty;
+
+    private DotNetObjectReference<QrAttendance>? _selfRef;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // In manual mode a hardware reader types blind, so the field must hold focus.
+        if (_mode == Mode.Manual)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("smsnetQrScan.keepFocus", "kode");
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    // --- Scanning ----------------------------------------------------------
+
+    /// <summary>Called from JavaScript when the camera decodes a code.</summary>
+    [JSInvokable]
+    public async Task OnScanned(string text)
+    {
+        await SubmitAsync(text);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SubmitAsync(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return;
+        }
+
+        _lastResult = await Scans.RecordAsync(code);
+
+        switch (_lastResult.Outcome)
+        {
+            case ScanOutcome.Recorded:
+                Toasts.Success(_lastResult.Message);
+                break;
+            case ScanOutcome.AlreadyPresent:
+                Toasts.Warn(_lastResult.Message);
+                break;
+            case ScanOutcome.Unknown:
+                Toasts.Error(_lastResult.Message);
+                break;
+        }
+
+        _manualCode = string.Empty;
+        await RefreshAsync();
+
+        // Flash the row that just landed so a queue operator sees it register.
+        _highlightId = _today.FirstOrDefault(t =>
+            _lastResult.Target is not null && t.Name == _lastResult.Target.Name)?.RecordId ?? 0;
+    }
+
+    private async Task OnManualKeyDown(KeyboardEventArgs e)
+    {
+        // Hardware readers send Enter after the payload; typing it manually works too.
+        if (e.Key is "Enter" or "NumpadEnter")
+        {
+            await SubmitAsync(_manualCode);
+        }
+    }
+
+    private async Task SwitchModeAsync(Mode mode)
+    {
+        if (_mode == mode)
+        {
+            return;
+        }
+
+        if (_mode == Mode.Camera)
+        {
+            await StopCameraAsync();
+        }
+        else
+        {
+            try { await JS.InvokeVoidAsync("smsnetQrScan.releaseFocus", "kode"); }
+            catch (JSException) { }
+        }
+
+        _mode = mode;
+        _lastResult = null;
+        _cameraError = null;
+    }
+
+    private async Task StartCameraAsync()
+    {
+        _cameraError = null;
+        _selfRef ??= DotNetObjectReference.Create(this);
+
+        try
+        {
+            var result = await JS.InvokeAsync<CameraStart>("smsnetQrScan.start", "pindai-video", _selfRef);
+
+            if (result.Ok)
+            {
+                _cameraOn = true;
+                _engine = result.Engine;
+            }
+            else
+            {
+                _cameraOn = false;
+                _cameraError = result.Error ?? "Kamera gagal dinyalakan.";
+            }
+        }
+        catch (JSException ex)
+        {
+            _cameraOn = false;
+            _cameraError = $"Kamera gagal dinyalakan: {ex.Message}";
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetQrScan.stop");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+
+        _cameraOn = false;
+        _engine = null;
+    }
+
+    // --- Today's list ------------------------------------------------------
+
+    private async Task RefreshAsync()
+    {
+        _today = await Scans.GetTodayAsync(_search, _roleFilter);
+        (_total, _students, _teachers, _viaQr) = await Scans.GetTodayCountsAsync();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        await RefreshAsync();
+    }
+
+    private void AskRemove(TodayEntry entry)
+    {
+        _pendingRemove = entry;
+        _removeLabel = $"{entry.Name} — {entry.Time:HH:mm}";
+        _confirmRemove = true;
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (_pendingRemove is null)
+        {
+            return;
+        }
+
+        if (await Scans.RemoveAsync(_pendingRemove.RecordId))
+        {
+            Toasts.Success($"Catatan {_pendingRemove.Name} dibatalkan.");
+            await RefreshAsync();
+        }
+
+        _pendingRemove = null;
+    }
+
+    // --- Presentation ------------------------------------------------------
+
+    private static string ResultClass(ScanOutcome outcome) => outcome switch
+    {
+        ScanOutcome.Recorded => "pindai__hasil--ok",
+        ScanOutcome.AlreadyPresent => "pindai__hasil--ulang",
+        _ => "pindai__hasil--gagal"
+    };
+
+    private static string ResultColour(ScanOutcome outcome) => outcome switch
+    {
+        ScanOutcome.Recorded => "var(--daun)",
+        ScanOutcome.AlreadyPresent => "var(--kunyit)",
+        _ => "var(--bata)"
+    };
+
+    private static string ResultIcon(ScanOutcome outcome) => outcome switch
+    {
+        ScanOutcome.Recorded => "check",
+        ScanOutcome.AlreadyPresent => "history",
+        _ => "warning"
+    };
+
+    private sealed class CameraStart
+    {
+        public bool Ok { get; set; }
+        public string? Engine { get; set; }
+        public string? Error { get; set; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Release the camera when the operator navigates away — otherwise the light
+        // stays on and the device is held until the circuit collapses.
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetQrScan.stop");
+            await JS.InvokeVoidAsync("smsnetQrScan.releaseFocus", "kode");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+
+        _selfRef?.Dispose();
+    }
+}

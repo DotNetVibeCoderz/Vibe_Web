@@ -1,104 +1,197 @@
 @page "/reports/finance"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Keuangan</h1>
+<PageTitle>Laporan Keuangan — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-3">
+<PageHeader Eyebrow="Analitik & Laporan" Title="Laporan Keuangan"
+            Subtitle="Pendapatan, tunggakan, penggajian, dan arus kas sekolah.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="PrintAsync">
+            <Icon Name="file" /><span>Cetak</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    <StatTile Label="Pendapatan" Value="@Money(_income)"
+              Meta="@($"{_paidCount} transaksi lunas")" Icon="coins" Tone="good" />
+    <StatTile Label="Tunggakan" Value="@Money(_outstanding)"
+              Meta="@($"{_pendingCount} tagihan")" Icon="warning"
+              Tone="@(_outstanding > 0 ? "warn" : "good")" />
+    <StatTile Label="Beban Gaji" Value="@Money(_payroll)"
+              Meta="@($"{_employees} pegawai")" Icon="receipt" />
+    <StatTile Label="Selisih" Value="@Money(_income - _payroll)"
+              Meta="pendapatan − beban gaji" Icon="trend"
+              Tone="@(_income - _payroll >= 0 ? "good" : "warn")" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Total Pendapatan</p>
-        <p class="text-3xl font-semibold">@Income.ToString("C0")</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Pendapatan per Kategori</h2></div>
+        <div style="height: 16rem"><canvas id="fin-kategori"></canvas></div>
     </div>
+
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Total Pengeluaran</p>
-        <p class="text-3xl font-semibold">@Expense.ToString("C0")</p>
-    </div>
-    <div class="sms-card flex flex-col items-center gap-3">
-        <p class="text-sm text-slate-500">Pembayaran SPP</p>
-        <div class="sms-gauge" style="@GetGaugeStyle(PaymentRate)">@PaymentRate.ToString("0")%</div>
+        <div class="sms-card__head"><h2 class="sms-card__title">Laporan Keuangan Tercatat</h2></div>
+        <div style="height: 16rem"><canvas id="fin-periode"></canvas></div>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
+<div class="grid gap-6 lg:grid-cols-2">
     <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Pendapatan vs Pengeluaran</h2>
-        <div class="h-64">
-            <canvas id="financeChart"></canvas>
-        </div>
-    </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Status Pembayaran</h2>
-        <div class="h-64">
-            <canvas id="paymentStatusChart"></canvas>
-        </div>
-    </div>
-</div>
+        <div class="sms-card__head"><h2 class="sms-card__title">Ringkasan per Kategori</h2></div>
 
-<div class="sms-card mt-8">
-    <h2 class="text-lg font-semibold mb-4">Transaksi Terbaru</h2>
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Siswa</th>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Nominal</th>
-                <th class="py-2">Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var pay in Payments)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@pay.StudentName</td>
-                    <td class="py-2">@pay.Category</td>
-                    <td class="py-2">@pay.Amount.ToString("C0")</td>
-                    <td class="py-2">@pay.Status</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+        @if (_byCategory.Count == 0)
+        {
+            <EmptyState Icon="coins" Title="Belum ada transaksi" />
+        }
+        else
+        {
+            <div class="sms-table-wrap">
+                <table class="sms-table">
+                    <thead>
+                        <tr>
+                            <th>Kategori</th>
+                            <th class="sms-table__num">Transaksi</th>
+                            <th class="sms-table__num">Total</th>
+                            <th class="sms-table__num">Tunggakan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _byCategory)
+                        {
+                            <tr>
+                                <td class="font-medium" style="color: var(--fg-strong)">@row.Category</td>
+                                <td class="sms-table__num">@row.Count</td>
+                                <td class="sms-table__num font-semibold">@Money(row.Total)</td>
+                                <td class="sms-table__num" style="color: @(row.Outstanding > 0 ? "var(--bata)" : "var(--fg-muted)")">
+                                    @Money(row.Outstanding)
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="sms-card">
+        <div class="sms-card__head"><h2 class="sms-card__title">Laporan Periode</h2></div>
+
+        @if (_reports.Count == 0)
+        {
+            <EmptyState Icon="trend" Title="Belum ada laporan periode" />
+        }
+        else
+        {
+            <div class="sms-table-wrap">
+                <table class="sms-table">
+                    <thead>
+                        <tr>
+                            <th>Laporan</th>
+                            <th>Periode</th>
+                            <th class="sms-table__num">Pendapatan</th>
+                            <th class="sms-table__num">Pengeluaran</th>
+                            <th class="sms-table__num">Surplus</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var report in _reports)
+                        {
+                            var surplus = report.Income - report.Expense;
+                            <tr>
+                                <td class="font-medium" style="color: var(--fg-strong)">@report.Title</td>
+                                <td class="tabular">@report.Period.ToString("MMM yyyy")</td>
+                                <td class="sms-table__num">@Money(report.Income)</td>
+                                <td class="sms-table__num">@Money(report.Expense)</td>
+                                <td class="sms-table__num font-semibold"
+                                    style="color: @(surplus >= 0 ? "var(--daun)" : "var(--bata)")">
+                                    @Money(surplus)
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
 </div>
 
 @code {
-    private decimal Income { get; set; }
-    private decimal Expense { get; set; }
-    private double PaymentRate { get; set; }
-    private List<PaymentRecord> Payments { get; set; } = new();
+    private sealed record CategoryRow(string Category, int Count, decimal Total, decimal Outstanding);
+
+    private decimal _income, _outstanding, _payroll;
+    private int _paidCount, _pendingCount, _employees;
+
+    private List<CategoryRow> _byCategory = new();
+    private List<FinancialReport> _reports = new();
+
     private bool _rendered;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        Income = Db.PaymentRecords.Sum(p => p.Amount);
-        Expense = Db.FinancialReports.Sum(r => r.Expense);
-        var paid = Db.PaymentRecords.Count(p => p.Status == "Paid");
-        var total = Db.PaymentRecords.Count();
-        PaymentRate = total == 0 ? 0 : (double)paid / total * 100;
-        Payments = Db.PaymentRecords.OrderByDescending(p => p.Date).Take(6).ToList();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _income = await db.PaymentRecords.Where(p => p.Status == "Paid")
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        _outstanding = await db.PaymentRecords.Where(p => p.Status != "Paid")
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        _paidCount = await db.PaymentRecords.CountAsync(p => p.Status == "Paid");
+        _pendingCount = await db.PaymentRecords.CountAsync(p => p.Status != "Paid");
+
+        _payroll = await db.PayrollRecords.SumAsync(p => (decimal?)p.Salary) ?? 0m;
+        _employees = await db.PayrollRecords.Select(p => p.EmployeeName).Distinct().CountAsync();
+
+        var payments = await db.PaymentRecords.AsNoTracking().ToListAsync();
+        _byCategory = payments
+            .GroupBy(p => p.Category)
+            .Select(g => new CategoryRow(
+                g.Key,
+                g.Count(),
+                g.Sum(x => x.Amount),
+                g.Where(x => x.Status != "Paid").Sum(x => x.Amount)))
+            .OrderByDescending(r => r.Total)
+            .ToList();
+
+        _reports = await db.FinancialReports.AsNoTracking()
+            .OrderByDescending(r => r.Period).ToListAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_rendered) return;
+        if (_rendered)
+        {
+            return;
+        }
+
         _rendered = true;
 
-        var financeLabels = Db.FinancialReports.OrderBy(r => r.Period).Select(r => r.Period.ToString("MMM yyyy")).ToList();
-        var incomeData = Db.FinancialReports.OrderBy(r => r.Period).Select(r => r.Income).ToList();
-        await JS.InvokeVoidAsync("smsnetChart.render", "financeChart", "line", financeLabels, incomeData, "Pendapatan");
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "fin-kategori", "doughnut",
+                _byCategory.Select(c => c.Category).ToList(),
+                _byCategory.Select(c => (int)c.Total).ToList(),
+                "Total (IDR)");
 
-        await JS.InvokeVoidAsync("smsnetChart.render", "paymentStatusChart", "pie",
-            new[] { "Paid", "Pending" },
-            new[]
-            {
-                Db.PaymentRecords.Count(p => p.Status == "Paid"),
-                Db.PaymentRecords.Count(p => p.Status == "Pending")
-            },
-            "Pembayaran");
+            await JS.InvokeVoidAsync("smsnetChart.render", "fin-periode", "bar",
+                _reports.Select(r => r.Period.ToString("MMM yy")).ToList(),
+                _reports.Select(r => (int)(r.Income - r.Expense)).ToList(),
+                "Surplus (IDR)");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 
-    private string GetGaugeStyle(double percent)
+    private async Task PrintAsync()
     {
-        return $"background: conic-gradient(#14b8a6 {percent}%, #e2e8f0 0%);";
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetPrint");
+        }
+        catch (JSException) { }
     }
+
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
 }

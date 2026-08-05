@@ -1,0 +1,64 @@
+@* Opens a user-supplied URL. Renders nothing when there is no link, so callers
+   don't each repeat the null check. *@
+
+@if (!string.IsNullOrWhiteSpace(_safeUrl))
+{
+    <a href="@_safeUrl" target="_blank" rel="noopener noreferrer"
+       class="@Class" title="@Title">
+        <Icon Name="external" />
+        @if (!string.IsNullOrEmpty(Label))
+        {
+            <span>@Label</span>
+        }
+    </a>
+}
+
+@code {
+    [Parameter] public string? Url { get; set; }
+
+    [Parameter] public string Label { get; set; } = "Buka";
+
+    [Parameter] public string Title { get; set; } = "Buka tautan di tab baru";
+
+    [Parameter] public string Class { get; set; } = "sms-btn sms-btn--ghost sms-btn--sm";
+
+    private string? _safeUrl;
+
+    protected override void OnParametersSet() => _safeUrl = Normalize(Url);
+
+    /// <summary>
+    /// Accepts what a user would actually paste and rejects what could be weaponised.
+    /// <para>
+    /// A bare "drive.google.com/…" is treated as an external address rather than a
+    /// path inside this app, and anything that is not http(s) — <c>javascript:</c>
+    /// above all — is dropped: this href is rendered into a page an admin clicks.
+    /// </para>
+    /// </summary>
+    public static string? Normalize(string? url)
+    {
+        var value = (url ?? string.Empty).Trim();
+
+        if (value.Length == 0)
+        {
+            return null;
+        }
+
+        // Relative links to this app's own files (an uploaded document) stay as-is.
+        if (value.StartsWith('/') && !value.StartsWith("//", StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        if (!value.Contains("://", StringComparison.Ordinal))
+        {
+            value = "https://" + value;
+        }
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var parsed))
+        {
+            return null;
+        }
+
+        return parsed.Scheme is "http" or "https" ? parsed.ToString() : null;
+    }
+}

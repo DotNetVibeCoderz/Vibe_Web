@@ -1,117 +1,186 @@
 @page "/reports/academic"
-@attribute [Authorize]
-@inject ApplicationDbContext Db
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Akademik</h1>
+<PageTitle>Laporan Akademik — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-3">
-    <div class="sms-card flex flex-col items-center gap-3">
-        <p class="text-sm text-slate-500">Kehadiran</p>
-        <div class="sms-gauge" style="@GetGaugeStyle(AttendanceRate)">@AttendanceRate.ToString("0")%</div>
-        <p class="text-xs text-slate-500">Present @PresentCount / @AttendanceCount</p>
+<PageHeader Eyebrow="Analitik & Laporan" Title="Laporan Akademik"
+            Subtitle="Capaian belajar, kehadiran, dan beban jadwal dalam satu ringkasan.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="PrintAsync">
+            <Icon Name="file" /><span>Cetak</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-6 lg:grid-cols-3 mb-6">
+    <div class="sms-card flex flex-col items-center justify-center gap-3">
+        <p class="sms-eyebrow">Tingkat Kehadiran</p>
+        <div class="sms-gauge" style="--pct: @_attendanceRate.ToString("0")%">
+            <span class="sms-gauge__value">@($"{_attendanceRate:0}%")</span>
+        </div>
+        <p class="text-sm m-0 text-center" style="color: var(--fg-muted)">
+            @_present hadir dari @_attendanceTotal catatan
+        </p>
     </div>
+
+    <StatTile Label="Rata-rata Nilai" Value="@_average.ToString("0.##")"
+              Meta="@($"tertinggi {_max:0.##}")" Icon="chart"
+              Tone="@(_average >= 75 ? "good" : "warn")" />
+
+    <StatTile Label="Entri Jadwal" Value="@_scheduleCount.ToString()"
+              Meta="@($"{_students} siswa · {_teachers} guru")" Icon="calendar" Tone="brand" />
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Rata-rata Nilai</p>
-        <p class="text-3xl font-semibold">@AverageScore.ToString("0.0")</p>
-        <p class="text-xs text-slate-500">Nilai tertinggi @MaxScore</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Tren Kehadiran Mingguan</h2></div>
+        <div style="height: 16rem"><canvas id="rep-kehadiran"></canvas></div>
     </div>
+
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Jadwal Aktif</p>
-        <p class="text-3xl font-semibold">@ScheduleCount</p>
-        <p class="text-xs text-slate-500">Kelas & mata pelajaran</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Distribusi Nilai</h2></div>
+        <div style="height: 16rem"><canvas id="rep-nilai"></canvas></div>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Tren Kehadiran Mingguan</h2>
-        <div class="h-64">
-            <canvas id="attendanceChart"></canvas>
-        </div>
-    </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Distribusi Nilai</h2>
-        <div class="h-64">
-            <canvas id="gradeChart"></canvas>
-        </div>
-    </div>
-</div>
+<div class="sms-card">
+    <div class="sms-card__head"><h2 class="sms-card__title">Ringkasan per Mata Pelajaran</h2></div>
 
-<div class="sms-card mt-8">
-    <h2 class="text-lg font-semibold mb-4">Ringkasan Akademik</h2>
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Indikator</th>
-                <th class="py-2">Nilai</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr class="border-b border-slate-100 dark:border-slate-800">
-                <td class="py-2">Total Siswa</td>
-                <td class="py-2">@StudentCount</td>
-            </tr>
-            <tr class="border-b border-slate-100 dark:border-slate-800">
-                <td class="py-2">Total Guru</td>
-                <td class="py-2">@TeacherCount</td>
-            </tr>
-            <tr>
-                <td class="py-2">Mata Pelajaran</td>
-                <td class="py-2">@SubjectCount</td>
-            </tr>
-        </tbody>
-    </table>
+    @if (_bySubject.Count == 0)
+    {
+        <EmptyState Icon="chart" Title="Belum ada data nilai" />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th>Mata Pelajaran</th>
+                        <th class="sms-table__num">Jumlah Nilai</th>
+                        <th class="sms-table__num">Rata-rata</th>
+                        <th class="sms-table__num">Terendah</th>
+                        <th class="sms-table__num">Tertinggi</th>
+                        <th>Ketuntasan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _bySubject)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@row.Subject</td>
+                            <td class="sms-table__num">@row.Count</td>
+                            <td class="sms-table__num font-semibold">@row.Average.ToString("0.##")</td>
+                            <td class="sms-table__num">@row.Min.ToString("0.##")</td>
+                            <td class="sms-table__num">@row.Max.ToString("0.##")</td>
+                            <td style="min-width: 9rem">
+                                <div class="flex items-center gap-2">
+                                    <div class="sms-meter flex-1">
+                                        <div class="sms-meter__fill" style="width: @row.PassRate.ToString("0")%"></div>
+                                    </div>
+                                    <span class="tabular text-xs" style="color: var(--fg-muted)">
+                                        @row.PassRate.ToString("0")%
+                                    </span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @code {
-    private int AttendanceCount { get; set; }
-    private int PresentCount { get; set; }
-    private double AttendanceRate { get; set; }
-    private decimal AverageScore { get; set; }
-    private decimal MaxScore { get; set; }
-    private int ScheduleCount { get; set; }
-    private int StudentCount { get; set; }
-    private int TeacherCount { get; set; }
-    private int SubjectCount { get; set; }
-    private bool _chartRendered;
+    private sealed record SubjectRow(string Subject, int Count, decimal Average, decimal Min, decimal Max, double PassRate);
 
-    protected override Task OnInitializedAsync()
+    private int _attendanceTotal, _present, _scheduleCount, _students, _teachers;
+    private double _attendanceRate;
+    private decimal _average, _max;
+
+    private List<SubjectRow> _bySubject = new();
+    private List<string> _dayLabels = new();
+    private List<int> _daySeries = new();
+    private List<int> _buckets = new();
+
+    private bool _rendered;
+
+    protected override async Task OnInitializedAsync()
     {
-        AttendanceCount = Db.AttendanceRecords.Count();
-        PresentCount = Db.AttendanceRecords.Count(a => a.Status == "Present");
-        AttendanceRate = AttendanceCount == 0 ? 0 : (double)PresentCount / AttendanceCount * 100;
-        AverageScore = Db.GradeRecords.Any() ? Db.GradeRecords.Average(g => g.Score) : 0;
-        MaxScore = Db.GradeRecords.Any() ? Db.GradeRecords.Max(g => g.Score) : 0;
-        ScheduleCount = Db.ScheduleItems.Count();
-        StudentCount = Db.Students.Count();
-        TeacherCount = Db.Teachers.Count();
-        SubjectCount = Db.Subjects.Count();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _attendanceTotal = await db.AttendanceRecords.CountAsync();
+        _present = await db.AttendanceRecords.CountAsync(a => a.Status == "Present");
+        _attendanceRate = _attendanceTotal == 0 ? 0 : _present * 100.0 / _attendanceTotal;
+
+        if (await db.GradeRecords.AnyAsync())
+        {
+            _average = await db.GradeRecords.AverageAsync(g => g.Score);
+            _max = await db.GradeRecords.MaxAsync(g => g.Score);
+        }
+
+        _scheduleCount = await db.ScheduleItems.CountAsync();
+        _students = await db.Students.CountAsync(s => s.Status == "Active");
+        _teachers = await db.Teachers.CountAsync(t => t.Status == "Active");
+
+        var grades = await db.GradeRecords.AsNoTracking().ToListAsync();
+        _bySubject = grades
+            .GroupBy(g => g.Subject)
+            .Select(g => new SubjectRow(
+                g.Key,
+                g.Count(),
+                g.Average(x => x.Score),
+                g.Min(x => x.Score),
+                g.Max(x => x.Score),
+                g.Count(x => x.Score >= 75) * 100.0 / g.Count()))
+            .OrderByDescending(r => r.Average)
+            .ToList();
+
+        var today = SchoolClock.Today;
+        for (var offset = 6; offset >= 0; offset--)
+        {
+            var day = today.AddDays(-offset);
+            _dayLabels.Add(day.ToString("dd MMM"));
+            _daySeries.Add(await db.AttendanceRecords
+                .CountAsync(a => a.Date >= day && a.Date < day.AddDays(1) && a.Status == "Present"));
+        }
+
+        _buckets = new List<int>
+        {
+            grades.Count(g => g.Score < 70),
+            grades.Count(g => g.Score >= 70 && g.Score < 80),
+            grades.Count(g => g.Score >= 80 && g.Score < 90),
+            grades.Count(g => g.Score >= 90)
+        };
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_chartRendered)
+        if (_rendered)
         {
-            _chartRendered = true;
-            var dates = Enumerable.Range(0, 7).Select(i => DateTime.Today.AddDays(-6 + i)).ToList();
-            var labels = dates.Select(d => d.ToString("dd MMM")).ToList();
-            var attendanceData = dates.Select(date => Db.AttendanceRecords.Count(a => a.Date.Date == date.Date)).ToList();
-            var gradeData = new List<int>
-            {
-                Db.GradeRecords.Count(g => g.Score < 70),
-                Db.GradeRecords.Count(g => g.Score >= 70 && g.Score < 80),
-                Db.GradeRecords.Count(g => g.Score >= 80 && g.Score < 90),
-                Db.GradeRecords.Count(g => g.Score >= 90)
-            };
-            await JS.InvokeVoidAsync("smsnetChart.render", "attendanceChart", "line", labels, attendanceData, "Absensi");
-            await JS.InvokeVoidAsync("smsnetChart.render", "gradeChart", "bar", new[] { "<70", "70-79", "80-89", "90+" }, gradeData, "Nilai");
+            return;
         }
+
+        _rendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "rep-kehadiran", "line", _dayLabels, _daySeries, "Hadir");
+            await JS.InvokeVoidAsync("smsnetChart.render", "rep-nilai", "bar",
+                new[] { "< 70", "70–79", "80–89", "90+" }, _buckets, "Jumlah");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
     }
 
-    private string GetGaugeStyle(double percent)
+    private async Task PrintAsync()
     {
-        return $"background: conic-gradient(#4f46e5 {percent}%, #e2e8f0 0%);";
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetPrint");
+        }
+        catch (JSException) { }
     }
 }

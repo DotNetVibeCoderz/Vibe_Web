@@ -1,0 +1,36 @@
+<div class="sms-stat @ToneClass sms-reveal">
+    <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+            <p class="sms-stat__label">@Label</p>
+            <p class="sms-stat__value">@Value</p>
+            @if (!string.IsNullOrWhiteSpace(Meta))
+            {
+                <p class="sms-stat__meta">@Meta</p>
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Icon))
+        {
+            <span class="flex-none opacity-40" style="color: var(--fg-muted)">
+                <Icon Name="@Icon" Class="w-5 h-5" />
+            </span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Meta { get; set; }
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>neutral | brand | good | warn — keys the tile's hairline to its module.</summary>
+    [Parameter] public string Tone { get; set; } = "neutral";
+
+    private string ToneClass => Tone switch
+    {
+        "brand" => "sms-stat--brand",
+        "good" => "sms-stat--good",
+        "warn" => "sms-stat--warn",
+        _ => string.Empty
+    };
+}

@@ -1,124 +1,195 @@
 @page "/admin/inventory"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<InventoryItem>
 
-<h1 class="text-2xl font-semibold mb-6">Inventory Management</h1>
+<PageTitle>Inventory — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Kelola aset sekolah.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Item</button>
+<PageHeader Eyebrow="Administrasi & Keuangan" Title="Inventory"
+            Subtitle="Pengelolaan aset sekolah: buku, laboratorium, dan fasilitas.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Aset</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Jenis Aset" Value="@Items.Count.ToString()" Icon="box" Tone="brand" />
+    <StatTile Label="Total Unit" Value="@Items.Sum(i => i.Quantity).ToString()" Icon="layers" />
+    <StatTile Label="Kondisi Baik" Value="@Items.Count(i => i.Condition == "Good").ToString()" Icon="check" Tone="good" />
+    <StatTile Label="Perlu Perhatian" Value="@Items.Count(i => i.Condition != "Good").ToString()" Icon="warning" Tone="warn" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama aset atau kategori…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kategori">Kategori</label>
+            <select id="f-kategori" class="sms-select" @bind="CategoryFilter" @bind:after="ResetPage">
+                <option value="">Semua kategori</option>
+                @foreach (var kategori in Items.Select(i => i.Category).Distinct().OrderBy(c => c))
+                {
+                    <option value="@kategori">@kategori</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kondisi">Kondisi</label>
+            <select id="f-kondisi" class="sms-select" @bind="ConditionFilter" @bind:after="ResetPage">
+                <option value="">Semua kondisi</option>
+                <option value="Good">Baik</option>
+                <option value="Fair">Cukup</option>
+                <option value="Poor">Rusak</option>
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Jumlah</th>
-                <th class="py-2">Kondisi</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in Items)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@item.Name</td>
-                    <td class="py-2">@item.Category</td>
-                    <td class="py-2">@item.Quantity</td>
-                    <td class="py-2"><span class="sms-badge">@item.Condition</span></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditItem(item)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteItem(item.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SaveItem">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama item" @bind-Value="FormModel.Name" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kategori" @bind-Value="FormModel.Category" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Jumlah" @bind-Value="FormModel.Quantity" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kondisi" @bind-Value="FormModel.Condition" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="box" Title="Tidak ada aset" Hint="Catat aset sekolah agar dapat dipantau kondisinya." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Aset <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("kategori")'>Kategori <span class="sort-caret">@SortCaret("kategori")</span></th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("jumlah")'>Jumlah <span class="sort-caret">@SortCaret("jumlah")</span></th>
+                        <th>Kondisi</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var aset in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@aset.Name</td>
+                            <td>@aset.Category</td>
+                            <td class="sms-table__num">@aset.Quantity</td>
+                            <td><span class="sms-badge @ConditionTone(aset.Condition)">@ConditionLabel(aset.Condition)</span></td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(aset)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(aset)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="aset" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Aset" : "Ubah Aset")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-aset">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama aset</label>
+                    <InputText class="sms-input" @bind-Value="Form.Name" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Kategori</label>
+                    <InputText class="sms-input" @bind-Value="Form.Category" placeholder="contoh: Lab Komputer" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Jumlah</label>
+                        <InputNumber class="sms-input" @bind-Value="Form.Quantity" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Kondisi</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Condition">
+                            <option value="Good">Baik</option>
+                            <option value="Fair">Cukup</option>
+                            <option value="Poor">Rusak</option>
+                        </InputSelect>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-aset" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus aset"
+               Message="Data aset ini akan dihapus permanen dari inventaris."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<InventoryItem> Items { get; set; } = new();
-    private InventoryItem FormModel { get; set; } = new();
-    private bool ShowForm { get; set; }
+    private string CategoryFilter = string.Empty;
+    private string ConditionFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    protected override string EntityLabel => "aset";
+
+    protected override DbSet<InventoryItem> Table(ApplicationDbContext db) => db.InventoryItems;
+
+    protected override IEnumerable<string?> SearchableText(InventoryItem i) =>
+        new[] { i.Name, i.Category, i.Condition };
+
+    protected override string Describe(InventoryItem i) => i.Name;
+
+    protected override int IdOf(InventoryItem i) => i.Id;
+
+    protected override InventoryItem NewEntity() => new() { Condition = "Good", Quantity = 1 };
+
+    protected override InventoryItem CloneForEdit(InventoryItem i) => new()
     {
-        LoadItems();
-        return Task.CompletedTask;
+        Id = i.Id, Name = i.Name, Category = i.Category, Quantity = i.Quantity, Condition = i.Condition
+    };
+
+    protected override IEnumerable<InventoryItem> ApplyFilters(IEnumerable<InventoryItem> items)
+    {
+        if (!string.IsNullOrWhiteSpace(CategoryFilter)) items = items.Where(i => i.Category == CategoryFilter);
+        if (!string.IsNullOrWhiteSpace(ConditionFilter)) items = items.Where(i => i.Condition == ConditionFilter);
+        return items;
     }
 
-    private void LoadItems()
+    protected override IEnumerable<InventoryItem> ApplySort(IEnumerable<InventoryItem> items) => SortColumn switch
     {
-        Items = Db.InventoryItems.AsNoTracking().ToList();
-    }
+        "kategori" => SortAscending ? items.OrderBy(i => i.Category) : items.OrderByDescending(i => i.Category),
+        "jumlah" => SortAscending ? items.OrderBy(i => i.Quantity) : items.OrderByDescending(i => i.Quantity),
+        _ => SortAscending ? items.OrderBy(i => i.Name) : items.OrderByDescending(i => i.Name)
+    };
 
-    private void ShowAdd()
-    {
-        FormModel = new InventoryItem();
-        ShowForm = true;
-    }
+    protected override string CsvHeader => "Id,Aset,Kategori,Jumlah,Kondisi";
 
-    private void EditItem(InventoryItem item)
-    {
-        FormModel = new InventoryItem
-        {
-            Id = item.Id,
-            Name = item.Name,
-            Category = item.Category,
-            Quantity = item.Quantity,
-            Condition = item.Condition
-        };
-        ShowForm = true;
-    }
+    protected override string CsvRow(InventoryItem i) =>
+        $"{i.Id},{Csv(i.Name)},{Csv(i.Category)},{i.Quantity},{Csv(i.Condition)}";
 
-    private async Task SaveItem()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.InventoryItems.Add(FormModel);
-        }
-        else
-        {
-            Db.InventoryItems.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadItems();
-    }
+    private void ResetPage() => CurrentPage = 1;
 
-    private async Task DeleteItem(int id)
+    private static string ConditionLabel(string c) => c switch
     {
-        var item = await Db.InventoryItems.FindAsync(id);
-        if (item != null)
-        {
-            Db.InventoryItems.Remove(item);
-            await Db.SaveChangesAsync();
-            LoadItems();
-        }
-    }
+        "Good" => "Baik", "Fair" => "Cukup", "Poor" => "Rusak", _ => c
+    };
 
-    private void Cancel()
+    private static string ConditionTone(string c) => c switch
     {
-        FormModel = new InventoryItem();
-        ShowForm = false;
-    }
+        "Good" => "sms-badge--good", "Poor" => "sms-badge--bad", _ => "sms-badge--warn"
+    };
 }

@@ -1,26 +1,94 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full">
+﻿<!DOCTYPE html>
+<html lang="id" class="h-full light">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="SMSNet — Sistem Manajemen Sekolah modern: akademik, keuangan, e-learning, dan portal orang tua." />
     <base href="/" />
+
+    <title>SMSNet — Sistem Manajemen Sekolah</title>
+
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["app.css"]" />
-    <link rel="stylesheet" href="@Assets["SMSNet.styles.css"]" />
+
+    <!-- Theme is resolved before first paint so the page never flashes the wrong scheme. -->
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('smsnet-theme');
+                var dark = saved ? saved === 'dark'
+                    : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                var r = document.documentElement;
+                r.classList.toggle('dark', dark);
+                r.classList.toggle('light', !dark);
+            } catch (e) { }
+        })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..800;1,400..600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Bridge the design tokens into Tailwind so utilities and the component
+        // layer in app.css can never drift apart.
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        tinta: '#101a2e',
+                        dongker: { DEFAULT: '#1b3a6b', lift: '#24508f' },
+                        kunyit: { DEFAULT: '#e8a317', deep: '#c8860a' },
+                        kapur: '#f4f5f7',
+                        garis: '#d8dce4',
+                        daun: '#2f7d5c',
+                        bata: '#b3452f',
+                        surface: 'var(--bg-surface)',
+                        sunken: 'var(--bg-sunken)',
+                        inset: 'var(--bg-inset)',
+                        rule: 'var(--rule)',
+                        ink: { DEFAULT: 'var(--fg)', strong: 'var(--fg-strong)', muted: 'var(--fg-muted)', faint: 'var(--fg-faint)' }
+                    },
+                    fontFamily: {
+                        display: ['"Bricolage Grotesque"', 'ui-sans-serif', 'sans-serif'],
+                        sans: ['"Public Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace']
+                    },
+                    borderRadius: { xl2: '14px' }
+                }
+            }
+        };
+    </script>
+
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["chat.css"]" />
+    <link rel="stylesheet" href="@Assets["cards.css"]" />
+    <link rel="stylesheet" href="@Assets["SMSNet.styles.css"]" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b3a6b'/%3E%3Crect x='24' y='9' width='5' height='13' rx='2' fill='%23e8a317'/%3E%3Ctext x='13' y='21' font-family='sans-serif' font-size='12' font-weight='700' fill='white' text-anchor='middle'%3ESN%3C/text%3E%3C/svg%3E" />
+
     <ImportMap />
     <HeadOutlet />
 </head>
 
-<body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors">
+<body class="h-full">
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
+
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="/theme.js"></script>
     <script src="/download.js"></script>
     <script src="/charts.js"></script>
+    <script src="/chat.js"></script>
+    <script src="/qrscan.js"></script>
+    <script src="/editor.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <!-- Fallback QR decoder for browsers without BarcodeDetector (Safari, Firefox).
+         Loaded lazily: only the attendance screen needs it. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </body>
 
 </html>

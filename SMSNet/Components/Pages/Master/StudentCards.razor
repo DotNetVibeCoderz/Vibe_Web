@@ -1,0 +1,505 @@
+@page "/master/cards"
+@attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
+@using SMSNet.Services.Attendance
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject QrCodeService Qr
+@inject CardTemplateService Templates
+@inject AuthenticationStateProviderAccessor UserAccessor
+@inject AuditService Audit
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>Kartu Ber-QR — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Master Data" Title="Kartu Ber-QR"
+            Subtitle="Cetak kartu siswa dan guru. Kode QR pada kartu berfungsi langsung sebagai alat absensi.">
+    <Actions>
+        <a href="/academic/attendance-qr" class="sms-btn sms-btn--ghost">
+            <Icon Name="check" /><span>Absensi QR</span>
+        </a>
+        @if (_tab == Tab.Cards)
+        {
+            <button type="button" class="sms-btn sms-btn--primary" @onclick="PrintAsync"
+                    disabled="@(_selected.Count == 0)">
+                <Icon Name="file" /><span>Cetak @(_selected.Count > 0 ? $"({_selected.Count})" : "")</span>
+            </button>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="flex items-center gap-3 mb-5 flex-wrap">
+    <div class="sms-segment" role="tablist">
+        <button type="button" role="tab" class="sms-segment__item @(_tab == Tab.Cards ? "is-active" : "")"
+                @onclick="() => _tab = Tab.Cards">Kartu</button>
+        <AuthorizeView Roles="@AppRoles.Admin">
+            <button type="button" role="tab" class="sms-segment__item @(_tab == Tab.Template ? "is-active" : "")"
+                    @onclick="OpenTemplateAsync">Template</button>
+        </AuthorizeView>
+    </div>
+
+    @if (_missingCodes > 0)
+    {
+        <button type="button" class="sms-btn sms-btn--accent sms-btn--sm" @onclick="BackfillAsync">
+            <Icon Name="sparkle" />
+            <span>Terbitkan @_missingCodes kode QR</span>
+        </button>
+    }
+</div>
+
+@if (_tab == Tab.Cards)
+{
+    <div class="grid gap-4 md:grid-cols-4 mb-6">
+        <StatTile Label="Kartu Siap" Value="@_withCodes.ToString()"
+                  Meta="sudah punya kode QR" Icon="grid" Tone="brand" />
+        <StatTile Label="Belum Punya Kode" Value="@_missingCodes.ToString()"
+                  Icon="warning" Tone="@(_missingCodes > 0 ? "warn" : "good")" />
+        <StatTile Label="Dipilih" Value="@_selected.Count.ToString()" Icon="check"
+                  Tone="@(_selected.Count > 0 ? "good" : "neutral")" />
+        <StatTile Label="Jenis Kartu" Value="@(_kind == CardTemplateService.TeacherKind ? "Guru" : "Siswa")"
+                  Icon="@(_kind == CardTemplateService.TeacherKind ? "teacher" : "user")" />
+    </div>
+
+    <div class="sms-card mb-6">
+        <div class="sms-toolbar">
+            <div class="sms-field">
+                <label class="sms-label" for="jenis">Jenis kartu</label>
+                <select id="jenis" class="sms-select" @bind="_kind" @bind:after="ReloadAsync">
+                    <option value="@CardTemplateService.StudentKind">Kartu Siswa</option>
+                    <option value="@CardTemplateService.TeacherKind">Kartu Guru</option>
+                </select>
+            </div>
+            <div class="sms-field">
+                <label class="sms-label" for="cari">Pencarian</label>
+                <input id="cari" class="sms-input" placeholder="Nama…"
+                       value="@_search" @oninput="e => { _search = e.Value?.ToString() ?? string.Empty; }" />
+            </div>
+            @if (_kind == CardTemplateService.StudentKind)
+            {
+                <div class="sms-field">
+                    <label class="sms-label" for="kelas">Kelas</label>
+                    <select id="kelas" class="sms-select" @bind="_classFilter">
+                        <option value="">Semua kelas</option>
+                        @foreach (var kelas in _classes)
+                        {
+                            <option value="@kelas">@kelas</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="sms-field justify-end">
+                <div class="flex gap-2">
+                    <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm" @onclick="SelectAllVisible">
+                        Pilih semua
+                    </button>
+                    <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm" @onclick="() => _selected.Clear()"
+                            disabled="@(_selected.Count == 0)">Kosongkan</button>
+                </div>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+        }
+        else if (Visible.Count == 0)
+        {
+            <EmptyState Icon="grid" Title="Tidak ada data yang cocok"
+                        Hint="Ubah kata kunci atau filter kelas." />
+        }
+        else
+        {
+            <div class="sms-table-wrap" style="max-height: 22rem">
+                <table class="sms-table">
+                    <thead>
+                        <tr>
+                            <th style="width:2.5rem"></th>
+                            <th>Nama</th>
+                            <th>@(_kind == CardTemplateService.TeacherKind ? "Mata Pelajaran" : "Kelas")</th>
+                            <th>Kode QR</th>
+                            <th class="text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var person in Visible)
+                        {
+                            <tr>
+                                <td>
+                                    <input type="checkbox" checked="@_selected.Contains(person.Id)"
+                                           @onchange="e => Toggle(person.Id, (bool?)e.Value == true)"
+                                           aria-label="Pilih @person.Name" />
+                                </td>
+                                <td class="font-medium" style="color: var(--fg-strong)">@person.Name</td>
+                                <td>@(person.Detail ?? "—")</td>
+                                <td>
+                                    @if (string.IsNullOrEmpty(person.Code))
+                                    {
+                                        <span class="sms-badge sms-badge--warn">belum ada</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="mono text-xs">@person.Code</span>
+                                    }
+                                </td>
+                                <td class="text-right">
+                                    <button type="button" class="sms-btn sms-btn--quiet sms-btn--sm"
+                                            title="Terbitkan ulang kode — kartu lama berhenti berlaku"
+                                            @onclick="() => AskReissue(person)">
+                                        <Icon Name="refresh" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="text-xs mt-3 m-0" style="color: var(--fg-faint)">
+                Menampilkan @Visible.Count dari @_people.Count data.
+            </p>
+        }
+    </div>
+
+    <!-- Only this block reaches the printer; cards.css hides the rest. -->
+    <div id="lembar-kartu">
+        @if (_selected.Count == 0)
+        {
+            <div class="sms-card">
+                <EmptyState Icon="grid" Title="Belum ada kartu dipilih"
+                            Hint="Centang nama pada tabel di atas untuk melihat pratinjau dan mencetak kartunya." />
+            </div>
+        }
+        else
+        {
+            <div class="kartu-preview">
+                <div class="kartu-grid">
+                    @foreach (var html in RenderSelected())
+                    {
+                        @((MarkupString)html)
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <!-- Template editor -->
+    <div class="grid gap-6 xl:grid-cols-5">
+        <div class="sms-card xl:col-span-3">
+            <div class="sms-card__head">
+                <h2 class="sms-card__title">Template @(_kind == CardTemplateService.TeacherKind ? "Kartu Guru" : "Kartu Siswa")</h2>
+                <select class="sms-select w-auto" @bind="_kind" @bind:after="OpenTemplateAsync">
+                    <option value="@CardTemplateService.StudentKind">Kartu Siswa</option>
+                    <option value="@CardTemplateService.TeacherKind">Kartu Guru</option>
+                </select>
+            </div>
+
+            <p class="text-sm mb-3" style="color: var(--fg-muted)">
+                Template bawaan tersimpan sebagai berkas di
+                <code class="mono text-xs">wwwroot/templates/</code>. Perubahan yang disimpan di sini
+                menimpanya, sehingga tata letak kartu dapat diubah tanpa akses ke server.
+            </p>
+
+            @if (_savedTemplate is not null)
+            {
+                <p class="text-xs mb-3 px-3 py-2 rounded"
+                   style="background: var(--bg-inset); color: var(--fg-muted)">
+                    Memakai template tersimpan — diubah oleh
+                    <strong style="color: var(--fg-strong)">@(_savedTemplate.UpdatedBy ?? "—")</strong>
+                    pada @_savedTemplate.UpdatedAt.ToString("dd MMM yyyy HH:mm").
+                </p>
+            }
+            else
+            {
+                <p class="text-xs mb-3 px-3 py-2 rounded"
+                   style="background: var(--bg-inset); color: var(--fg-muted)">
+                    Memakai template bawaan dari berkas.
+                </p>
+            }
+
+            <div class="sms-field">
+                <label class="sms-label" for="tpl">HTML template</label>
+                <textarea id="tpl" class="sms-textarea mono" rows="20" style="font-size: .78rem"
+                          @bind="_templateHtml" @bind:event="oninput"></textarea>
+            </div>
+
+            <div class="flex flex-wrap gap-2 mt-4">
+                <button type="button" class="sms-btn sms-btn--primary" @onclick="SaveTemplateAsync">
+                    <Icon Name="check" /><span>Simpan Template</span>
+                </button>
+                <button type="button" class="sms-btn sms-btn--ghost" @onclick="LoadFileDefaultAsync">
+                    <Icon Name="refresh" /><span>Muat Bawaan</span>
+                </button>
+                <button type="button" class="sms-btn sms-btn--danger" @onclick="() => _confirmReset = true"
+                        disabled="@(_savedTemplate is null)">
+                    <Icon Name="trash" /><span>Hapus Penimpaan</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="xl:col-span-2 space-y-6">
+            <div class="sms-card">
+                <div class="sms-card__head"><h2 class="sms-card__title">Pratinjau Langsung</h2></div>
+                <div class="kartu-preview">
+                    @((MarkupString)PreviewCard())
+                </div>
+                <p class="text-xs mt-3 m-0" style="color: var(--fg-faint)">
+                    Memakai data pertama pada daftar sebagai contoh.
+                </p>
+            </div>
+
+            <div class="sms-card">
+                <div class="sms-card__head"><h2 class="sms-card__title">Placeholder</h2></div>
+                <dl class="grid gap-2 text-sm m-0">
+                    @foreach (var (token, meaning) in CardTemplateService.Placeholders)
+                    {
+                        <div class="flex items-start gap-3">
+                            <dt class="mono text-xs flex-none pt-0.5" style="color: var(--brand); min-width: 9.5rem">
+                                @token
+                            </dt>
+                            <dd class="m-0" style="color: var(--fg-muted)">@meaning</dd>
+                        </div>
+                    }
+                </dl>
+                <p class="text-xs mt-4 m-0 px-3 py-2 rounded"
+                   style="background: var(--bg-inset); color: var(--fg-muted)">
+                    Tag <code class="mono">script</code>, <code class="mono">iframe</code>, dan atribut
+                    event dibuang saat template dirender.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @bind-Open="_confirmReissue"
+               Title="Terbitkan ulang kode QR"
+               Message="Kode lama langsung berhenti berlaku, sehingga kartu yang sudah dicetak tidak dapat dipakai absen lagi. Cetak ulang kartunya setelah ini."
+               Detail="@_reissueLabel"
+               ConfirmLabel="Terbitkan ulang"
+               OnConfirm="ReissueAsync" />
+
+<ConfirmDialog @bind-Open="_confirmReset"
+               Title="Hapus penimpaan template"
+               Message="Template kembali memakai berkas bawaan. Perubahan yang tersimpan akan hilang."
+               ConfirmLabel="Hapus"
+               OnConfirm="ResetTemplateAsync" />
+
+@code {
+    private enum Tab { Cards, Template }
+
+    private sealed record Person(int Id, string Name, string? Detail, string? Code);
+
+    private Tab _tab = Tab.Cards;
+    private string _kind = CardTemplateService.StudentKind;
+
+    private List<Person> _people = new();
+    private List<string> _classes = new();
+    private readonly HashSet<int> _selected = new();
+
+    private List<Student> _students = new();
+    private List<Teacher> _teachers = new();
+
+    private string _search = string.Empty;
+    private string _classFilter = string.Empty;
+    private bool _loading = true;
+    private int _withCodes, _missingCodes;
+
+    private string _templateHtml = string.Empty;
+    private string _renderTemplate = string.Empty;
+    private CardTemplate? _savedTemplate;
+
+    private bool _confirmReissue, _confirmReset;
+    private Person? _pendingReissue;
+    private string _reissueLabel = string.Empty;
+
+    private const string SchoolName = "SMSNet";
+
+    private List<Person> Visible
+    {
+        get
+        {
+            IEnumerable<Person> query = _people;
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                query = query.Where(p => p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (_kind == CardTemplateService.StudentKind && !string.IsNullOrWhiteSpace(_classFilter))
+            {
+                query = query.Where(p => p.Detail == _classFilter);
+            }
+
+            return query.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _selected.Clear();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (_kind == CardTemplateService.TeacherKind)
+        {
+            _teachers = await db.Teachers.AsNoTracking().OrderBy(t => t.FullName).ToListAsync();
+            _people = _teachers.Select(t => new Person(t.Id, t.FullName, t.Subject, t.QrCode)).ToList();
+            _classes = new List<string>();
+        }
+        else
+        {
+            _students = await db.Students.AsNoTracking().OrderBy(s => s.FullName).ToListAsync();
+            _people = _students.Select(s => new Person(s.Id, s.FullName, s.ClassName, s.QrCode)).ToList();
+            _classes = _students.Select(s => s.ClassName)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c!).Distinct().OrderBy(c => c).ToList();
+        }
+
+        _withCodes = _people.Count(p => !string.IsNullOrEmpty(p.Code));
+        _missingCodes = _people.Count - _withCodes;
+
+        _renderTemplate = await Templates.GetHtmlAsync(_kind);
+        _loading = false;
+    }
+
+    private void Toggle(int id, bool on)
+    {
+        if (on) _selected.Add(id); else _selected.Remove(id);
+    }
+
+    private void SelectAllVisible()
+    {
+        foreach (var person in Visible)
+        {
+            _selected.Add(person.Id);
+        }
+    }
+
+    private IEnumerable<string> RenderSelected()
+    {
+        if (_kind == CardTemplateService.TeacherKind)
+        {
+            foreach (var teacher in _teachers.Where(t => _selected.Contains(t.Id)))
+            {
+                yield return Templates.RenderTeacher(_renderTemplate, teacher, SchoolName);
+            }
+        }
+        else
+        {
+            foreach (var student in _students.Where(s => _selected.Contains(s.Id)))
+            {
+                yield return Templates.RenderStudent(_renderTemplate, student, SchoolName);
+            }
+        }
+    }
+
+    private string PreviewCard()
+    {
+        var template = string.IsNullOrWhiteSpace(_templateHtml) ? _renderTemplate : _templateHtml;
+
+        if (_kind == CardTemplateService.TeacherKind)
+        {
+            var teacher = _teachers.FirstOrDefault() ?? new Teacher { FullName = "Contoh Guru", Subject = "Matematika" };
+            return Templates.RenderTeacher(template, teacher, SchoolName);
+        }
+
+        var student = _students.FirstOrDefault() ?? new Student { FullName = "Contoh Siswa", ClassName = "8A" };
+        return Templates.RenderStudent(template, student, SchoolName);
+    }
+
+    private async Task BackfillAsync()
+    {
+        var (students, teachers) = await Qr.BackfillAsync();
+        await Audit.WriteAsync("Terbitkan kode QR", $"{students} siswa, {teachers} guru");
+        Toasts.Success($"Kode QR diterbitkan untuk {students} siswa dan {teachers} guru.");
+        await ReloadAsync();
+    }
+
+    private void AskReissue(Person person)
+    {
+        _pendingReissue = person;
+        _reissueLabel = person.Name;
+        _confirmReissue = true;
+    }
+
+    private async Task ReissueAsync()
+    {
+        if (_pendingReissue is null)
+        {
+            return;
+        }
+
+        var code = _kind == CardTemplateService.TeacherKind
+            ? await Qr.ReissueTeacherAsync(_pendingReissue.Id)
+            : await Qr.ReissueStudentAsync(_pendingReissue.Id);
+
+        if (code is not null)
+        {
+            await Audit.WriteAsync("Terbitkan ulang kode QR", $"{_pendingReissue.Name} → {code}");
+            Toasts.Success($"Kode baru untuk {_pendingReissue.Name}: {code}");
+            await ReloadAsync();
+        }
+
+        _pendingReissue = null;
+    }
+
+    private async Task OpenTemplateAsync()
+    {
+        _tab = Tab.Template;
+        _savedTemplate = await Templates.GetSavedAsync(_kind);
+        _templateHtml = await Templates.GetHtmlAsync(_kind);
+        _renderTemplate = _templateHtml;
+
+        if (_people.Count == 0)
+        {
+            await ReloadAsync();
+            _tab = Tab.Template;
+        }
+    }
+
+    private async Task LoadFileDefaultAsync()
+    {
+        _templateHtml = await Templates.GetFileDefaultAsync(_kind);
+        Toasts.Show("Template bawaan dimuat. Tekan Simpan untuk menerapkannya.");
+    }
+
+    private async Task SaveTemplateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_templateHtml))
+        {
+            Toasts.Warn("Template tidak boleh kosong.");
+            return;
+        }
+
+        var who = await UserAccessor.GetUserNameAsync();
+        await Templates.SaveAsync(_kind, _templateHtml, who);
+        await Audit.RecordUpdateAsync("template kartu", _kind);
+
+        _savedTemplate = await Templates.GetSavedAsync(_kind);
+        _renderTemplate = _templateHtml;
+        Toasts.Success("Template kartu disimpan.");
+    }
+
+    private async Task ResetTemplateAsync()
+    {
+        await Templates.ResetAsync(_kind);
+        await Audit.RecordDeleteAsync("penimpaan template kartu", _kind);
+
+        _savedTemplate = null;
+        _templateHtml = await Templates.GetFileDefaultAsync(_kind);
+        _renderTemplate = _templateHtml;
+        Toasts.Success("Template kembali ke bawaan.");
+    }
+
+    private async Task PrintAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetPrint");
+        }
+        catch (JSException) { }
+    }
+}

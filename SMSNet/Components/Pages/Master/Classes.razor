@@ -1,141 +1,193 @@
 @page "/master/classes"
 @attribute [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Guru)]
-@inject ApplicationDbContext Db
-@inject IJSRuntime JSRuntime
+@inherits CrudPageBase<ClassRoom>
 
-<h1 class="text-2xl font-semibold mb-6">Master Data - Kelas</h1>
+<PageTitle>Master Data Kelas — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex gap-4 flex-wrap">
-        <InputText class="w-full md:w-64 rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="SearchText" placeholder="Cari kelas" />
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white" @onclick="ExportCsv">Export CSV</button>
-        <button class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="ShowAdd">Tambah Kelas</button>
-    </div>
+<PageHeader Eyebrow="Master Data" Title="Kelas"
+            Subtitle="Rombongan belajar, wali kelas, dan daya tampung ruang.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Kelas</span>
+        </button>
+    </Actions>
+</PageHeader>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">Wali Kelas</th>
-                <th class="py-2">Kapasitas</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var room in FilteredClasses)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@room.Name</td>
-                    <td class="py-2">@room.HomeroomTeacher</td>
-                    <td class="py-2">@room.Capacity</td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditClass(room)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeleteClass(room.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+<div class="grid gap-4 md:grid-cols-3 mb-6">
+    <StatTile Label="Jumlah Kelas" Value="@Items.Count.ToString()" Icon="grid" Tone="brand" />
+    <StatTile Label="Total Daya Tampung" Value="@Items.Sum(c => c.Capacity).ToString()" Icon="users" />
+    <StatTile Label="Terisi" Value="@($"{OccupiedCount} siswa")" Meta="@OccupancyLabel"
+              Icon="check" Tone="@(OccupancyRate > 95 ? "warn" : "good")" />
 </div>
 
-@if (ShowForm)
-{
-    <div class="sms-card mt-6 max-w-xl">
-        <h2 class="text-lg font-semibold mb-4">@FormTitle</h2>
-        <EditForm Model="FormModel" OnValidSubmit="SaveClass">
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama kelas atau wali kelas…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="grid" Title="Belum ada kelas"
+                    Hint="Tambahkan rombongan belajar agar siswa dapat ditempatkan." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Kelas <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th>Wali Kelas</th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("kapasitas")'>Kapasitas <span class="sort-caret">@SortCaret("kapasitas")</span></th>
+                        <th class="sms-table__num">Terisi</th>
+                        <th>Keterisian</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var kelas in Paged)
+                    {
+                        var terisi = OccupancyOf(kelas.Name);
+                        var persen = kelas.Capacity == 0 ? 0 : Math.Min(100, terisi * 100.0 / kelas.Capacity);
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@kelas.Name</td>
+                            <td>@(kelas.HomeroomTeacher ?? "—")</td>
+                            <td class="sms-table__num">@kelas.Capacity</td>
+                            <td class="sms-table__num">@terisi</td>
+                            <td style="min-width: 9rem">
+                                <div class="flex items-center gap-2">
+                                    <div class="sms-meter flex-1">
+                                        <div class="sms-meter__fill" style="width: @persen.ToString("0")%"></div>
+                                    </div>
+                                    <span class="tabular text-xs" style="color: var(--fg-muted)">@persen.ToString("0")%</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(kelas)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(kelas)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="kelas" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
+</div>
+
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Kelas" : "Ubah Kelas")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-kelas">
             <DataAnnotationsValidator />
+            <ValidationSummary class="validation-errors" />
+
             <div class="grid gap-4">
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama kelas" @bind-Value="FormModel.Name" />
-                <InputText class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Wali kelas" @bind-Value="FormModel.HomeroomTeacher" />
-                <InputNumber class="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kapasitas" @bind-Value="FormModel.Capacity" />
-            </div>
-            <div class="mt-4 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
+                <div class="sms-field">
+                    <label class="sms-label">Nama kelas</label>
+                    <InputText class="sms-input" @bind-Value="Form.Name" placeholder="contoh: 8A" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Wali kelas</label>
+                    <InputText class="sms-input" @bind-Value="Form.HomeroomTeacher" />
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Daya tampung</label>
+                    <InputNumber class="sms-input" @bind-Value="Form.Capacity" />
+                </div>
             </div>
         </EditForm>
-    </div>
-}
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-kelas" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen"
+               Title="Hapus kelas"
+               Message="Kelas ini akan dihapus permanen. Siswa yang terdaftar di dalamnya tidak ikut terhapus."
+               Detail="@PendingDeleteLabel"
+               OnConfirm="ConfirmDeleteAsync" />
 
 @code {
-    private List<ClassRoom> ClassItems { get; set; } = new();
-    private string SearchText { get; set; } = string.Empty;
-    private ClassRoom FormModel { get; set; } = new();
-    private string FormTitle => FormModel.Id == 0 ? "Tambah Kelas" : "Edit Kelas";
-    private bool ShowForm { get; set; }
+    // Occupancy is counted by matching the student's ClassName string — the schema
+    // stores the relationship as a name rather than a foreign key.
+    private Dictionary<string, int> _occupancy = new();
 
-    private List<ClassRoom> FilteredClasses => ClassItems
-        .Where(c => string.IsNullOrWhiteSpace(SearchText) || c.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-        .ToList();
+    private int OccupiedCount => _occupancy.Values.Sum();
 
-    protected override Task OnInitializedAsync()
+    private double OccupancyRate
     {
-        LoadClasses();
-        return Task.CompletedTask;
-    }
-
-    private void LoadClasses()
-    {
-        ClassItems = Db.ClassRooms.AsNoTracking().ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new ClassRoom();
-        ShowForm = true;
-    }
-
-    private void EditClass(ClassRoom room)
-    {
-        FormModel = new ClassRoom
+        get
         {
-            Id = room.Id,
-            Name = room.Name,
-            HomeroomTeacher = room.HomeroomTeacher,
-            Capacity = room.Capacity
-        };
-        ShowForm = true;
-    }
-
-    private async Task SaveClass()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.ClassRooms.Add(FormModel);
-        }
-        else
-        {
-            Db.ClassRooms.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadClasses();
-    }
-
-    private async Task DeleteClass(int id)
-    {
-        var room = await Db.ClassRooms.FindAsync(id);
-        if (room != null)
-        {
-            Db.ClassRooms.Remove(room);
-            await Db.SaveChangesAsync();
-            LoadClasses();
+            var capacity = Items.Sum(c => c.Capacity);
+            return capacity == 0 ? 0 : OccupiedCount * 100.0 / capacity;
         }
     }
 
-    private void Cancel()
+    private string OccupancyLabel => $"{OccupancyRate:0.#}% dari daya tampung";
+
+    private int OccupancyOf(string className) =>
+        _occupancy.TryGetValue(className, out var count) ? count : 0;
+
+    protected override async Task OnInitializedAsync()
     {
-        FormModel = new ClassRoom();
-        ShowForm = false;
+        await base.OnInitializedAsync();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _occupancy = await db.Students.AsNoTracking()
+            .Where(s => s.ClassName != null && s.Status == "Active")
+            .GroupBy(s => s.ClassName!)
+            .Select(g => new { Kelas = g.Key, Jumlah = g.Count() })
+            .ToDictionaryAsync(x => x.Kelas, x => x.Jumlah);
     }
 
-    private async Task ExportCsv()
+    protected override string EntityLabel => "kelas";
+
+    protected override DbSet<ClassRoom> Table(ApplicationDbContext db) => db.ClassRooms;
+
+    protected override IEnumerable<string?> SearchableText(ClassRoom c) => new[] { c.Name, c.HomeroomTeacher };
+
+    protected override string Describe(ClassRoom c) => $"Kelas {c.Name}";
+
+    protected override int IdOf(ClassRoom c) => c.Id;
+
+    protected override ClassRoom NewEntity() => new() { Capacity = 32 };
+
+    protected override ClassRoom CloneForEdit(ClassRoom c) => new()
     {
-        var rows = new List<string> { "Id,Name,HomeroomTeacher,Capacity" };
-        foreach (var room in FilteredClasses)
-        {
-            rows.Add($"{room.Id},\"{room.Name}\",\"{room.HomeroomTeacher}\",{room.Capacity}");
-        }
-        await JSRuntime.InvokeVoidAsync("smsnetDownload", "classes.csv", string.Join("\n", rows));
-    }
+        Id = c.Id,
+        Name = c.Name,
+        HomeroomTeacher = c.HomeroomTeacher,
+        Capacity = c.Capacity
+    };
+
+    protected override IEnumerable<ClassRoom> ApplySort(IEnumerable<ClassRoom> items) => SortColumn switch
+    {
+        "kapasitas" => SortAscending ? items.OrderBy(c => c.Capacity) : items.OrderByDescending(c => c.Capacity),
+        _ => SortAscending ? items.OrderBy(c => c.Name) : items.OrderByDescending(c => c.Name)
+    };
+
+    protected override string CsvHeader => "Id,Kelas,WaliKelas,Kapasitas,Terisi";
+
+    protected override string CsvRow(ClassRoom c) =>
+        $"{c.Id},{Csv(c.Name)},{Csv(c.HomeroomTeacher)},{c.Capacity},{OccupancyOf(c.Name)}";
 }

@@ -1,0 +1,32 @@
+@* Row count plus page controls. Sits under every data table. *@
+
+<div class="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm"
+     style="color: var(--fg-muted)">
+    <p class="m-0">
+        Menampilkan <span class="tabular font-semibold" style="color: var(--fg-strong)">@Showing</span>
+        dari <span class="tabular font-semibold" style="color: var(--fg-strong)">@Total</span> @Noun
+    </p>
+
+    @if (TotalPages > 1)
+    {
+        <div class="flex items-center gap-2">
+            <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm"
+                    @onclick="OnPrevious" disabled="@(Current <= 1)">Sebelumnya</button>
+
+            <span class="tabular text-xs px-2">Hal. @Current / @TotalPages</span>
+
+            <button type="button" class="sms-btn sms-btn--ghost sms-btn--sm"
+                    @onclick="OnNext" disabled="@(Current >= TotalPages)">Berikutnya</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Showing { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public int Current { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; } = 1;
+    [Parameter] public string Noun { get; set; } = "data";
+    [Parameter] public EventCallback OnPrevious { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+}

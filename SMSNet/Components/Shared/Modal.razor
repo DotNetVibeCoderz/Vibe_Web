@@ -1,0 +1,82 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (Open)
+{
+    <div class="sms-overlay" role="presentation" @onclick="BackdropClick">
+        <div class="sms-modal @(Wide ? "sms-modal--wide" : "")"
+             role="dialog" aria-modal="true" aria-label="@Title"
+             @onclick:stopPropagation="true">
+
+            <div class="sms-modal__head">
+                <h2 class="font-display font-semibold text-[1.05rem] m-0">@Title</h2>
+                <button type="button" class="sms-btn sms-btn--quiet" @onclick="RequestClose" aria-label="Tutup">
+                    <Icon Name="close" />
+                </button>
+            </div>
+
+            <div class="sms-modal__body">
+                @ChildContent
+            </div>
+
+            @if (Footer is not null)
+            {
+                <div class="sms-modal__foot">@Footer</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public bool Wide { get; set; }
+
+    /// <summary>Set false for destructive flows where a stray backdrop click would lose work.</summary>
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private bool _scrollLocked;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keep the page behind the dialog from scrolling under it.
+        if (Open == _scrollLocked)
+        {
+            return;
+        }
+
+        _scrollLocked = Open;
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetShell.lockScroll", Open);
+        }
+        catch (JSException) { }
+    }
+
+    private Task BackdropClick() => CloseOnBackdrop ? RequestClose() : Task.CompletedTask;
+
+    private async Task RequestClose()
+    {
+        Open = false;
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_scrollLocked)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetShell.lockScroll", false);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}

@@ -1,72 +1,144 @@
 @page "/auth/register"
 @attribute [AllowAnonymous]
+@layout AuthLayout
 @inject UserManager<AppUser> UserManager
-@inject NavigationManager Navigation
+@inject NavigationManager Nav
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Register User</h1>
+<PageTitle>Daftar — SMSNet</PageTitle>
 
-<div class="sms-card max-w-xl">
-    <EditForm Model="RegisterModel" OnValidSubmit="HandleRegister">
-        <DataAnnotationsValidator />
-        <ValidationSummary />
+<h1 class="sms-auth__title">Buat Akun</h1>
+<p class="sms-auth__sub">Isi data berikut untuk mendaftarkan pengguna baru.</p>
 
-        <div class="grid gap-4">
-            <div>
-                <label class="text-sm font-medium">Full Name</label>
-                <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.FullName" />
-            </div>
-            <div>
-                <label class="text-sm font-medium">Username</label>
-                <InputText class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.UserName" />
-            </div>
-            <div>
-                <label class="text-sm font-medium">Role</label>
-                <InputSelect class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.Role">
-                    @foreach (var role in AppRoles.All)
-                    {
-                        <option value="@role">@role</option>
-                    }
-                </InputSelect>
-            </div>
-            <div>
-                <label class="text-sm font-medium">Password</label>
-                <InputText type="password" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="RegisterModel.Password" />
-            </div>
+@if (_errors.Count > 0)
+{
+    <div class="sms-auth__error" role="alert">
+        <ul class="list-none m-0 p-0 space-y-1">
+            @foreach (var error in _errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </div>
+}
+
+@* An ordinary interactive form: registering does not sign the user in, so no
+   cookie is written and no controller round trip is needed. *@
+<EditForm Model="_model" OnValidSubmit="RegisterAsync">
+    <DataAnnotationsValidator />
+
+    <div class="grid gap-4">
+        <div class="sms-field">
+            <label class="sms-label">Nama lengkap</label>
+            <InputText class="sms-input" @bind-Value="_model.FullName" autocomplete="name" />
+            <ValidationMessage For="() => _model.FullName" />
         </div>
 
-        <button type="submit" class="mt-6 px-4 py-2 rounded-lg bg-indigo-600 text-white">Register</button>
-    </EditForm>
-</div>
+        <div class="sms-field">
+            <label class="sms-label">Username</label>
+            <InputText class="sms-input" @bind-Value="_model.UserName" autocomplete="username" />
+            <ValidationMessage For="() => _model.UserName" />
+        </div>
+
+        <div class="sms-field">
+            <label class="sms-label">Peran</label>
+            <InputSelect class="sms-select" @bind-Value="_model.Role">
+                @foreach (var role in AppRoles.All)
+                {
+                    <option value="@role">@RoleLabel(role)</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="sms-field">
+            <label class="sms-label">Kata sandi</label>
+            <InputText type="password" class="sms-input" @bind-Value="_model.Password"
+                       autocomplete="new-password" />
+            <ValidationMessage For="() => _model.Password" />
+            <p class="text-xs m-0" style="color: var(--fg-faint)">
+                Minimal 6 karakter, mengandung huruf kecil dan angka.
+            </p>
+        </div>
+
+        <button type="submit" class="sms-btn sms-btn--primary sms-btn--block mt-1" disabled="@_busy">
+            @(_busy ? "Mendaftarkan…" : "Daftar")
+        </button>
+    </div>
+</EditForm>
+
+<p class="sms-auth__foot">
+    Sudah punya akun? <a href="/auth/login">Masuk di sini</a>
+</p>
 
 @code {
-    private RegisterInput RegisterModel { get; set; } = new();
+    private readonly RegisterInput _model = new();
+    private readonly List<string> _errors = new();
+    private bool _busy;
 
-    private async Task HandleRegister()
+    private async Task RegisterAsync()
     {
-        var user = new AppUser
-        {
-            UserName = RegisterModel.UserName,
-            FullName = RegisterModel.FullName,
-            RoleDisplay = RegisterModel.Role
-        };
+        _busy = true;
+        _errors.Clear();
 
-        var result = await UserManager.CreateAsync(user, RegisterModel.Password);
-        if (result.Succeeded)
+        try
         {
-            await UserManager.AddToRoleAsync(user, RegisterModel.Role);
-            Navigation.NavigateTo("/auth/login");
+            var existing = await UserManager.FindByNameAsync(_model.UserName);
+            if (existing is not null)
+            {
+                _errors.Add($"Username '{_model.UserName}' sudah dipakai.");
+                return;
+            }
+
+            var user = new AppUser
+            {
+                UserName = _model.UserName,
+                FullName = _model.FullName,
+                RoleDisplay = RoleLabel(_model.Role)
+            };
+
+            var result = await UserManager.CreateAsync(user, _model.Password);
+
+            if (!result.Succeeded)
+            {
+                _errors.AddRange(result.Errors.Select(e => e.Description));
+                return;
+            }
+
+            await UserManager.AddToRoleAsync(user, _model.Role);
+            Toasts.Success($"Akun {_model.UserName} berhasil dibuat. Silakan masuk.");
+            Nav.NavigateTo("/auth/login");
+        }
+        catch (Exception ex)
+        {
+            _errors.Add($"Pendaftaran gagal: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 
-    public class RegisterInput
+    private static string RoleLabel(string role) => role switch
     {
-        [Required]
+        AppRoles.Admin => "Admin",
+        AppRoles.Guru => "Guru",
+        AppRoles.Siswa => "Siswa",
+        AppRoles.OrangTua => "Orang Tua",
+        _ => role
+    };
+
+    public sealed class RegisterInput
+    {
+        [Required(ErrorMessage = "Nama lengkap wajib diisi.")]
         public string FullName { get; set; } = string.Empty;
 
-        [Required]
+        [Required(ErrorMessage = "Username wajib diisi.")]
+        [RegularExpression("^[a-zA-Z0-9._-]{3,40}$",
+            ErrorMessage = "Username 3–40 karakter, hanya huruf, angka, titik, garis bawah, atau strip.")]
         public string UserName { get; set; } = string.Empty;
 
-        [Required]
+        [Required(ErrorMessage = "Kata sandi wajib diisi.")]
+        [MinLength(6, ErrorMessage = "Kata sandi minimal 6 karakter.")]
         public string Password { get; set; } = string.Empty;
 
         [Required]

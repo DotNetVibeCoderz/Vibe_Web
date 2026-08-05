@@ -1,124 +1,178 @@
 @page "/admin/payroll"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<PayrollRecord>
 
-<h1 class="text-2xl font-semibold mb-6">Payroll System</h1>
+<PageTitle>Payroll — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Gaji guru dan staff otomatis.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Payroll</button>
+<PageHeader Eyebrow="Administrasi & Keuangan" Title="Payroll"
+            Subtitle="Penggajian guru dan staff beserta rekapitulasi per periode.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Gaji</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Pegawai" Value="@Items.Select(p => p.EmployeeName).Distinct().Count().ToString()" Icon="users" Tone="brand" />
+    <StatTile Label="Total Gaji" Value="@Money(Items.Sum(p => p.Salary))" Icon="coins" />
+    <StatTile Label="Rata-rata Gaji"
+              Value="@(Items.Count == 0 ? "—" : Money(Items.Average(p => p.Salary)))" Icon="chart" />
+    <StatTile Label="Periode Tercatat"
+              Value="@Items.Select(p => p.Period.ToString("yyyy-MM")).Distinct().Count().ToString()" Icon="calendar" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama pegawai…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-peran">Peran</label>
+            <select id="f-peran" class="sms-select" @bind="RoleFilter" @bind:after="ResetPage">
+                <option value="">Semua</option>
+                @foreach (var peran in Items.Select(p => p.Role).Distinct().OrderBy(r => r))
+                {
+                    <option value="@peran">@peran</option>
+                }
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Nama</th>
-                <th class="py-2">Peran</th>
-                <th class="py-2">Gaji</th>
-                <th class="py-2">Periode</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in PayrollItems)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@item.EmployeeName</td>
-                    <td class="py-2">@item.Role</td>
-                    <td class="py-2">@item.Salary.ToString("C0")</td>
-                    <td class="py-2">@item.Period.ToString("MMM yyyy")</td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditPayroll(item)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeletePayroll(item.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SavePayroll">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama pegawai" @bind-Value="FormModel.EmployeeName" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Peran" @bind-Value="FormModel.Role" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Gaji" @bind-Value="FormModel.Salary" />
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Period" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="receipt" Title="Belum ada data gaji" Hint="Tambahkan data penggajian per periode." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("nama")'>Pegawai <span class="sort-caret">@SortCaret("nama")</span></th>
+                        <th>Peran</th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("gaji")'>Gaji <span class="sort-caret">@SortCaret("gaji")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("periode")'>Periode <span class="sort-caret">@SortCaret("periode")</span></th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var gaji in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@gaji.EmployeeName</td>
+                            <td><span class="sms-badge">@gaji.Role</span></td>
+                            <td class="sms-table__num font-semibold">@Money(gaji.Salary)</td>
+                            <td class="tabular">@gaji.Period.ToString("MMMM yyyy")</td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(gaji)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(gaji)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="data gaji" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Data Gaji" : "Ubah Data Gaji")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-gaji">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama pegawai</label>
+                    <InputText class="sms-input" @bind-Value="Form.EmployeeName" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Peran</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Role">
+                            <option value="Guru">Guru</option>
+                            <option value="Staff">Staff</option>
+                            <option value="Kepala Sekolah">Kepala Sekolah</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Periode</label>
+                        <InputDate class="sms-input" @bind-Value="Form.Period" />
+                    </div>
+                </div>
+                <div class="sms-field">
+                    <label class="sms-label">Gaji (IDR)</label>
+                    <InputNumber class="sms-input" @bind-Value="Form.Salary" />
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-gaji" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus data gaji"
+               Message="Data penggajian ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<PayrollRecord> PayrollItems { get; set; } = new();
-    private PayrollRecord FormModel { get; set; } = new() { Period = DateTime.Today.AddMonths(-1) };
-    private bool ShowForm { get; set; }
+    private string RoleFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadPayroll();
-        return Task.CompletedTask;
-    }
+    protected override string EntityLabel => "data gaji";
 
-    private void LoadPayroll()
-    {
-        PayrollItems = Db.PayrollRecords.AsNoTracking().ToList();
-    }
+    protected override DbSet<PayrollRecord> Table(ApplicationDbContext db) => db.PayrollRecords;
 
-    private void ShowAdd()
-    {
-        FormModel = new PayrollRecord { Period = DateTime.Today.AddMonths(-1) };
-        ShowForm = true;
-    }
+    protected override IEnumerable<string?> SearchableText(PayrollRecord p) => new[] { p.EmployeeName, p.Role };
 
-    private void EditPayroll(PayrollRecord item)
-    {
-        FormModel = new PayrollRecord
-        {
-            Id = item.Id,
-            EmployeeName = item.EmployeeName,
-            Role = item.Role,
-            Salary = item.Salary,
-            Period = item.Period
-        };
-        ShowForm = true;
-    }
+    protected override string Describe(PayrollRecord p) => $"{p.EmployeeName} ({p.Period:MMMM yyyy})";
 
-    private async Task SavePayroll()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.PayrollRecords.Add(FormModel);
-        }
-        else
-        {
-            Db.PayrollRecords.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadPayroll();
-    }
+    protected override int IdOf(PayrollRecord p) => p.Id;
 
-    private async Task DeletePayroll(int id)
+    protected override PayrollRecord NewEntity() => new()
     {
-        var item = await Db.PayrollRecords.FindAsync(id);
-        if (item != null)
-        {
-            Db.PayrollRecords.Remove(item);
-            await Db.SaveChangesAsync();
-            LoadPayroll();
-        }
-    }
+        Period = new DateTime(SchoolClock.Today.Year, SchoolClock.Today.Month, 1),
+        Role = "Guru"
+    };
 
-    private void Cancel()
+    protected override PayrollRecord CloneForEdit(PayrollRecord p) => new()
     {
-        FormModel = new PayrollRecord { Period = DateTime.Today.AddMonths(-1) };
-        ShowForm = false;
-    }
+        Id = p.Id, EmployeeName = p.EmployeeName, Role = p.Role, Salary = p.Salary, Period = p.Period
+    };
+
+    protected override IEnumerable<PayrollRecord> ApplyFilters(IEnumerable<PayrollRecord> items) =>
+        string.IsNullOrWhiteSpace(RoleFilter) ? items : items.Where(p => p.Role == RoleFilter);
+
+    protected override IEnumerable<PayrollRecord> ApplySort(IEnumerable<PayrollRecord> items) => SortColumn switch
+    {
+        "gaji" => SortAscending ? items.OrderBy(p => p.Salary) : items.OrderByDescending(p => p.Salary),
+        "nama" => SortAscending ? items.OrderBy(p => p.EmployeeName) : items.OrderByDescending(p => p.EmployeeName),
+        _ => SortAscending ? items.OrderBy(p => p.Period) : items.OrderByDescending(p => p.Period)
+    };
+
+    protected override string CsvHeader => "Id,Pegawai,Peran,Gaji,Periode";
+
+    protected override string CsvRow(PayrollRecord p) =>
+        $"{p.Id},{Csv(p.EmployeeName)},{Csv(p.Role)},{p.Salary:0},{p.Period:yyyy-MM}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
 }

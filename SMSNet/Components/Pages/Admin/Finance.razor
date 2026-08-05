@@ -1,129 +1,226 @@
 @page "/admin/finance"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<PaymentRecord>
 
-<h1 class="text-2xl font-semibold mb-6">Manajemen Keuangan</h1>
+<PageTitle>Manajemen Keuangan — SMSNet</PageTitle>
 
-<div class="sms-card space-y-4">
-    <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Pencatatan SPP, denda, dan pemasukan lainnya.</p>
-        <button class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm" @onclick="ShowAdd">Tambah Transaksi</button>
+<PageHeader Eyebrow="Administrasi & Keuangan" Title="Manajemen Keuangan"
+            Subtitle="Pencatatan SPP, denda, dan biaya sekolah lainnya.">
+    <Actions>
+        <a href="/admin/payment-gateways" class="sms-btn sms-btn--ghost">
+            <Icon Name="credit-card" /><span>Metode Pembayaran</span>
+        </a>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+        <button type="button" class="sms-btn sms-btn--primary" @onclick="StartAdd">
+            <Icon Name="plus" /><span>Tambah Tagihan</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Tagihan" Value="@Money(Items.Sum(p => p.Amount))"
+              Meta="@($"{Items.Count} transaksi")" Icon="coins" Tone="brand" />
+    <StatTile Label="Sudah Lunas" Value="@Money(Items.Where(p => p.Status == "Paid").Sum(p => p.Amount))"
+              Meta="@($"{Items.Count(p => p.Status == "Paid")} transaksi")" Icon="check" Tone="good" />
+    <StatTile Label="Tunggakan" Value="@Money(Outstanding)"
+              Meta="@($"{Items.Count(p => p.Status != "Paid")} tagihan")" Icon="warning"
+              Tone="@(Outstanding > 0 ? "warn" : "good")" />
+    <StatTile Label="Tingkat Penagihan" Value="@($"{CollectionRate:0.#}%")" Icon="trend"
+              Tone="@(CollectionRate >= 80 ? "good" : "warn")" />
+</div>
+
+<div class="sms-card">
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Nama siswa…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-kategori">Kategori</label>
+            <select id="f-kategori" class="sms-select" @bind="CategoryFilter" @bind:after="ResetPage">
+                <option value="">Semua kategori</option>
+                @foreach (var kategori in Items.Select(p => p.Category).Distinct().OrderBy(c => c))
+                {
+                    <option value="@kategori">@kategori</option>
+                }
+            </select>
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-status">Status</label>
+            <select id="f-status" class="sms-select" @bind="StatusFilter" @bind:after="ResetPage">
+                <option value="">Semua status</option>
+                <option value="Paid">Lunas</option>
+                <option value="Pending">Belum dibayar</option>
+            </select>
+        </div>
     </div>
 
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Siswa</th>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Nominal</th>
-                <th class="py-2">Status</th>
-                <th class="py-2">Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var pay in Payments)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@pay.StudentName</td>
-                    <td class="py-2">@pay.Category</td>
-                    <td class="py-2">@pay.Amount.ToString("C0")</td>
-                    <td class="py-2"><span class="sms-badge">@pay.Status</span></td>
-                    <td class="py-2 flex gap-2">
-                        <button class="text-indigo-600" @onclick="() => EditPayment(pay)">Edit</button>
-                        <button class="text-rose-600" @onclick="() => DeletePayment(pay.Id)">Hapus</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    @if (ShowForm)
+    @if (Loading)
     {
-        <EditForm Model="FormModel" OnValidSubmit="SavePayment">
-            <DataAnnotationsValidator />
-            <div class="grid gap-3 md:grid-cols-2">
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nama siswa" @bind-Value="FormModel.StudentName" />
-                <InputText class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Kategori" @bind-Value="FormModel.Category" />
-                <InputNumber class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" placeholder="Nominal" @bind-Value="FormModel.Amount" />
-                <InputSelect class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Status">
-                    <option>Paid</option>
-                    <option>Pending</option>
-                </InputSelect>
-                <InputDate class="rounded-lg border border-slate-300 px-3 py-2 dark:bg-slate-800 dark:border-slate-600" @bind-Value="FormModel.Date" />
-            </div>
-            <div class="mt-3 flex gap-2">
-                <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Simpan</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600" @onclick="Cancel">Cancel</button>
-            </div>
-        </EditForm>
+        <div class="space-y-2">@for (var i = 0; i < 6; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="coins" Title="Tidak ada transaksi" Hint="Terbitkan tagihan untuk siswa." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("siswa")'>Siswa <span class="sort-caret">@SortCaret("siswa")</span></th>
+                        <th>Kategori</th>
+                        <th class="is-sortable sms-table__num" @onclick='() => SortBy("nominal")'>Nominal <span class="sort-caret">@SortCaret("nominal")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("tanggal")'>Tanggal <span class="sort-caret">@SortCaret("tanggal")</span></th>
+                        <th>Status</th>
+                        <th class="text-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var trx in Paged)
+                    {
+                        <tr>
+                            <td class="font-medium" style="color: var(--fg-strong)">@trx.StudentName</td>
+                            <td><span class="sms-badge">@trx.Category</span></td>
+                            <td class="sms-table__num font-semibold">@Money(trx.Amount)</td>
+                            <td class="tabular">@trx.Date.ToString("dd MMM yyyy")</td>
+                            <td>
+                                <span class="sms-badge @(trx.Status == "Paid" ? "sms-badge--good" : "sms-badge--warn")">
+                                    @(trx.Status == "Paid" ? "Lunas" : "Belum dibayar")
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Ubah"
+                                            @onclick="() => StartEdit(trx)"><Icon Name="edit" /></button>
+                                    <button type="button" class="sms-btn sms-btn--quiet" title="Hapus"
+                                            style="color: var(--bata)" @onclick="() => AskDelete(trx)"><Icon Name="trash" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="transaksi" OnPrevious="PreviousPage" OnNext="NextPage" />
     }
 </div>
 
+<Modal Open="ShowForm" OpenChanged="_ => CancelForm()"
+       Title="@(IdOf(Form) == 0 ? "Tambah Tagihan" : "Ubah Tagihan")">
+    <ChildContent>
+        <EditForm Model="Form" OnValidSubmit="SaveAsync" id="form-tagihan">
+            <DataAnnotationsValidator />
+            <div class="grid gap-4">
+                <div class="sms-field">
+                    <label class="sms-label">Nama siswa</label>
+                    <InputText class="sms-input" @bind-Value="Form.StudentName" />
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="sms-field">
+                        <label class="sms-label">Kategori</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Category">
+                            <option value="SPP">SPP</option>
+                            <option value="Buku">Buku</option>
+                            <option value="Kegiatan">Kegiatan</option>
+                            <option value="Seragam">Seragam</option>
+                            <option value="Denda">Denda</option>
+                        </InputSelect>
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Nominal (IDR)</label>
+                        <InputNumber class="sms-input" @bind-Value="Form.Amount" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Tanggal</label>
+                        <InputDate class="sms-input" @bind-Value="Form.Date" />
+                    </div>
+                    <div class="sms-field">
+                        <label class="sms-label">Status</label>
+                        <InputSelect class="sms-select" @bind-Value="Form.Status">
+                            <option value="Pending">Belum dibayar</option>
+                            <option value="Paid">Lunas</option>
+                        </InputSelect>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="CancelForm">Batal</button>
+        <button type="submit" form="form-tagihan" class="sms-btn sms-btn--primary">Simpan</button>
+    </Footer>
+</Modal>
+
+<ConfirmDialog @bind-Open="ConfirmDeleteOpen" Title="Hapus tagihan"
+               Message="Transaksi keuangan ini akan dihapus permanen."
+               Detail="@PendingDeleteLabel" OnConfirm="ConfirmDeleteAsync" />
+
 @code {
-    private List<PaymentRecord> Payments { get; set; } = new();
-    private PaymentRecord FormModel { get; set; } = new() { Date = DateTime.Today };
-    private bool ShowForm { get; set; }
+    private string CategoryFilter = string.Empty;
+    private string StatusFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
-    {
-        LoadPayments();
-        return Task.CompletedTask;
-    }
+    private decimal Outstanding => Items.Where(p => p.Status != "Paid").Sum(p => p.Amount);
 
-    private void LoadPayments()
+    private double CollectionRate
     {
-        Payments = Db.PaymentRecords.AsNoTracking().OrderByDescending(p => p.Date).ToList();
-    }
-
-    private void ShowAdd()
-    {
-        FormModel = new PaymentRecord { Date = DateTime.Today };
-        ShowForm = true;
-    }
-
-    private void EditPayment(PaymentRecord pay)
-    {
-        FormModel = new PaymentRecord
+        get
         {
-            Id = pay.Id,
-            StudentName = pay.StudentName,
-            Category = pay.Category,
-            Amount = pay.Amount,
-            Status = pay.Status,
-            Date = pay.Date
-        };
-        ShowForm = true;
-    }
-
-    private async Task SavePayment()
-    {
-        if (FormModel.Id == 0)
-        {
-            Db.PaymentRecords.Add(FormModel);
-        }
-        else
-        {
-            Db.PaymentRecords.Update(FormModel);
-        }
-        await Db.SaveChangesAsync();
-        Cancel();
-        LoadPayments();
-    }
-
-    private async Task DeletePayment(int id)
-    {
-        var pay = await Db.PaymentRecords.FindAsync(id);
-        if (pay != null)
-        {
-            Db.PaymentRecords.Remove(pay);
-            await Db.SaveChangesAsync();
-            LoadPayments();
+            var total = Items.Sum(p => p.Amount);
+            return total == 0 ? 0 : (double)(Items.Where(p => p.Status == "Paid").Sum(p => p.Amount) / total) * 100;
         }
     }
 
-    private void Cancel()
+    protected override string EntityLabel => "transaksi keuangan";
+
+    protected override DbSet<PaymentRecord> Table(ApplicationDbContext db) => db.PaymentRecords;
+
+    protected override IEnumerable<string?> SearchableText(PaymentRecord p) =>
+        new[] { p.StudentName, p.Category, p.Status };
+
+    protected override string Describe(PaymentRecord p) => $"{p.StudentName} — {p.Category} {Money(p.Amount)}";
+
+    protected override int IdOf(PaymentRecord p) => p.Id;
+
+    protected override PaymentRecord NewEntity() => new()
     {
-        FormModel = new PaymentRecord { Date = DateTime.Today };
-        ShowForm = false;
+        Date = SchoolClock.Today,
+        Category = "SPP",
+        Status = "Pending"
+    };
+
+    protected override PaymentRecord CloneForEdit(PaymentRecord p) => new()
+    {
+        Id = p.Id, StudentName = p.StudentName, Category = p.Category,
+        Amount = p.Amount, Status = p.Status, Date = p.Date
+    };
+
+    protected override IEnumerable<PaymentRecord> ApplyFilters(IEnumerable<PaymentRecord> items)
+    {
+        if (!string.IsNullOrWhiteSpace(CategoryFilter)) items = items.Where(p => p.Category == CategoryFilter);
+        if (!string.IsNullOrWhiteSpace(StatusFilter)) items = items.Where(p => p.Status == StatusFilter);
+        return items;
     }
+
+    protected override IEnumerable<PaymentRecord> ApplySort(IEnumerable<PaymentRecord> items) => SortColumn switch
+    {
+        "siswa" => SortAscending ? items.OrderBy(p => p.StudentName) : items.OrderByDescending(p => p.StudentName),
+        "nominal" => SortAscending ? items.OrderBy(p => p.Amount) : items.OrderByDescending(p => p.Amount),
+        _ => SortAscending ? items.OrderBy(p => p.Date) : items.OrderByDescending(p => p.Date)
+    };
+
+    protected override string CsvHeader => "Id,Siswa,Kategori,Nominal,Tanggal,Status";
+
+    protected override string CsvRow(PaymentRecord p) =>
+        $"{p.Id},{Csv(p.StudentName)},{Csv(p.Category)},{p.Amount:0},{p.Date:yyyy-MM-dd},{Csv(p.Status)}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    private static string Money(decimal amount) => $"Rp{amount:N0}";
 }

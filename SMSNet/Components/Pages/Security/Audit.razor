@@ -1,39 +1,140 @@
 @page "/security/audit"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inherits CrudPageBase<AuditTrail>
 
-<h1 class="text-2xl font-semibold mb-6">Audit Trail</h1>
+<PageTitle>Audit Trail — SMSNet</PageTitle>
+
+<PageHeader Eyebrow="Keamanan & Integrasi" Title="Audit Trail"
+            Subtitle="Catatan aktivitas pengguna: siapa mengubah apa dan kapan.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportCsvAsync">
+            <Icon Name="download" /><span>Ekspor CSV</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 md:grid-cols-4 mb-6">
+    <StatTile Label="Total Aktivitas" Value="@Items.Count.ToString()" Icon="history" Tone="brand" />
+    <StatTile Label="Hari Ini" Value="@Items.Count(a => a.Timestamp.Date == SchoolClock.Today).ToString()"
+              Icon="calendar" Tone="good" />
+    <StatTile Label="Pengguna Aktif" Value="@Items.Select(a => a.Actor).Distinct().Count().ToString()" Icon="users" />
+    <StatTile Label="Penghapusan" Value="@Items.Count(a => a.Action.StartsWith("Hapus")).ToString()"
+              Icon="trash" Tone="warn" />
+</div>
 
 <div class="sms-card">
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Aksi</th>
-                <th class="py-2">Aktor</th>
-                <th class="py-2">Waktu</th>
-                <th class="py-2">Detail</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var audit in Audits)
-            {
-                <tr class="border-b border-slate-100 dark:border-slate-800">
-                    <td class="py-2">@audit.Action</td>
-                    <td class="py-2">@audit.Actor</td>
-                    <td class="py-2">@audit.Timestamp.ToString("dd MMM yyyy HH:mm")</td>
-                    <td class="py-2">@audit.Detail</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="sms-toolbar">
+        <div class="sms-field">
+            <label class="sms-label" for="cari">Pencarian bebas</label>
+            <input id="cari" class="sms-input" placeholder="Aksi, pelaku, atau detail…"
+                   value="@Search" @oninput="e => OnSearchChanged(e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="sms-field">
+            <label class="sms-label" for="f-pelaku">Pelaku</label>
+            <select id="f-pelaku" class="sms-select" @bind="ActorFilter" @bind:after="ResetPage">
+                <option value="">Semua pelaku</option>
+                @foreach (var pelaku in Items.Select(a => a.Actor).Distinct().OrderBy(a => a))
+                {
+                    <option value="@pelaku">@pelaku</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (Loading)
+    {
+        <div class="space-y-2">@for (var i = 0; i < 6; i++) { <div class="sms-skeleton h-10"></div> }</div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="history" Title="Belum ada aktivitas tercatat"
+                    Hint="Setiap penambahan, perubahan, dan penghapusan data akan tercatat di sini." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr>
+                        <th class="is-sortable" @onclick='() => SortBy("waktu")'>Waktu <span class="sort-caret">@SortCaret("waktu")</span></th>
+                        <th class="is-sortable" @onclick='() => SortBy("pelaku")'>Pelaku <span class="sort-caret">@SortCaret("pelaku")</span></th>
+                        <th>Aksi</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in Paged)
+                    {
+                        <tr>
+                            <td class="tabular text-xs" style="white-space: nowrap">
+                                @entry.Timestamp.ToString("dd MMM yyyy HH:mm")
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <span class="sms-avatar" style="width:1.5rem;height:1.5rem;font-size:.6rem">
+                                        @Initials(entry.Actor)
+                                    </span>
+                                    <span class="font-medium" style="color: var(--fg-strong)">@entry.Actor</span>
+                                </div>
+                            </td>
+                            <td><span class="sms-badge @ActionTone(entry.Action)">@entry.Action</span></td>
+                            <td style="color: var(--fg-muted)">@(entry.Detail ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Pager Showing="Paged.Count" Total="Filtered.Count" Current="CurrentPage" TotalPages="TotalPages"
+               Noun="aktivitas" OnPrevious="PreviousPage" OnNext="NextPage" />
+    }
 </div>
 
 @code {
-    private List<AuditTrail> Audits { get; set; } = new();
+    private string ActorFilter = string.Empty;
 
-    protected override Task OnInitializedAsync()
+    protected override string EntityLabel => "catatan audit";
+
+    protected override DbSet<AuditTrail> Table(ApplicationDbContext db) => db.AuditTrails;
+
+    protected override IEnumerable<string?> SearchableText(AuditTrail a) =>
+        new[] { a.Action, a.Actor, a.Detail };
+
+    protected override string Describe(AuditTrail a) => $"{a.Action} oleh {a.Actor}";
+
+    protected override int IdOf(AuditTrail a) => a.Id;
+
+    protected override AuditTrail CloneForEdit(AuditTrail a) => a;
+
+    protected override IEnumerable<AuditTrail> ApplyFilters(IEnumerable<AuditTrail> items) =>
+        string.IsNullOrWhiteSpace(ActorFilter) ? items : items.Where(a => a.Actor == ActorFilter);
+
+    protected override IEnumerable<AuditTrail> ApplySort(IEnumerable<AuditTrail> items) => SortColumn switch
     {
-        Audits = Db.AuditTrails.OrderByDescending(a => a.Timestamp).ToList();
-        return Task.CompletedTask;
+        "pelaku" => SortAscending ? items.OrderBy(a => a.Actor) : items.OrderByDescending(a => a.Actor),
+        _ => SortAscending ? items.OrderByDescending(a => a.Timestamp) : items.OrderBy(a => a.Timestamp)
+    };
+
+    protected override string CsvHeader => "Id,Waktu,Pelaku,Aksi,Detail";
+
+    protected override string CsvRow(AuditTrail a) =>
+        $"{a.Id},{a.Timestamp:yyyy-MM-dd HH:mm:ss},{Csv(a.Actor)},{Csv(a.Action)},{Csv(a.Detail)}";
+
+    private void ResetPage() => CurrentPage = 1;
+
+    private static string ActionTone(string action) =>
+        action.StartsWith("Hapus") ? "sms-badge--bad"
+        : action.StartsWith("Tambah") || action.StartsWith("Buat") ? "sms-badge--good"
+        : "sms-badge--info";
+
+    private static string Initials(string name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+        };
     }
 }

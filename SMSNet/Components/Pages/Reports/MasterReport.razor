@@ -1,110 +1,216 @@
 @page "/reports/master"
 @attribute [Authorize(Roles = AppRoles.Admin)]
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
+@inject ToastService Toasts
 
-<h1 class="text-2xl font-semibold mb-6">Dashboard Master Data</h1>
+<PageTitle>Laporan Master Data — SMSNet</PageTitle>
 
-<div class="grid gap-6 md:grid-cols-4">
+<PageHeader Eyebrow="Analitik & Laporan" Title="Laporan Master Data"
+            Subtitle="Kelengkapan dan konsistensi data induk sekolah.">
+    <Actions>
+        <button type="button" class="sms-btn sms-btn--ghost" @onclick="ExportAsync">
+            <Icon Name="download" /><span>Ekspor Ringkasan</span>
+        </button>
+    </Actions>
+</PageHeader>
+
+<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6">
+    @foreach (var table in _tables.Take(4))
+    {
+        <StatTile Label="@table.Name" Value="@table.Count.ToString()"
+                  Meta="@($"{table.Complete} lengkap")" Icon="@table.Icon"
+                  Tone="@(table.CompleteRate >= 90 ? "good" : table.CompleteRate >= 60 ? "neutral" : "warn")" />
+    }
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mb-6">
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Siswa</p>
-        <p class="text-3xl font-semibold">@StudentCount</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Volume Data per Tabel</h2></div>
+        <div style="height: 17rem"><canvas id="mr-volume"></canvas></div>
     </div>
+
     <div class="sms-card">
-        <p class="text-sm text-slate-500">Guru</p>
-        <p class="text-3xl font-semibold">@TeacherCount</p>
-    </div>
-    <div class="sms-card">
-        <p class="text-sm text-slate-500">Kelas</p>
-        <p class="text-3xl font-semibold">@ClassCount</p>
-    </div>
-    <div class="sms-card">
-        <p class="text-sm text-slate-500">Mapel</p>
-        <p class="text-3xl font-semibold">@SubjectCount</p>
+        <div class="sms-card__head"><h2 class="sms-card__title">Kelengkapan Data</h2></div>
+
+        <ul class="list-none m-0 p-0 space-y-3">
+            @foreach (var table in _tables)
+            {
+                <li>
+                    <div class="flex items-center justify-between gap-3 mb-1">
+                        <span class="text-sm font-medium" style="color: var(--fg-strong)">@table.Name</span>
+                        <span class="tabular text-xs" style="color: var(--fg-muted)">
+                            @table.Complete / @table.Count (@table.CompleteRate.ToString("0")%)
+                        </span>
+                    </div>
+                    <div class="sms-meter">
+                        <div class="sms-meter__fill" style="width: @table.CompleteRate.ToString("0")%"></div>
+                    </div>
+                </li>
+            }
+        </ul>
     </div>
 </div>
 
-<div class="grid gap-6 mt-8 lg:grid-cols-2">
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Distribusi Siswa per Kelas</h2>
-        <div class="h-64">
-            <canvas id="studentClassChart"></canvas>
-        </div>
+<div class="sms-card">
+    <div class="sms-card__head">
+        <h2 class="sms-card__title">Temuan Konsistensi</h2>
+        <span class="text-xs" style="color: var(--fg-faint)">@_issues.Count temuan</span>
     </div>
-    <div class="sms-card">
-        <h2 class="text-lg font-semibold mb-4">Status Siswa</h2>
-        <div class="h-64">
-            <canvas id="studentStatusChart"></canvas>
-        </div>
-    </div>
-</div>
 
-<div class="sms-card mt-8">
-    <h2 class="text-lg font-semibold mb-4">Ringkasan Master Data</h2>
-    <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <tr>
-                <th class="py-2">Kategori</th>
-                <th class="py-2">Jumlah</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr class="border-b border-slate-100 dark:border-slate-800">
-                <td class="py-2">Orang Tua</td>
-                <td class="py-2">@ParentCount</td>
-            </tr>
-            <tr class="border-b border-slate-100 dark:border-slate-800">
-                <td class="py-2">Kurikulum</td>
-                <td class="py-2">@CurriculumCount</td>
-            </tr>
-            <tr>
-                <td class="py-2">Inventory</td>
-                <td class="py-2">@InventoryCount</td>
-            </tr>
-        </tbody>
-    </table>
+    @if (_issues.Count == 0)
+    {
+        <EmptyState Icon="check" Title="Tidak ada temuan"
+                    Hint="Seluruh data induk konsisten satu sama lain." />
+    }
+    else
+    {
+        <div class="sms-table-wrap">
+            <table class="sms-table">
+                <thead>
+                    <tr><th>Tingkat</th><th>Temuan</th><th class="sms-table__num">Jumlah</th><th>Saran</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var issue in _issues)
+                    {
+                        <tr>
+                            <td>
+                                <span class="sms-badge @(issue.Severity == "Tinggi" ? "sms-badge--bad" : "sms-badge--warn")">
+                                    @issue.Severity
+                                </span>
+                            </td>
+                            <td class="font-medium" style="color: var(--fg-strong)">@issue.Title</td>
+                            <td class="sms-table__num">@issue.Count</td>
+                            <td style="color: var(--fg-muted)">@issue.Suggestion</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @code {
-    private int StudentCount { get; set; }
-    private int TeacherCount { get; set; }
-    private int ClassCount { get; set; }
-    private int SubjectCount { get; set; }
-    private int ParentCount { get; set; }
-    private int CurriculumCount { get; set; }
-    private int InventoryCount { get; set; }
+    private sealed record TableStat(string Name, int Count, int Complete, string Icon)
+    {
+        public double CompleteRate => Count == 0 ? 100 : Complete * 100.0 / Count;
+    }
+
+    private sealed record Issue(string Severity, string Title, int Count, string Suggestion);
+
+    private List<TableStat> _tables = new();
+    private List<Issue> _issues = new();
     private bool _rendered;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        StudentCount = Db.Students.Count();
-        TeacherCount = Db.Teachers.Count();
-        ClassCount = Db.ClassRooms.Count();
-        SubjectCount = Db.Subjects.Count();
-        ParentCount = Db.Parents.Count();
-        CurriculumCount = Db.CurriculumItems.Count();
-        InventoryCount = Db.InventoryItems.Count();
-        return Task.CompletedTask;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var students = await db.Students.AsNoTracking().ToListAsync();
+        var teachers = await db.Teachers.AsNoTracking().ToListAsync();
+        var classes = await db.ClassRooms.AsNoTracking().ToListAsync();
+        var subjects = await db.Subjects.AsNoTracking().ToListAsync();
+        var schedule = await db.ScheduleItems.AsNoTracking().ToListAsync();
+        var parents = await db.Parents.AsNoTracking().ToListAsync();
+
+        _tables = new List<TableStat>
+        {
+            new("Siswa", students.Count,
+                students.Count(s => !string.IsNullOrWhiteSpace(s.ClassName)
+                                    && !string.IsNullOrWhiteSpace(s.ParentName)
+                                    && !string.IsNullOrWhiteSpace(s.Phone)), "users"),
+            new("Guru", teachers.Count,
+                teachers.Count(t => !string.IsNullOrWhiteSpace(t.Subject)
+                                    && !string.IsNullOrWhiteSpace(t.Email)), "teacher"),
+            new("Kelas", classes.Count,
+                classes.Count(c => !string.IsNullOrWhiteSpace(c.HomeroomTeacher) && c.Capacity > 0), "grid"),
+            new("Mata Pelajaran", subjects.Count,
+                subjects.Count(s => s.Credits > 0 && !string.IsNullOrWhiteSpace(s.Description)), "book"),
+            new("Jadwal", schedule.Count,
+                schedule.Count(s => !string.IsNullOrWhiteSpace(s.Teacher)
+                                    && !string.IsNullOrWhiteSpace(s.TimeSlot)), "calendar"),
+            new("Wali Murid", parents.Count,
+                parents.Count(p => !string.IsNullOrWhiteSpace(p.Email)
+                                   && !string.IsNullOrWhiteSpace(p.Phone)), "users")
+        };
+
+        // Relationships are stored as display strings, so a mismatch is a real
+        // integrity problem the database itself cannot catch.
+        var classNames = classes.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var teacherNames = teachers.Select(t => t.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var subjectNames = subjects.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var orphanStudents = students.Count(s => !string.IsNullOrWhiteSpace(s.ClassName)
+                                                 && !classNames.Contains(s.ClassName!));
+        var orphanScheduleTeacher = schedule.Count(s => !teacherNames.Contains(s.Teacher));
+        var orphanScheduleSubject = schedule.Count(s => !subjectNames.Contains(s.Subject));
+        var orphanScheduleClass = schedule.Count(s => !classNames.Contains(s.ClassName));
+        var missingPhone = students.Count(s => string.IsNullOrWhiteSpace(s.Phone));
+        var overCapacity = classes.Count(c =>
+            students.Count(s => s.ClassName == c.Name && s.Status == "Active") > c.Capacity);
+
+        var candidates = new[]
+        {
+            new Issue("Tinggi", "Siswa menunjuk kelas yang tidak terdaftar", orphanStudents,
+                "Perbaiki nama kelas pada data siswa atau tambahkan kelasnya."),
+            new Issue("Tinggi", "Jadwal menunjuk guru yang tidak terdaftar", orphanScheduleTeacher,
+                "Samakan nama guru pada jadwal dengan master data guru."),
+            new Issue("Sedang", "Jadwal menunjuk mata pelajaran tidak terdaftar", orphanScheduleSubject,
+                "Tambahkan mata pelajaran tersebut ke master data."),
+            new Issue("Sedang", "Jadwal menunjuk kelas tidak terdaftar", orphanScheduleClass,
+                "Perbaiki nama kelas pada jadwal."),
+            new Issue("Sedang", "Kelas melebihi daya tampung", overCapacity,
+                "Tinjau pembagian rombongan belajar."),
+            new Issue("Rendah", "Siswa tanpa nomor telepon", missingPhone,
+                "Lengkapi kontak agar notifikasi dapat dikirim.")
+        };
+
+        _issues = candidates.Where(i => i.Count > 0).ToList();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_rendered) return;
+        if (_rendered)
+        {
+            return;
+        }
+
         _rendered = true;
 
-        var classGroups = Db.Students.GroupBy(s => s.ClassName).Select(g => new { g.Key, Count = g.Count() }).ToList();
-        await JS.InvokeVoidAsync("smsnetChart.render", "studentClassChart", "bar",
-            classGroups.Select(c => c.Key).ToArray(),
-            classGroups.Select(c => c.Count).ToArray(),
-            "Siswa");
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetChart.render", "mr-volume", "bar",
+                _tables.Select(t => t.Name).ToList(),
+                _tables.Select(t => t.Count).ToList(),
+                "Jumlah baris");
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
 
-        await JS.InvokeVoidAsync("smsnetChart.render", "studentStatusChart", "pie",
-            new[] { "Active", "Inactive" },
-            new[]
-            {
-                Db.Students.Count(s => s.Status == "Active"),
-                Db.Students.Count(s => s.Status == "Inactive")
-            },
-            "Status");
+    private async Task ExportAsync()
+    {
+        var lines = new List<string> { "Tabel,Jumlah,Lengkap,PersenLengkap" };
+        // Invariant number formatting: under id-ID the decimal separator is a comma,
+        // which would split the value across two CSV columns.
+        lines.AddRange(_tables.Select(t =>
+            $"{t.Name},{t.Count},{t.Complete}," +
+            t.CompleteRate.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)));
+        lines.Add(string.Empty);
+        lines.Add("Tingkat,Temuan,Jumlah,Saran");
+        lines.AddRange(_issues.Select(i => $"{i.Severity},\"{i.Title}\",{i.Count},\"{i.Suggestion}\""));
+
+        try
+        {
+            await JS.InvokeVoidAsync("smsnetDownload",
+                $"laporan-master-data-{SchoolClock.Today:yyyyMMdd}.csv",
+                string.Join("\r\n", lines));
+
+            Toasts.Success("Ringkasan master data diekspor.");
+        }
+        catch (JSException ex)
+        {
+            Toasts.Error($"Gagal mengekspor: {ex.Message}");
+        }
     }
 }
