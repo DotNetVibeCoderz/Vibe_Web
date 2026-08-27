@@ -1,0 +1,64 @@
+@page "/"
+@using Lapak.Models
+@using Lapak.Data
+@using Microsoft.EntityFrameworkCore
+@inject LapakDbContext Db
+@inject NavigationManager Nav
+
+@* LAPAK LANDING PAGE *@
+
+<div class="hero-banner">
+    <div class="hero-content">
+        <h1 class="hero-title">Selamat Datang di <span class="gradient-text">Lapak</span></h1>
+        <p class="hero-subtitle">Platform e-commerce modern dengan AI Shopping Assistant. Temukan produk terbaik, dapatkan rekomendasi pintar!</p>
+        <div class="hero-actions">
+            <a href="/products" class="btn btn-primary btn-lg">Mulai Belanja</a>
+            <a href="/chat/tony-kurus" class="btn btn-secondary btn-lg">Tanya Tony Kurus</a>
+        </div>
+    </div>
+</div>
+
+<div class="section"><div class="section-header"><h2>Kategori</h2></div>
+<div class="category-grid">
+@foreach (var cat in _categories) { <a href="/products?category=@cat.Slug" class="category-card"><div class="cat-icon">@GetIcon(cat.Name)</div><div class="cat-name">@cat.Name</div></a> }
+</div></div>
+
+<div class="section"><div class="section-header"><h2>Produk Unggulan</h2></div>
+<div class="product-grid">
+@foreach (var p in _featured) { <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" /> }
+</div></div>
+
+<div class="section"><div class="section-header"><h2>Terlaris</h2></div>
+<div class="product-grid">
+@foreach (var p in _top) { <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" /> }
+</div></div>
+
+<div class="section"><div class="section-header"><h2>Toko Rekomendasi</h2></div>
+<div class="store-grid">
+@foreach (var s in _topStores) { <a href="/stores/@s.Slug" class="store-card"><div class="store-card-header"><div class="store-avatar">🏪</div><div><strong>@s.Name</strong><br/>📍@s.City</div>@if(s.IsVerified){<span>✅</span>}</div><div>⭐@s.AverageRating.ToString("F1") · @s.TotalProducts produk</div></a> }
+</div></div>
+
+<div class="section"><div class="section-header"><h2>Promo & Voucher</h2></div>
+<div class="promo-grid">
+@foreach (var v in _vouchers) { <div class="promo-card"><div class="promo-card-type">@v.Code</div><div class="promo-card-body"><strong>@v.Name</strong><br/>@v.Description<br/><small>s/d @v.EndDate.ToString("dd MMM")</small></div></div> }
+</div></div>
+
+@code {
+    private List<Category> _categories = new();
+    private List<Product> _featured = new();
+    private List<Product> _top = new();
+    private List<Lapak.Models.Store> _topStores = new();
+    private List<Voucher> _vouchers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = Db.Categories.Where(c => c.ParentCategoryId == null && c.IsActive).Include(c => c.Products).ToList();
+        _featured = Db.Products.Where(p => p.IsActive && p.IsFeatured).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(8).ToList();
+        _top = Db.Products.Where(p => p.IsActive).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(8).ToList();
+        _topStores = Db.Stores.Where(s => s.IsActive && s.IsVerified).OrderByDescending(s => s.AverageRating).Take(4).ToList();
+        _vouchers = Db.Vouchers.Where(v => v.IsActive && v.EndDate > DateTime.UtcNow).Take(4).ToList();
+    }
+
+    private void GoToProduct(string slug) => Nav.NavigateTo("/products/" + slug);
+    private string GetIcon(string n) => n.ToLower() switch { "elektronik" => "📱", "fashion" => "👕", "rumah & kehidupan" => "🏠", "makanan & minuman" => "🍔", "hobi & koleksi" => "🎮", "kecantikan" => "💄", "olahraga" => "⚽", "otomotif" => "🚗", _ => "📦" };
+}

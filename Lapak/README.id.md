@@ -1,122 +1,202 @@
-# 🛍️ Lapak - Platform E-Commerce Modern
+# 🧺 Lapak
 
-> Platform e-commerce bertenaga AI dibangun dengan .NET Blazor Server
+> Pasar digital Indonesia berbasis .NET 10 Blazor Server, dengan dua asisten AI
+> yang membaca katalog langsung — bukan menebak.
 
-## ✨ Fitur
+*Lapak* adalah tikar anyaman yang digelar pedagang di pasar. Seluruh tampilannya
+dibangun dari gagasan itu: nila dan kunyit dari pewarna batik, garis tenda pasar di
+bawah header, dan pola anyaman sebagai pengganti foto produk.
 
-### 🛒 E-Commerce Inti
-- **Manajemen Produk**: CRUD produk, kategori, sub-kategori, atribut, stok, harga, promo, komentar, like & rating
-- **Manajemen Toko**: Registrasi, profil, verifikasi, rating, komentar & like
-- **Fitur Pembeli**: Registrasi, profil, wishlist, keranjang belanja, checkout
-- **Transaksi & Pembayaran**: Integrasi payment gateway Midtrans & Xendit
-- **Pengiriman & Logistik**: Integrasi kurir JNE, J&T, SiCepat, Pos Indonesia dengan tracking real-time
-- **Promo & Voucher**: Diskon, cashback, loyalty points
+![Beranda Lapak](docs/screenshots/01-beranda.png)
 
-### 🤖 Fitur AI
-- **Tony Kurus - Asisten Belanja**: Chatbot AI untuk pencarian produk/toko, rekomendasi, dan bantuan belanja
-- **Siti Bohay - Customer Support**: Chatbot AI dengan RAG untuk dokumen kebijakan, handover ke WhatsApp/Email
-- **Dukungan Multi-LLM**: OpenAI, Gemini, Anthropic, Ollama, dan yang kompatibel dengan OpenAI
-- **Fallback Otomatis**: Jika satu LLM gagal, otomatis dialihkan ke provider lain
-- **Riwayat Chat**: Tersimpan per pengguna
-- **Upload File**: Dukungan gambar dan dokumen dalam chat
+---
 
-### 🧠 AI Recommendation Engine
-- Collaborative filtering berdasarkan pembelian pengguna serupa
-- Rekomendasi content-based menggunakan kategori dan atribut
-- Saran real-time di halaman produk dan checkout
-- Rekomendasi personal berdasarkan profil pengguna
-
-### 📊 Customer Scoring
-- Skor berdasarkan jumlah transaksi, nilai transaksi, dan keragaman kategori
-- Segmentasi pelanggan: Bronze, Silver, Gold, Platinum
-- Promo tertarget berdasarkan tier pelanggan
-
-### 📈 Dashboard & Pelaporan
-- Desain modern, responsif dengan tema light/dark
-- Grafik dan statistik interaktif
-- Filter lanjutan (tanggal, kategori, toko, nilai transaksi)
-- Data tabular dengan dukungan export
-- Update real-time dengan SignalR
-
-### 💾 Database & Storage
-- **Database**: SQLite, SQL Server, MySQL, PostgreSQL
-- **Storage**: File System, MinIO, Amazon S3, Azure Blob
-- Konfigurasi fleksibel melalui `appsettings.json`
-
-## 🚀 Mulai Cepat
-
-### Prasyarat
-- .NET 8.0 SDK atau lebih baru
-- SQLite (default) atau database lain yang didukung
-
-### Instalasi
+## Mulai cepat
 
 ```bash
-# Clone repository
 git clone https://github.com/yourusername/lapak.git
 cd lapak
-
-# Jalankan aplikasi
 dotnet run
 ```
 
-Aplikasi akan tersedia di `https://localhost:5001`
+Buka <https://localhost:7205>. SQLite dipakai secara bawaan, jadi tidak ada yang
+perlu disiapkan — database dibuat dan diisi otomatis saat pertama dijalankan:
+30 pengguna, 12 toko, 51 produk, dan 30 pesanan.
 
-### Konfigurasi
+**Prasyarat:** .NET 10 SDK.
 
-Edit `appsettings.json` untuk mengkonfigurasi:
+### Akun demo
 
-- **Database**: Ubah `DatabaseProvider` ke `SQLite`, `SqlServer`, `MySql`, atau `PostgreSql`
-- **AI Providers**: Tambahkan API key di `AI.Providers`
-- **Payment Gateways**: Konfigurasi kunci Midtrans/Xendit
-- **Pengiriman**: Atur API key RajaOngkir
-- **Storage**: Konfigurasi MinIO, S3, atau Azure Blob
+Semua akun contoh memakai password **`Lapak2025!`**.
 
-## 🏗️ Arsitektur
+| Peran | Email | Yang bisa diakses |
+|---|---|---|
+| Pembeli | `zahra.aulia@lapak.com` | Keranjang, checkout, pesanan, wishlist |
+| Penjual | `budi.santoso@lapak.com` | Kelola toko dan produk, dashboard penjualan |
+| Admin | `admin.lapak@lapak.com` | Panel admin, verifikasi toko, voucher |
+
+Kredensial ini hanya ada di data contoh. Akun asli dibuat lewat `/account/register`.
+
+---
+
+## Isinya apa saja
+
+### Etalase
+
+Pencarian produk dengan filter kategori, harga, rating, dan pengurutan. Halaman
+produk dan toko lengkap dengan ulasan, wishlist, dan keranjang. Checkout tiga
+langkah yang menghitung ongkos kirim sebelum meminta pembayaran.
+
+![Katalog produk](docs/screenshots/03-produk.png)
+
+### Dua asisten AI
+
+**Tony Kurus** adalah asisten belanja. Ia punya delapan tool Semantic Kernel yang
+tersambung ke database — cari produk dengan filter, cari toko, detail produk, promo
+aktif, cek pesanan, waktu, dan kalkulasi — jadi jawabannya berasal dari katalog,
+bukan ingatan model.
+
+**Siti Bohay** menangani bantuan pelanggan. Jawabannya diambil dari dokumen kebijakan
+di folder `Documents/` lewat indeks TF-IDF, dan setiap balasan bisa menampilkan
+kutipan sumbernya. Kalau tidak bisa diselesaikan, ia mengalihkan ke WhatsApp atau email.
+
+![Chat Siti Bohay](docs/screenshots/08-siti-bohay.png)
+
+Keduanya menerima unggahan gambar, membalas secara streaming, dan berpindah
+penyedia otomatis (OpenAI → Gemini → Anthropic → Ollama) saat satu penyedia gagal.
+
+### Pembayaran — Midtrans, Xendit, dan Stripe
+
+Setiap gateway adalah satu `IPaymentProvider`; pembeli memilih sendiri di checkout,
+dan gateway yang belum dikonfigurasi tampil nonaktif. Tanda tangan webhook
+diverifikasi untuk ketiganya — SHA-512 untuk Midtrans, callback token untuk Xendit,
+HMAC-SHA256 bertimestamp untuk Stripe.
+
+![Langkah pembayaran](docs/screenshots/15-checkout-pembayaran.png)
+
+Lihat [docs/payments.md](docs/payments.md) untuk konfigurasi dan pengujian webhook.
+
+### Pengiriman
+
+Integrasi RajaOngkir dengan tujuh kurir (JNE, J&T, SiCepat, Pos Indonesia,
+AnterAja, Ninja, Lion), masing-masing tiga level layanan, plus pelacakan. Kalau API
+key belum diisi, ongkir disimulasikan supaya checkout tetap jalan.
+
+### Dashboard dan laporan
+
+Pendapatan, jumlah pesanan, dan segmentasi pelanggan — semuanya bisa disaring
+berdasarkan rentang tanggal, tier, dan status. Grafiknya memakai jumlah pesanan
+harian yang sebenarnya, dan tombol **Unduh CSV** mengekspor persis apa yang sedang
+tersaring.
+
+![Dashboard penjualan](docs/screenshots/20-dashboard.png)
+
+### Perkakas penjual dan admin
+
+Penjual mengelola profil toko dan katalog produknya. Admin memverifikasi toko,
+membuat voucher dan kategori, serta melihat total platform. Kedua area dijaga
+kebijakan peran, bukan sekadar menu yang disembunyikan.
+
+![Kelola produk](docs/screenshots/18-kelola-produk.png)
+
+### Terang dan gelap
+
+Tema mengikuti preferensi sistem, bisa diganti manual, dan diingat antar kunjungan.
+
+![Tema gelap](docs/screenshots/02-beranda-gelap.png)
+
+### Responsif
+
+![Beranda mobile](docs/screenshots/10-mobile-beranda.png)
+
+---
+
+## Konfigurasi
+
+Semuanya diatur lewat `appsettings.json`.
+
+| Seksi | Fungsi |
+|---|---|
+| `DatabaseProvider` | `SQLite` (bawaan), `SqlServer`, `MySql`, `PostgreSql` |
+| `AI` | API key LLM, urutan fallback, prompt chatbot |
+| `VectorDatabase` | Folder dokumen RAG, ukuran chunk, interval indeks ulang |
+| `PaymentGateways` | Kredensial Midtrans, Xendit, dan Stripe |
+| `Shipping` | API key RajaOngkir, daftar kurir, kota asal |
+| `Storage` | File system, MinIO, S3, atau Azure Blob |
+| `CustomerScoring` | Ambang tier dan bobot skor |
+| `RecommendationEngine` | Bobot collaborative dan content-based |
+
+**Jangan pernah commit kredensial asli.** Pakai user-secrets saat development:
+
+```bash
+dotnet user-secrets set "AI:Providers:OpenAI:ApiKey" "sk-..."
+dotnet user-secrets set "PaymentGateways:Stripe:SecretKey" "sk_test_..."
+```
+
+atau environment variable di production (`AI__Providers__OpenAI__ApiKey`).
+
+---
+
+## Struktur proyek
 
 ```
 Lapak/
-├── Components/        # Komponen UI Blazor
-│   ├── Layout/        # Layout utama, sidebar, navbar
-│   ├── Pages/         # Halaman aplikasi
-│   │   ├── Account/   # Login, register, profil
-│   │   ├── Chat/      # Chat Tony Kurus & Siti Bohay
-│   │   ├── Dashboard/ # Dashboard analitik
-│   │   └── Products/  # Daftar & detail produk
-│   └── Shared/        # Komponen reusable
-├── Data/              # EF Core DbContext & data awal
-├── Hubs/              # SignalR hubs
-├── Models/            # Model entity & konfigurasi
-├── Services/          # Layanan logika bisnis
-│   ├── AI/            # Abstraksi layanan LLM
-│   ├── Payment/       # Layanan payment gateway
-│   ├── Shipping/      # Layanan kurir & pengiriman
-│   └── Storage/       # Abstraksi penyimpanan file
-└── wwwroot/           # Aset statis & CSS
+├── Components/
+│   ├── Layout/MainLayout.razor      # kerangka: nav, sidebar, tema, badge keranjang
+│   ├── Pages/                       # semua rute
+│   └── Shared/ProductCard.razor     # kartu anyaman + label harga bertakik
+├── Controllers/
+│   ├── AccountController.cs         # login, daftar, keluar, refresh klaim
+│   ├── ApiControllers.cs            # unggahan, webhook pembayaran
+│   └── ReportsController.cs         # ekspor CSV
+├── Data/                            # DbContext dan data contoh
+├── Documents/                       # dokumen sumber untuk RAG
+├── Hubs/ChatHub.cs                  # SignalR: chat, notifikasi, dashboard
+├── Models/
+│   ├── Configurations/AppConfigs.cs # semua POCO konfigurasi
+│   └── …                            # 15 entitas berbasis EntityBase
+├── Services/
+│   ├── SemanticKernel/              # kernel + 9 tool, fallback multi-provider
+│   ├── Rag/                         # indeks TF-IDF + pengindeks latar belakang
+│   ├── Payment/                     # kontrak + 3 provider gateway
+│   ├── Shipping/                    # RajaOngkir + 7 kurir
+│   ├── Storage/                     # file system / MinIO lewat factory
+│   ├── RecommendationService.cs     # collaborative + content-based
+│   └── CustomerScoringService.cs    # Bronze / Silver / Gold / Platinum
+├── wwwroot/app.css                  # seluruh design system
+└── docs/                            # dokumentasi dan tangkapan layar
 ```
 
-## 📚 Dokumentasi
+---
+
+## Dokumentasi
 
 - [Arsitektur](docs/architecture.md)
+- [Payment gateway](docs/payments.md)
 - [Konfigurasi AI](docs/ai-config.md)
-- [Dashboard & Pelaporan](docs/dashboard.md)
-- [Setup Storage](docs/storage.md)
-- [Setup Database](docs/database.md)
-
-## 🛠️ Tech Stack
-
-- **Framework**: .NET 8.0 Blazor Server
-- **ORM**: Entity Framework Core
-- **Real-time**: SignalR
-- **AI/LLM**: Multi-provider abstraction (OpenAI, Gemini, Anthropic, Ollama)
-- **Charts**: ChartJs.Blazor.Fork
-- **Storage**: MinIO SDK, S3 SDK
-- **Resilience**: Polly
-
-## 📄 Lisensi
-
-MIT License - lihat file LICENSE untuk detail
+- [Dashboard dan laporan](docs/dashboard.md)
+- [Setup database](docs/database.md)
+- [Setup storage](docs/storage.md)
+- [Galeri tangkapan layar](docs/screenshots.md)
 
 ---
+
+## Teknologi
+
+.NET 10 Blazor Server · Entity Framework Core · ASP.NET Identity · SignalR ·
+Microsoft Semantic Kernel · MinIO SDK · Polly
+
+## Catatan
+
+Skema dibuat dengan `EnsureCreated()`, bukan migration. Kalau kamu mengubah entitas,
+hapus `lapak.db*` lalu jalankan ulang supaya database dibuat kembali.
+
+## Lisensi
+
+MIT — lihat LICENSE.
+
+---
+
+*English: [README.md](README.md)*
 
 Dibuat dengan ❤️ oleh Jacky The Code Bender @ Gravicode Studios

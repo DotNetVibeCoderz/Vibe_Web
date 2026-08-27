@@ -2,75 +2,443 @@
 @page "/stores/{Slug}"
 @using Lapak.Models
 @using Microsoft.EntityFrameworkCore
+@using Lapak.Services
 @inject Lapak.Data.LapakDbContext Db
 @inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>@(_store?.Name ?? "Toko") — Lapak</PageTitle>
 
 @if (string.IsNullOrEmpty(Slug))
 {
-    <div class="page-header"><h1 class="page-title">Toko</h1><p class="page-subtitle">@_totalStores toko di Lapak</p></div>
-    <div class="card mb-3"><div class="card-body"><div class="row" style="align-items:end;"><div class="col-4"><label class="form-label">Cari</label><input class="form-input" @bind="_q" /></div><div class="col-3"><label class="form-label">Kota</label><input class="form-input" @bind="_cityFilter" /></div><div class="col-2"><label class="form-label">Status</label><select class="form-input" @bind="_verified"><option value="">Semua</option><option value="true">Verified</option></select></div><div class="col-3"><button class="btn btn-primary btn-block" @onclick="ApplyFilter">Cari</button></div></div></div></div>
-    <div class="store-grid-list">@foreach (var s in _stores){ <a href="/stores/@s.Slug" class="store-card-full"><div class="store-card-header"><div style="font-size:2.5rem;">🏪</div><div style="flex:1;"><h3>@s.Name @if(s.IsVerified){<span>✅</span>}</h3><p class="text-muted">@(s.City??"")</p></div><div><div>⭐@s.AverageRating.ToString("F1")</div><small>@s.RatingCount ulasan</small></div></div><p>@s.Description</p><div>📦@s.TotalProducts produk · 💰@s.TotalSales penjualan</div></a> }</div>
-    @if (!_stores.Any()) { <div class="text-center mt-4"><h3>Tidak ada toko</h3></div> }
+    <div class="page-header">
+        <h1 class="page-title">Toko</h1>
+        <p class="page-subtitle">@_totalStores toko berjualan di Lapak</p>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row items-end">
+                <div class="col-4">
+                    <label class="form-label" for="s-q">Nama toko</label>
+                    <input id="s-q" class="form-input" @bind="_q" @onkeydown="OnFilterKey" placeholder="Cari toko" />
+                </div>
+                <div class="col-3">
+                    <label class="form-label" for="s-city">Kota</label>
+                    <input id="s-city" class="form-input" @bind="_cityFilter" @onkeydown="OnFilterKey" placeholder="Contoh: Bandung" />
+                </div>
+                <div class="col-3">
+                    <label class="form-label" for="s-verified">Status</label>
+                    <select id="s-verified" class="form-input" @bind="_verified">
+                        <option value="">Semua toko</option>
+                        <option value="true">Hanya terverifikasi</option>
+                    </select>
+                </div>
+                <div class="col-2">
+                    <button class="btn btn-primary btn-block" @onclick="ApplyFilter">Cari</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!_stores.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">🏪</div>
+            <h3>Tidak ada toko yang cocok</h3>
+            <p>Coba nama lain, atau kosongkan filter kota.</p>
+        </div>
+    }
+    else
+    {
+        <div class="store-grid-list">
+            @foreach (var s in _stores)
+            {
+                <a href="/stores/@s.Slug" class="store-card-full">
+                    <div class="store-card-header">
+                        <div class="store-avatar weave-tile" style="--weave-hue: @ProductIcons.StableHue(s.Slug);">
+                            <GlyphIcon Name="toko" Size="1.5rem" />
+                        </div>
+                        <div class="flex-1">
+                            <div class="store-card-name">
+                                @s.Name
+                                @if (s.IsVerified) { <span class="badge-verified">✓ Terverifikasi</span> }
+                            </div>
+                            <div class="store-card-city">📍 @(s.City ?? "—")</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="fw-700">⭐ @s.AverageRating.ToString("F1")</div>
+                            <div class="text-xs text-muted">@s.RatingCount ulasan</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(s.Description))
+                    {
+                        <p class="text-sm text-muted mb-2">@Truncate(s.Description, 110)</p>
+                    }
+                    <div class="store-card-stats">
+                        <span>📦 @s.TotalProducts produk</span>
+                        <span>💰 @s.TotalSales penjualan</span>
+                    </div>
+                </a>
+            }
+        </div>
+    }
+}
+else if (_loadingDetail)
+{
+    <div class="loading-spinner"></div>
+    <p class="text-center text-muted">Memuat toko…</p>
+}
+else if (_store == null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">🔍</div>
+        <h3>Toko tidak ditemukan</h3>
+        <p>Toko ini mungkin sudah tutup atau tautannya keliru.</p>
+        <a href="/stores" class="btn btn-primary">Lihat semua toko</a>
+    </div>
 }
 else
 {
-    @if (_store == null && !_loadingDetail) { <div class="text-center mt-4"><h3>Toko tidak ditemukan</h3><a href="/stores">Kembali</a></div> }
-    else if (_loadingDetail) { <div class="text-center mt-4"><div class="loading-spinner"></div><p>Memuat...</p></div> }
-    else if (_store != null) {
-        <nav class="breadcrumb mb-2"><a href="/">Home</a> / <a href="/stores">Toko</a> / <span>@_store.Name</span></nav>
-        <div class="card mb-3" style="background:linear-gradient(135deg,var(--accent-light),var(--bg-secondary));"><div class="card-body" style="display:flex;gap:24px;align-items:center;"><div style="font-size:5rem;">🏪</div><div style="flex:1;"><h1>@_store.Name @if(_store.IsVerified){<span>✅ Verified</span>}</h1><p>@_store.Description</p><div class="flex gap-3 mt-2"><span>@_store.City</span><span>⭐@_store.AverageRating.ToString("F1") (@_store.RatingCount)</span><span>❤️@_store.LikeCount</span></div></div><div><button class="btn btn-primary" @onclick="ToggleLike">❤️ @(_liked?"Unlike":"Suka")</button></div></div></div>
-        <h3 class="mb-2">Produk</h3><div class="product-grid">@foreach(var p in _storeProducts){ var url = "/products/" + p.Slug; <ProductCard Product="p" OnClick="() => Nav.NavigateTo(url)" />}</div>
-        <div class="mt-4"><div class="card"><div class="card-header flex justify-between"><span>Ulasan (@_reviews.Count)</span><button class="btn btn-sm btn-primary" @onclick="()=>_showForm=!_showForm">Tulis Ulasan</button></div>
-        @if(_showForm){<div class="card-body"><select class="form-input mb-2" @bind="_newRating"><option value="5">5</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select><textarea class="form-input mb-2" @bind="_newComment" rows="2"></textarea><div class="flex gap-2"><button class="btn btn-primary" @onclick="SubmitReview">Kirim</button><button class="btn btn-secondary" @onclick="()=>_showForm=false">Batal</button></div></div>}
-        <div class="card-body">@foreach(var r in _reviews.Take(10)){ <div style="border-bottom:1px solid var(--border-color);padding:12px 0;"><strong>@r.User?.FullName</strong> <span>@RenderStars(r.Rating)</span><br/><small>@r.CreatedAt.ToString("dd MMM yyyy")</small><p>@r.Comment</p></div> }</div></div></div>
+    <nav class="breadcrumb mb-2">
+        <a href="/">Beranda</a><span>/</span>
+        <a href="/stores">Toko</a><span>/</span>
+        <span>@_store.Name</span>
+    </nav>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert success mb-2">@_message</div>
     }
+
+    <div class="card mb-3">
+        <div class="store-hero weave" style="--weave-hue: @ProductIcons.StableHue(_store.Slug);"></div>
+        <div class="card-body">
+            <div class="flex justify-between items-start flex-wrap gap-2">
+                <div class="flex-1">
+                    <h1>
+                        @_store.Name
+                        @if (_store.IsVerified) { <span class="badge-verified">✓ Terverifikasi</span> }
+                    </h1>
+                    @if (!string.IsNullOrWhiteSpace(_store.Description))
+                    {
+                        <p class="text-secondary mt-1">@_store.Description</p>
+                    }
+                    <div class="flex gap-1 flex-wrap mt-2">
+                        <span class="chip">📍 @(_store.City ?? "—")</span>
+                        <span class="chip">⭐ @_store.AverageRating.ToString("F1") (@_store.RatingCount)</span>
+                        <span class="chip">❤️ @_store.LikeCount</span>
+                        <span class="chip">📦 @_store.TotalProducts produk</span>
+                    </div>
+                </div>
+                <button class="btn @(_liked ? "btn-secondary" : "btn-primary")" @onclick="ToggleLike">
+                    @(_liked ? "❤️ Disukai" : "🤍 Suka toko ini")
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="section-header"><h2>Produk dari toko ini</h2></div>
+        @if (!_storeProducts.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">📦</div>
+                <h3>Belum ada produk</h3>
+                <p>Toko ini belum menayangkan barang apa pun.</p>
+            </div>
+        }
+        else
+        {
+            <div class="product-grid">
+                @foreach (var p in _storeProducts)
+                {
+                    var url = "/products/" + p.Slug;
+                    <ProductCard Product="p" OnClick="() => Nav.NavigateTo(url)" />
+                }
+            </div>
+        }
+    </section>
+
+    <div class="card mt-3">
+        <div class="card-header flex justify-between items-center">
+            <span>Ulasan toko (@_reviews.Count)</span>
+            @if (_canReview)
+            {
+                <button class="btn btn-sm btn-primary" @onclick="() => _showForm = !_showForm">
+                    @(_showForm ? "Batal" : "Tulis ulasan")
+                </button>
+            }
+        </div>
+
+        @if (_showForm)
+        {
+            <div class="card-body" style="background:var(--bg-primary);">
+                @if (!string.IsNullOrEmpty(_reviewError))
+                {
+                    <div class="alert error mb-2">@_reviewError</div>
+                }
+                <div class="row">
+                    <div class="col-4">
+                        <label class="form-label" for="sr-rating">Rating</label>
+                        <select id="sr-rating" class="form-input" @bind="_newRating">
+                            <option value="5">5 — Sangat puas</option>
+                            <option value="4">4 — Puas</option>
+                            <option value="3">3 — Biasa saja</option>
+                            <option value="2">2 — Kurang</option>
+                            <option value="1">1 — Kecewa</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <label class="form-label" for="sr-comment">Komentar</label>
+                    <textarea id="sr-comment" class="form-input" @bind="_newComment" rows="3" placeholder="Bagaimana pelayanan dan pengirimannya?"></textarea>
+                </div>
+                <button class="btn btn-primary mt-2" @onclick="SubmitReview">Kirim ulasan</button>
+            </div>
+        }
+
+        <div class="card-body">
+            @if (!_reviews.Any())
+            {
+                <p class="text-muted">Belum ada ulasan untuk toko ini.</p>
+            }
+            else
+            {
+                @foreach (var r in _reviews.Take(10))
+                {
+                    <div class="review-item">
+                        <div class="flex justify-between items-center">
+                            <strong>@(r.User?.FullName ?? "Pembeli Lapak")</strong>
+                            <span class="text-warning">@Stars(r.Rating)</span>
+                        </div>
+                        <div class="text-xs text-muted">@r.CreatedAt.ToString("d MMM yyyy")</div>
+                        <p class="text-sm mt-1">@r.Comment</p>
+                    </div>
+                }
+            }
+        </div>
+    </div>
 }
+
+<style>
+    .store-hero { height: 108px; }
+    .review-item { border-bottom: 1px dashed var(--border-color); padding: 14px 0; }
+    .review-item:last-child { border-bottom: none; }
+</style>
 
 @code {
     [Parameter] public string? Slug { get; set; }
 
-    private List<Lapak.Models.Store> _stores = new(); private int _totalStores; private string _q="",_cityFilter="",_verified="";
-    private Lapak.Models.Store? _store; private List<Product> _storeProducts = new(); private List<StoreReview> _reviews = new();
-    private bool _liked,_showForm; private int _newRating=5; private string _newComment="";
+    private List<Lapak.Models.Store> _stores = new();
+    private int _totalStores;
+    private string _q = "", _cityFilter = "", _verified = "";
+
+    private Lapak.Models.Store? _store;
+    private List<Product> _storeProducts = new();
+    private List<StoreReview> _reviews = new();
+    private bool _liked, _showForm, _canReview, _loadingDetail;
+    private int _newRating = 5;
+    private string _newComment = "", _reviewError = "", _message = "";
     private string? _prevSlug;
-    private bool _loadingDetail;
+    private Guid? _userId;
 
     protected override async Task OnInitializedAsync()
     {
+        _userId = await GetUserIdAsync();
         if (!string.IsNullOrEmpty(Slug)) await LoadStoreDetail();
-        else { _stores = Db.Stores.Where(s => s.IsActive).OrderByDescending(s => s.AverageRating).Take(20).ToList(); _totalStores = Db.Stores.Count(s => s.IsActive); }
+        else await LoadStoreList();
         _prevSlug = Slug;
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_prevSlug != Slug)
-        {
-            _prevSlug = Slug;
-            _store = null; _storeProducts = new(); _reviews = new(); _showForm = false; _liked = false;
-            if (!string.IsNullOrEmpty(Slug)) await LoadStoreDetail();
-            else { _stores = Db.Stores.Where(s => s.IsActive).OrderByDescending(s => s.AverageRating).Take(20).ToList(); _totalStores = Db.Stores.Count(s => s.IsActive); }
-            StateHasChanged();
-        }
+        if (_prevSlug == Slug) return;
+
+        _prevSlug = Slug;
+        _store = null;
+        _storeProducts = new();
+        _reviews = new();
+        _showForm = false;
+        _liked = false;
+        _message = "";
+        _reviewError = "";
+
+        if (!string.IsNullOrEmpty(Slug)) await LoadStoreDetail();
+        else await LoadStoreList();
+
+        StateHasChanged();
+    }
+
+    private async Task LoadStoreList()
+    {
+        _stores = await Db.Stores.AsNoTracking()
+            .Where(s => s.IsActive)
+            .OrderByDescending(s => s.AverageRating)
+            .Take(20)
+            .ToListAsync();
+        _totalStores = await Db.Stores.CountAsync(s => s.IsActive);
     }
 
     private async Task LoadStoreDetail()
     {
-        _loadingDetail = true; StateHasChanged();
+        _loadingDetail = true;
+        StateHasChanged();
         try
         {
-            _store = Db.Stores.FirstOrDefault(s => s.Slug == Slug && s.IsActive);
-            if (_store != null)
+            _store = await Db.Stores.FirstOrDefaultAsync(s => s.Slug == Slug && s.IsActive);
+            if (_store == null) return;
+
+            _storeProducts = await Db.Products.AsNoTracking()
+                .Where(p => p.StoreId == _store.Id && p.IsActive)
+                .Include(p => p.Category).Include(p => p.Store)
+                .OrderByDescending(p => p.SoldCount)
+                .Take(20)
+                .ToListAsync();
+
+            _reviews = await Db.StoreReviews.AsNoTracking()
+                .Include(r => r.User)
+                .Where(r => r.StoreId == _store.Id)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync();
+
+            _userId ??= await GetUserIdAsync();
+            if (_userId.HasValue)
             {
-                _storeProducts = Db.Products.Where(p => p.StoreId == _store.Id && p.IsActive).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(20).ToList();
-                _reviews = Db.StoreReviews.Include(r => r.User).Where(r => r.StoreId == _store.Id).OrderByDescending(r => r.CreatedAt).ToList();
+                _liked = await Db.StoreLikes.AnyAsync(l => l.StoreId == _store.Id && l.UserId == _userId.Value);
+                _canReview = !await Db.StoreReviews.AnyAsync(r => r.StoreId == _store.Id && r.UserId == _userId.Value);
             }
         }
-        finally { _loadingDetail = false; }
+        finally
+        {
+            _loadingDetail = false;
+        }
     }
 
-    private async Task ApplyFilter() { var q = Db.Stores.Where(s => s.IsActive); if (!string.IsNullOrWhiteSpace(_q)) { var qLower = _q.ToLower().Trim(); q = q.Where(s => s.Name.ToLower().Contains(qLower) || (s.Description != null && s.Description.ToLower().Contains(qLower))); } if (!string.IsNullOrWhiteSpace(_cityFilter)) { var cLower = _cityFilter.ToLower().Trim(); q = q.Where(s => s.City != null && s.City.ToLower().Contains(cLower)); } if (_verified == "true") q = q.Where(s => s.IsVerified); _stores = q.OrderByDescending(s => s.AverageRating).Take(20).ToList(); }
-    private async Task ToggleLike() { _liked=!_liked; if(_liked&&_store!=null){_store.LikeCount++;Db.SaveChanges();} }
-    private async Task SubmitReview() { if(_store==null||string.IsNullOrWhiteSpace(_newComment))return; Db.StoreReviews.Add(new StoreReview{StoreId=_store.Id,UserId=Guid.Empty,Rating=_newRating,Comment=_newComment}); _store.RatingCount++; _store.AverageRating=Math.Round(((_store.AverageRating*(_store.RatingCount-1))+_newRating)/_store.RatingCount,1); Db.SaveChanges(); _showForm=false;_newComment=""; _reviews=Db.StoreReviews.Include(r=>r.User).Where(r=>r.StoreId==_store.Id).OrderByDescending(r=>r.CreatedAt).ToList(); }
-    private string RenderStars(int rating) => rating switch { 5=>"⭐⭐⭐⭐⭐", 4=>"⭐⭐⭐⭐", 3=>"⭐⭐⭐", 2=>"⭐⭐", _=>"⭐" };
+    private async Task<Guid?> GetUserIdAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(uid, out var parsed) ? parsed : null;
+    }
+
+    private async Task OnFilterKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplyFilter();
+    }
+
+    private async Task ApplyFilter()
+    {
+        var query = Db.Stores.AsNoTracking().Where(s => s.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(_q))
+        {
+            var keyword = _q.ToLower().Trim();
+            query = query.Where(s => s.Name.ToLower().Contains(keyword) ||
+                                     (s.Description != null && s.Description.ToLower().Contains(keyword)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(_cityFilter))
+        {
+            var city = _cityFilter.ToLower().Trim();
+            query = query.Where(s => s.City != null && s.City.ToLower().Contains(city));
+        }
+
+        if (_verified == "true") query = query.Where(s => s.IsVerified);
+
+        _stores = await query.OrderByDescending(s => s.AverageRating).Take(20).ToListAsync();
+        _totalStores = _stores.Count;
+    }
+
+    /// <summary>
+    /// Likes are persisted as StoreLike rows, so the count survives a reload and
+    /// un-liking actually gives the point back.
+    /// </summary>
+    private async Task ToggleLike()
+    {
+        if (_store == null) return;
+
+        var userId = await GetUserIdAsync();
+        if (!userId.HasValue)
+        {
+            Nav.NavigateTo($"/account/login?redirect=/stores/{_store.Slug}");
+            return;
+        }
+
+        var existing = await Db.StoreLikes.FirstOrDefaultAsync(l => l.StoreId == _store.Id && l.UserId == userId.Value);
+        if (existing == null)
+        {
+            Db.StoreLikes.Add(new StoreLike { StoreId = _store.Id, UserId = userId.Value });
+            _store.LikeCount++;
+            _liked = true;
+        }
+        else
+        {
+            Db.StoreLikes.Remove(existing);
+            if (_store.LikeCount > 0) _store.LikeCount--;
+            _liked = false;
+        }
+
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task SubmitReview()
+    {
+        _reviewError = "";
+        if (_store == null) return;
+
+        if (string.IsNullOrWhiteSpace(_newComment))
+        {
+            _reviewError = "Tulis dulu komentarmu sebelum mengirim.";
+            return;
+        }
+
+        // The old version saved Guid.Empty as the author, which the foreign key
+        // rejects — the review never actually reached the database.
+        var userId = await GetUserIdAsync();
+        if (!userId.HasValue)
+        {
+            Nav.NavigateTo($"/account/login?redirect=/stores/{_store.Slug}");
+            return;
+        }
+
+        if (await Db.StoreReviews.AnyAsync(r => r.StoreId == _store.Id && r.UserId == userId.Value))
+        {
+            _reviewError = "Kamu sudah pernah mengulas toko ini.";
+            _canReview = false;
+            return;
+        }
+
+        Db.StoreReviews.Add(new StoreReview
+        {
+            StoreId = _store.Id,
+            UserId = userId.Value,
+            Rating = _newRating,
+            Comment = _newComment.Trim()
+        });
+
+        var newCount = _store.RatingCount + 1;
+        _store.AverageRating = Math.Round(((_store.AverageRating * _store.RatingCount) + _newRating) / newCount, 2);
+        _store.RatingCount = newCount;
+
+        await Db.SaveChangesAsync();
+
+        _showForm = false;
+        _canReview = false;
+        _newComment = "";
+        _message = "Terima kasih, ulasanmu sudah tayang.";
+
+        _reviews = await Db.StoreReviews.AsNoTracking()
+            .Include(r => r.User)
+            .Where(r => r.StoreId == _store.Id)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+    }
+
+    private static string Stars(int rating) =>
+        new string('★', Math.Clamp(rating, 0, 5)) + new string('☆', 5 - Math.Clamp(rating, 0, 5));
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max].TrimEnd() + "…";
+
 }

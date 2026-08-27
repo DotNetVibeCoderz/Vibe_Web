@@ -1,6 +1,28 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
 <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        @* AuthorizeRouteView is what makes [Authorize] on a page actually enforced. *@
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated ?? false)
+                {
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔒</div>
+                        <h3>Halaman ini bukan untuk akunmu</h3>
+                        <p>Akunmu tidak punya akses ke bagian ini. Kalau menurutmu ini keliru, hubungi admin Lapak.</p>
+                        <a href="/" class="btn btn-primary">Kembali ke beranda</a>
+                    </div>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <div class="loading-spinner"></div>
+            </Authorizing>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>

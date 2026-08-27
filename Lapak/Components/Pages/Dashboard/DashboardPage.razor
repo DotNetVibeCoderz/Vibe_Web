@@ -2,237 +2,322 @@
 @using Lapak.Models
 @using Lapak.Services
 @using Lapak.Data
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject LapakDbContext Db
 @inject ICustomerScoringService ScoringService
+@inject NavigationManager Nav
 
-@* 📊 Dashboard & Reporting Page *@
+<PageTitle>Dashboard — Lapak</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">📊 Dashboard</h1>
-    <p class="page-subtitle">Analitik bisnis real-time dengan data penjualan, pelanggan, dan performa platform</p>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Penjualan, pelanggan, dan performa platform @RangeLabel</p>
 </div>
 
-@* Stats Cards *@
-<div class="row mb-3">
-    <div class="col-3">
-        <div class="stat-card">
-            <div class="stat-icon green">💰</div>
-            <div>
-                <div class="stat-value">Rp@(_totalRevenue.ToString("N0"))</div>
-                <div class="stat-label">Total Pendapatan</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-3">
-        <div class="stat-card">
-            <div class="stat-icon purple">📦</div>
-            <div>
-                <div class="stat-value">@_totalOrders.ToString("N0")</div>
-                <div class="stat-label">Total Pesanan</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-3">
-        <div class="stat-card">
-            <div class="stat-icon blue">👥</div>
-            <div>
-                <div class="stat-value">@_totalCustomers.ToString("N0")</div>
-                <div class="stat-label">Pelanggan</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-3">
-        <div class="stat-card">
-            <div class="stat-icon orange">⭐</div>
-            <div>
-                <div class="stat-value">@_avgRating.ToString("F1")</div>
-                <div class="stat-label">Rata-rata Rating</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    @* Charts - Sales Overview *@
-    <div class="col-8">
-        <div class="chart-container">
-            <h4 class="chart-title">📈 Ikhtisar Penjualan (30 Hari Terakhir)</h4>
-            <div style="height: 300px; display: flex; align-items: flex-end; gap: 8px; padding: 20px;">
-                @{
-                    var maxValue = _salesData.Count > 0 ? _salesData.Max() : 1;
-                }
-                @for (int i = 0; i < _salesData.Count; i++)
-                {
-                    var height = maxValue > 0 ? (_salesData[i] / (double)maxValue * 250) : 0;
-                    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                        <span style="font-size: 0.7rem; color: var(--text-muted);">@_salesData[i]</span>
-                        <div style="width: 100%; height: @(height)px; background: var(--accent); border-radius: var(--radius-sm) var(--radius-sm) 0 0; transition: height 0.3s ease; min-height: 4px;"></div>
-                        <span style="font-size: 0.65rem; color: var(--text-muted);">Day @(i+1)</span>
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-
-    @* Customer Tier Distribution *@
-    <div class="col-4">
-        <div class="chart-container">
-            <h4 class="chart-title">🏅 Segmentasi Pelanggan</h4>
-            <div style="padding: 20px;">
-                @foreach (var tier in _tierDistribution)
-                {
-                    var percentage = _totalCustomers > 0 ? (double)tier.Value / _totalCustomers * 100 : 0;
-                    var color = tier.Key switch
-                    {
-                        "Platinum" => "#b8b8ff",
-                        "Gold" => "#ffd700",
-                        "Silver" => "#c0c0c0",
-                        _ => "#cd7f32"
-                    };
-                    <div style="margin-bottom: 16px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span>@tier.Key</span>
-                            <span>@tier.Value (@percentage.ToString("F1")%)</span>
-                        </div>
-                        <div style="height: 8px; background: var(--bg-tertiary); border-radius: var(--radius-full); overflow: hidden;">
-                            <div style="height: 100%; width: @(percentage)%; background: @color; border-radius: var(--radius-full); transition: width 0.5s ease;"></div>
-                        </div>
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-</div>
-
-@* Recent Orders Table *@
-<div class="mt-3">
-    <div class="card">
-        <div class="card-header flex justify-between items-center">
-            <span>📋 Pesanan Terbaru</span>
-            <span class="text-muted" style="font-size: 0.8rem;">Realtime dengan SignalR</span>
-        </div>
-        <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse;">
-                <thead>
-                    <tr style="background: var(--bg-tertiary);">
-                        <th style="padding: 12px 16px; text-align: left;">No. Pesanan</th>
-                        <th style="padding: 12px 16px; text-align: left;">Pelanggan</th>
-                        <th style="padding: 12px 16px; text-align: left;">Toko</th>
-                        <th style="padding: 12px 16px; text-align: right;">Total</th>
-                        <th style="padding: 12px 16px; text-align: center;">Status</th>
-                        <th style="padding: 12px 16px; text-align: left;">Tanggal</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var order in _recentOrders)
-                    {
-                        <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 12px 16px;">@order.OrderNumber</td>
-                            <td style="padding: 12px 16px;">@order.User?.FullName</td>
-                            <td style="padding: 12px 16px;">@order.Store?.Name</td>
-                            <td style="padding: 12px 16px; text-align: right;">Rp@(order.GrandTotal.ToString("N0"))</td>
-                            <td style="padding: 12px 16px; text-align: center;">
-                                <span style="padding: 4px 10px; border-radius: var(--radius-full); font-size: 0.8rem;
-                                    background: @GetStatusColor(order.Status); color: white;">
-                                    @order.Status
-                                </span>
-                            </td>
-                            <td style="padding: 12px 16px; font-size: 0.85rem;">@order.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-@* Filter Section *@
-<div class="card mt-3">
+@* Filters come first: everything below reflects them *@
+<div class="card mb-3">
     <div class="card-body">
-        <h4>Filter Lanjutan</h4>
-        <div class="row mt-2">
+        <div class="row items-end">
             <div class="col-3">
-                <label class="form-label">Tanggal Mulai</label>
-                <input type="date" class="form-input" @bind="_filterStartDate" />
+                <label class="form-label" for="d-from">Dari tanggal</label>
+                <input id="d-from" type="date" class="form-input" @bind="_from" />
             </div>
             <div class="col-3">
-                <label class="form-label">Tanggal Akhir</label>
-                <input type="date" class="form-input" @bind="_filterEndDate" />
+                <label class="form-label" for="d-to">Sampai tanggal</label>
+                <input id="d-to" type="date" class="form-input" @bind="_to" />
             </div>
             <div class="col-3">
-                <label class="form-label">Tier Pelanggan</label>
-                <select class="form-input" @bind="_filterTier">
-                    <option value="">Semua Tier</option>
+                <label class="form-label" for="d-tier">Tier pelanggan</label>
+                <select id="d-tier" class="form-input" @bind="_tier">
+                    <option value="">Semua tier</option>
                     <option value="Bronze">Bronze</option>
                     <option value="Silver">Silver</option>
                     <option value="Gold">Gold</option>
                     <option value="Platinum">Platinum</option>
                 </select>
             </div>
-            <div class="col-3" style="display: flex; align-items: flex-end; gap: 8px;">
-                <button class="btn btn-primary" @onclick="ApplyAdvancedFilter">🔍 Terapkan Filter</button>
-                <button class="btn btn-secondary" @onclick="ExportReport">📥 Export</button>
+            <div class="col-3">
+                <label class="form-label" for="d-status">Status pesanan</label>
+                <select id="d-status" class="form-input" @bind="_status">
+                    <option value="">Semua status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex gap-1 mt-3">
+            <button class="btn btn-primary" @onclick="LoadDashboardData" disabled="@_loading">
+                @(_loading ? "Memuat…" : "Terapkan filter")
+            </button>
+            <button class="btn btn-secondary" @onclick="ResetFilter" disabled="@_loading">Reset</button>
+            <a class="btn btn-secondary" href="@ExportUrl">Unduh CSV</a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-3">
+        <div class="stat-card">
+            <div class="stat-icon green"><GlyphIcon Name="uang" Size="1.35rem" /></div>
+            <div>
+                <div class="stat-value">Rp@(Compact(_revenue))</div>
+                <div class="stat-label">Pendapatan (lunas)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card">
+            <div class="stat-icon purple"><GlyphIcon Name="kotak" Size="1.35rem" /></div>
+            <div>
+                <div class="stat-value">@_orderCount.ToString("N0")</div>
+                <div class="stat-label">Pesanan</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card">
+            <div class="stat-icon blue"><GlyphIcon Name="orang-grup" Size="1.35rem" /></div>
+            <div>
+                <div class="stat-value">@_customerCount.ToString("N0")</div>
+                <div class="stat-label">Pelanggan aktif</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card">
+            <div class="stat-icon orange"><GlyphIcon Name="nota" Size="1.35rem" /></div>
+            <div>
+                <div class="stat-value">Rp@(Compact(_avgOrderValue))</div>
+                <div class="stat-label">Rata-rata per pesanan</div>
             </div>
         </div>
     </div>
 </div>
 
+<div class="row">
+    <div class="col-8">
+        <div class="chart-container">
+            <h4 class="chart-title">Pesanan per hari</h4>
+            @if (!_salesSeries.Any())
+            {
+                <p class="text-muted">Tidak ada pesanan pada rentang tanggal ini.</p>
+            }
+            else
+            {
+                var peak = Math.Max(1, _salesSeries.Max(p => p.Count));
+                <div class="bar-chart">
+                    @foreach (var point in _salesSeries)
+                    {
+                        var heightPct = point.Count * 100.0 / peak;
+                        <div class="bar-col" title="@point.Date.ToString("d MMM yyyy"): @point.Count pesanan">
+                            <div class="bar" style="height: @(heightPct.ToString("F1"))%;"></div>
+                            <span class="bar-label">@point.Date.ToString("d/M")</span>
+                        </div>
+                    }
+                </div>
+                <p class="text-xs text-muted mt-2">Puncak @peak pesanan dalam sehari · total @_salesSeries.Sum(p => p.Count) pesanan.</p>
+            }
+        </div>
+    </div>
+
+    <div class="col-4">
+        <div class="chart-container">
+            <h4 class="chart-title">Segmentasi pelanggan</h4>
+            @foreach (var tier in TierOrder)
+            {
+                var count = _tierDistribution.GetValueOrDefault(tier);
+                var pct = _totalCustomers > 0 ? count * 100.0 / _totalCustomers : 0;
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="fw-600">@tier</span>
+                        <span class="text-muted tabular">@count · @pct.ToString("F1")%</span>
+                    </div>
+                    <div class="meter">
+                        <div class="meter-fill" style="width:@(pct.ToString("F1"))%; background:@TierColor(tier);"></div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header">Pesanan terbaru</div>
+    @if (!_recentOrders.Any())
+    {
+        <div class="card-body"><p class="text-muted">Belum ada pesanan yang cocok dengan filter.</p></div>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>No. pesanan</th>
+                        <th>Pelanggan</th>
+                        <th>Tier</th>
+                        <th>Toko</th>
+                        <th style="text-align:right;">Total</th>
+                        <th>Status</th>
+                        <th>Tanggal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _recentOrders)
+                    {
+                        <tr>
+                            <td><a href="/account/orders/@o.OrderNumber">@o.OrderNumber</a></td>
+                            <td>@(o.User?.FullName ?? "—")</td>
+                            <td><span class="badge-tier @(o.User?.Tier.ToLower() ?? "bronze")">@(o.User?.Tier ?? "—")</span></td>
+                            <td>@(o.Store?.Name ?? "—")</td>
+                            <td style="text-align:right;">Rp@(o.GrandTotal.ToString("N0"))</td>
+                            <td><span class="badge-status" style="color:@StatusColor(o.Status); border-color:@StatusColor(o.Status);">@o.Status</span></td>
+                            <td class="text-sm">@o.CreatedAt.ToString("d MMM yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
 @code {
-    private decimal _totalRevenue = 0;
-    private int _totalOrders = 0;
-    private int _totalCustomers = 0;
-    private double _avgRating = 0;
-    private List<int> _salesData = new();
+    private record SalesPoint(DateTime Date, int Count);
+
+    private static readonly string[] TierOrder = { "Bronze", "Silver", "Gold", "Platinum" };
+
+    private decimal _revenue, _avgOrderValue;
+    private int _orderCount, _customerCount, _totalCustomers;
+    private List<SalesPoint> _salesSeries = new();
     private List<Order> _recentOrders = new();
     private Dictionary<string, int> _tierDistribution = new();
+    private bool _loading;
 
-    // Advanced filters - use DateTime? for proper binding
-    private DateTime? _filterStartDate = null;
-    private DateTime? _filterEndDate = null;
-    private string _filterTier = string.Empty;
+    private DateTime? _from = DateTime.UtcNow.Date.AddDays(-29);
+    private DateTime? _to = DateTime.UtcNow.Date;
+    private string _tier = "";
+    private string _status = "";
 
-    protected override async Task OnInitializedAsync()
+    private string RangeLabel =>
+        _from.HasValue && _to.HasValue
+            ? $"· {_from.Value:d MMM yyyy} – {_to.Value:d MMM yyyy}"
+            : "";
+
+    private string ExportUrl
     {
+        get
+        {
+            var query = new List<string>();
+            if (_from.HasValue) query.Add("from=" + _from.Value.ToString("yyyy-MM-dd"));
+            if (_to.HasValue) query.Add("to=" + _to.Value.ToString("yyyy-MM-dd"));
+            if (!string.IsNullOrEmpty(_tier)) query.Add("tier=" + Uri.EscapeDataString(_tier));
+            if (!string.IsNullOrEmpty(_status)) query.Add("status=" + Uri.EscapeDataString(_status));
+            return "/api/reports/orders.csv" + (query.Any() ? "?" + string.Join("&", query) : "");
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadDashboardData();
+
+    private async Task ResetFilter()
+    {
+        _from = DateTime.UtcNow.Date.AddDays(-29);
+        _to = DateTime.UtcNow.Date;
+        _tier = "";
+        _status = "";
         await LoadDashboardData();
     }
 
     private async Task LoadDashboardData()
     {
-        _totalRevenue = Db.Orders.Where(o => o.Status == "Completed").Sum(o => o.GrandTotal);
-        _totalOrders = Db.Orders.Count();
-        _totalCustomers = Db.Users.Count(u => u.IsActive);
-        _avgRating = Db.Products.Average(p => (double?)p.AverageRating) ?? 0;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var fromUtc = (_from ?? DateTime.UtcNow.Date.AddDays(-29)).Date;
+            // The "to" date is inclusive, so compare against the start of the next day.
+            var toExclusive = (_to ?? DateTime.UtcNow.Date).Date.AddDays(1);
 
-        _recentOrders = Db.Orders
-            .OrderByDescending(o => o.CreatedAt)
-            .Take(10)
-            .ToList();
+            var orders = Db.Orders.AsNoTracking()
+                .Where(o => o.CreatedAt >= fromUtc && o.CreatedAt < toExclusive);
 
-        var random = new Random();
-        _salesData = Enumerable.Range(0, 30)
-            .Select(_ => random.Next(5, 50))
-            .ToList();
+            if (!string.IsNullOrEmpty(_status))
+                orders = orders.Where(o => o.Status == _status);
 
-        _tierDistribution = await ScoringService.GetTierDistributionAsync();
+            if (!string.IsNullOrEmpty(_tier))
+                orders = orders.Where(o => o.User.Tier == _tier);
+
+            _orderCount = await orders.CountAsync();
+
+            // Revenue counts money actually received, not every order raised.
+            var paid = orders.Where(o => o.PaymentStatus == "Paid" || o.Status == "Completed");
+            _revenue = await paid.SumAsync(o => (decimal?)o.GrandTotal) ?? 0;
+            _avgOrderValue = _orderCount > 0
+                ? await orders.SumAsync(o => (decimal?)o.GrandTotal) / _orderCount ?? 0
+                : 0;
+
+            // Real per-day counts, grouped in the database.
+            var grouped = await orders
+                .GroupBy(o => o.CreatedAt.Date)
+                .Select(g => new { Date = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var byDate = grouped.ToDictionary(x => x.Date, x => x.Count);
+            var days = Math.Max(1, (int)(toExclusive - fromUtc).TotalDays);
+            _salesSeries = Enumerable.Range(0, Math.Min(days, 60))
+                .Select(i => fromUtc.AddDays(i))
+                .Select(d => new SalesPoint(d, byDate.GetValueOrDefault(d)))
+                .ToList();
+
+            _recentOrders = await orders
+                .Include(o => o.User)
+                .Include(o => o.Store)
+                .OrderByDescending(o => o.CreatedAt)
+                .Take(12)
+                .ToListAsync();
+
+            var customers = Db.Users.AsNoTracking().Where(u => u.IsActive);
+            if (!string.IsNullOrEmpty(_tier)) customers = customers.Where(u => u.Tier == _tier);
+            _customerCount = await customers.CountAsync();
+
+            _tierDistribution = await ScoringService.GetTierDistributionAsync();
+            _totalCustomers = _tierDistribution.Values.Sum();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
-    private string GetStatusColor(string status) => status switch
+    /// <summary>Rupiah amounts get long fast — compact them so the tiles stay readable.</summary>
+    private static string Compact(decimal value) => value switch
     {
-        "Completed" => "var(--success)",
+        >= 1_000_000_000 => (value / 1_000_000_000).ToString("0.#") + " M",
+        >= 1_000_000 => (value / 1_000_000).ToString("0.#") + " jt",
+        >= 1_000 => (value / 1_000).ToString("0.#") + " rb",
+        _ => value.ToString("N0")
+    };
+
+    private static string TierColor(string tier) => tier switch
+    {
+        "Platinum" => "var(--accent)",
+        "Gold" => "var(--gold)",
+        "Silver" => "#A9B4BF",
+        _ => "#C08A54"
+    };
+
+    private static string StatusColor(string status) => status switch
+    {
+        "Completed" or "Delivered" => "var(--success)",
         "Paid" => "var(--info)",
         "Processing" => "var(--warning)",
-        "Shipped" => "var(--accent)",
+        "Shipped" => "var(--gold)",
         "Cancelled" => "var(--danger)",
         _ => "var(--text-muted)"
     };
-
-    private async Task ApplyAdvancedFilter()
-    {
-        await LoadDashboardData();
-    }
-
-    private async Task ExportReport()
-    {
-        await Task.CompletedTask;
-    }
 }

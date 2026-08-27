@@ -1,0 +1,184 @@
+@page "/products"
+@page "/products/{Slug}"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+@if (string.IsNullOrEmpty(Slug))
+{
+    <div class="page-header"><h1 class="page-title">Produk</h1><p class="page-subtitle">@_totalResults produk ditemukan</p></div>
+    <div class="card mb-3"><div class="card-body"><div class="row" style="align-items:end;">
+        <div class="col-3"><label class="form-label">Cari</label><input class="form-input" @bind="_q" /></div>
+        <div class="col-2"><label class="form-label">Kategori</label><select class="form-input" @bind="_cat"><option value="">Semua</option>@foreach(var c in _categories){<option value="@c.Slug">@c.Name</option>}</select></div>
+        <div class="col-2"><label class="form-label">Harga</label><select class="form-input" @bind="_price"><option value="">Semua</option><option value="0-100000">Di bawah 100rb</option><option value="100000-500000">100rb-500rb</option><option value="500000-1000000">500rb-1jt</option><option value="1000000-5000000">1jt-5jt</option><option value="5000000-999999999">Diatas 5jt</option></select></div>
+        <div class="col-2"><label class="form-label">Rating</label><select class="form-input" @bind="_rating"><option value="">Semua</option><option value="4">Bintang 4+</option><option value="3">Bintang 3+</option></select></div>
+        <div class="col-2"><label class="form-label">Urut</label><select class="form-input" @bind="_sort"><option value="popular">Terlaris</option><option value="rating">Rating</option><option value="price_asc">Termurah</option><option value="price_desc">Termahal</option><option value="newest">Terbaru</option></select></div>
+        <div class="col-1"><button class="btn btn-primary btn-block" @onclick="ApplyFilter">Cari</button></div>
+    </div></div></div>
+    <div class="product-grid">@foreach (var p in _products) { <ProductCard Product="p" OnClick="() => GoProduct(p.Slug)" /> }</div>
+    @if (!_products.Any()) { <div class="text-center mt-4"><div style="font-size:4rem;">📭</div><h3>Tidak ditemukan</h3></div> }
+}
+else
+{
+    @if (_product == null && !_loadingDetail) { <div class="text-center mt-4"><h3>Produk tidak ditemukan</h3><a href="/products" class="btn btn-primary mt-2">Kembali</a></div> }
+    else if (_loadingDetail) { <div class="text-center mt-4"><div class="loading-spinner"></div><p>Memuat...</p></div> }
+    else if (_product != null) {
+        <nav class="breadcrumb mb-2"><a href="/">Home</a> / <a href="/products">Produk</a> / <span>@_product.Name</span></nav>
+        <div class="row"><div class="col-5"><div class="card" style="min-height:400px;display:flex;align-items:center;justify-content:center;font-size:10rem;">📦</div></div>
+        <div class="col-7"><div class="card"><div class="card-body">
+            @if (_product.DiscountPercentage > 0) { <span class="badge-sale">DISKON @_product.DiscountPercentage%</span> }
+            <h1 style="font-size:1.6rem;margin:8px 0;">@_product.Name</h1>
+            <a href="/stores/@_product.Store?.Slug" style="color:var(--text-muted);">@_product.Store?.Name @if(_product.Store?.IsVerified==true){<span>✅</span>}</a>
+            <div style="margin:16px 0;display:flex;align-items:baseline;gap:12px;"><span style="font-size:2.2rem;font-weight:700;color:var(--accent);">Rp@(_product.Price.ToString("N0"))</span>@if(_product.OriginalPrice>_product.Price){<span style="text-decoration:line-through;color:var(--text-muted);">Rp@(_product.OriginalPrice?.ToString("N0"))</span>}</div>
+            <div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;"><span>⭐@_product.AverageRating.ToString("F1") (@_product.RatingCount)</span><span>📦@_product.SoldCount terjual</span><span>❤️@_product.LikeCount</span><span>Stok:@_product.Stock</span></div>
+            @if (!string.IsNullOrEmpty(_product.Description)) { <div style="background:var(--bg-tertiary);padding:16px;border-radius:var(--radius-md);margin:8px 0;"><p>@_product.Description</p></div> }
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button class="btn btn-primary btn-lg" style="flex:1;" @onclick="AddToCart">Masukkan Keranjang</button>
+                <button class="btn btn-secondary btn-lg" @onclick="ToggleWishlist">
+                    @(_isWishlisted ? "💜 Disimpan" : "❤️")
+                </button>
+            </div>
+            <div class="mt-2"><a href="/chat/tony-kurus" class="btn btn-sm btn-secondary">Tanya Tony Kurus</a></div>
+        </div></div></div></div>
+        <div class="mt-4"><div class="card"><div class="card-header flex justify-between"><span>Ulasan (@_reviews.Count)</span><button class="btn btn-sm btn-primary" @onclick="ShowReviewForm">Tulis Ulasan</button></div>
+        @if (_showReviewForm) { <div class="card-body"><div class="row"><div class="col-6"><label class="form-label">Rating</label><select class="form-input" @bind="_newRating"><option value="5">5 Bintang</option><option value="4">4 Bintang</option><option value="3">3 Bintang</option><option value="2">2 Bintang</option><option value="1">1 Bintang</option></select></div></div><div class="mt-2"><label class="form-label">Komentar</label><textarea class="form-input" @bind="_newComment" rows="3"></textarea></div><div class="mt-2 flex gap-2"><button class="btn btn-primary" @onclick="SubmitReview">Kirim</button><button class="btn btn-secondary" @onclick="()=>_showReviewForm=false">Batal</button></div></div> }
+        <div class="card-body">@foreach(var r in _reviews.Take(10)){<div style="border-bottom:1px solid var(--border-color);padding:12px 0;"><strong>@r.User?.FullName</strong> <span>@RenderStars(r.Rating)</span><br/><small class="text-muted">@r.CreatedAt.ToString("dd MMM yyyy")</small><p class="mt-1">@r.Comment</p></div>}@if(!_reviews.Any()){<p class="text-muted">Belum ada ulasan.</p>}</div></div></div>
+        @if (_similar.Any()) { <div class="mt-4"><h3>Produk Serupa</h3><div class="product-grid mt-2">@foreach(var p in _similar){<ProductCard Product="p" OnClick="() => GoProduct(p.Slug)"/>}</div></div> }
+    }
+}
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+    [SupplyParameterFromQuery] private string? q { get; set; }
+    [SupplyParameterFromQuery] private string? category { get; set; }
+
+    private List<Product> _products = new(); private List<Category> _categories = new(); private int _totalResults;
+    private string _q = "", _cat = "", _price = "", _rating = "", _sort = "popular";
+    private Product? _product; private List<Product> _similar = new(); private List<ProductReview> _reviews = new();
+    private bool _showReviewForm; private int _newRating = 5; private string _newComment = "";
+    private string? _prevSlug;
+    private bool _loadingDetail;
+    private bool _isWishlisted;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _q = q ?? ""; _cat = category ?? "";
+        _categories = Db.Categories.Where(c => c.ParentCategoryId == null && c.IsActive).ToList();
+        if (!string.IsNullOrEmpty(Slug)) await LoadDetail();
+        else await LoadList();
+        _prevSlug = Slug;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_prevSlug != Slug)
+        {
+            _prevSlug = Slug;
+            _product = null; _similar = new(); _reviews = new(); _showReviewForm = false; _isWishlisted = false;
+            if (!string.IsNullOrEmpty(Slug)) await LoadDetail();
+            else await LoadList();
+            StateHasChanged();
+        }
+    }
+
+    private void GoProduct(string slug) => Nav.NavigateTo("/products/" + slug);
+
+    private async Task LoadList()
+    {
+        _loadingDetail = false;
+        var query = Db.Products.Include(p => p.Category).Include(p => p.Store).Where(p => p.IsActive);
+        if (!string.IsNullOrWhiteSpace(_q))
+        {
+            var qLower = _q.ToLower().Trim();
+            query = query.Where(p => p.Name.ToLower().Contains(qLower) || (p.Description != null && p.Description.ToLower().Contains(qLower)));
+        }
+        if (!string.IsNullOrWhiteSpace(_cat))
+        {
+            var catSlug = _cat.ToLower();
+            var c = await Db.Categories.FirstOrDefaultAsync(x => x.Slug.ToLower() == catSlug);
+            if (c != null) query = query.Where(p => p.CategoryId == c.Id || p.Category.ParentCategoryId == c.Id);
+        }
+        if (!string.IsNullOrWhiteSpace(_price)) { var parts = _price.Split('-'); if (parts.Length == 2 && decimal.TryParse(parts[0], out var min) && decimal.TryParse(parts[1], out var max)) query = query.Where(p => p.Price >= min && p.Price <= max); }
+        if (double.TryParse(_rating, out var rat)) query = query.Where(p => p.AverageRating >= rat);
+        query = _sort switch { "rating" => query.OrderByDescending(p => p.AverageRating), "price_asc" => query.OrderBy(p => p.Price), "price_desc" => query.OrderByDescending(p => p.Price), "newest" => query.OrderByDescending(p => p.CreatedAt), _ => query.OrderByDescending(p => p.SoldCount) };
+        _totalResults = query.Count(); _products = query.Take(24).ToList();
+    }
+
+    private async Task LoadDetail()
+    {
+        _loadingDetail = true; StateHasChanged();
+        try
+        {
+            _product = Db.Products.Include(p => p.Category).ThenInclude(c => c.ParentCategory).Include(p => p.Store).FirstOrDefault(p => p.Slug == Slug && p.IsActive);
+            if (_product != null)
+            {
+                _product.ViewCount++; Db.SaveChanges();
+                _similar = Db.Products.Include(p => p.Store).Where(p => p.Id != _product.Id && p.CategoryId == _product.CategoryId && p.IsActive).OrderByDescending(p => p.SoldCount).Take(6).ToList();
+                _reviews = Db.ProductReviews.Include(r => r.User).Where(r => r.ProductId == _product.Id).OrderByDescending(r => r.CreatedAt).ToList();
+
+                var userId = await GetUserIdAsync();
+                if (userId.HasValue)
+                {
+                    _isWishlisted = Db.WishlistItems.Any(w => w.UserId == userId.Value && w.ProductId == _product.Id);
+                }
+            }
+        }
+        finally { _loadingDetail = false; }
+    }
+
+    private async Task<Guid?> GetUserIdAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(uid, out var parsed)) return parsed;
+        return null;
+    }
+
+    private async Task ApplyFilter() { await LoadList(); }
+
+    private async Task AddToCart()
+    {
+        if (_product == null) return;
+        var userId = await GetUserIdAsync();
+        if (!userId.HasValue) { Nav.NavigateTo("/account/login"); return; }
+        var existing = Db.CartItems.FirstOrDefault(c => c.UserId == userId.Value && c.ProductId == _product.Id);
+        if (existing != null) existing.Quantity++;
+        else Db.CartItems.Add(new CartItem { UserId = userId.Value, ProductId = _product.Id, Quantity = 1 });
+        Db.SaveChanges();
+        Nav.NavigateTo("/cart");
+    }
+
+    private async Task ToggleWishlist()
+    {
+        if (_product == null) return;
+
+        var userId = await GetUserIdAsync();
+        if (!userId.HasValue)
+        {
+            Nav.NavigateTo($"/account/login?redirect=/products/{_product.Slug}");
+            return;
+        }
+
+        var existing = Db.WishlistItems.FirstOrDefault(w => w.UserId == userId.Value && w.ProductId == _product.Id);
+        if (existing == null)
+        {
+            Db.WishlistItems.Add(new WishlistItem { UserId = userId.Value, ProductId = _product.Id });
+            _product.LikeCount++;
+            _isWishlisted = true;
+        }
+        else
+        {
+            Db.WishlistItems.Remove(existing);
+            if (_product.LikeCount > 0) _product.LikeCount--;
+            _isWishlisted = false;
+        }
+
+        Db.SaveChanges();
+    }
+
+    private void ShowReviewForm() => _showReviewForm = !_showReviewForm;
+    private async Task SubmitReview() { if (_product == null || string.IsNullOrWhiteSpace(_newComment)) return; var auth = await AuthState.GetAuthenticationStateAsync(); var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value; if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login"); return; } var userId = Guid.Parse(uid); if (Db.ProductReviews.Any(r => r.UserId == userId && r.ProductId == _product.Id)) return; Db.ProductReviews.Add(new ProductReview { UserId = userId, ProductId = _product.Id, Rating = _newRating, Comment = _newComment }); _product.RatingCount++; _product.AverageRating = Math.Round(((_product.AverageRating * (_product.RatingCount - 1)) + _newRating) / _product.RatingCount, 1); Db.SaveChanges(); _showReviewForm = false; _newComment = ""; _reviews = Db.ProductReviews.Include(r => r.User).Where(r => r.ProductId == _product.Id).OrderByDescending(r => r.CreatedAt).ToList(); }
+    private string RenderStars(int rating) => rating switch { 5=>"⭐⭐⭐⭐⭐", 4=>"⭐⭐⭐⭐", 3=>"⭐⭐⭐", 2=>"⭐⭐", _=>"⭐" };
+}

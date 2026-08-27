@@ -1,0 +1,119 @@
+@page "/account"
+@page "/account/profile"
+@using Microsoft.AspNetCore.Identity
+@using Lapak.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject UserManager<User> UserMgr
+@inject SignInManager<User> SignInMgr
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+@inject Lapak.Services.Storage.StorageServiceFactory StorageFactory
+
+<div class="page-header"><h1 class="page-title">Profil Saya</h1></div>
+@if (_user == null) { <div class="text-center mt-4"><p>Silakan <a href="/account/login">login</a>.</p></div> }
+else {
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
+    @if (!string.IsNullOrEmpty(_err)) { <div class="toast error mb-2">@_err</div> }
+    <div class="row"><div class="col-4"><div class="card text-center"><div class="card-body">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <div style="width:120px;height:120px;border-radius:var(--radius-circle);overflow:hidden;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;font-size:3rem;">
+                @if (!string.IsNullOrEmpty(_avatarUrl))
+                {
+                    <img src="@_avatarUrl" style="width:100%;height:100%;object-fit:cover;" alt="Avatar" />
+                }
+                else { <span>👤</span> }
+            </div>
+            <InputFile OnChange="HandleAvatarUpload" accept="image/*" id="avatar-input" style="display:none" />
+            <label for="avatar-input" class="btn btn-secondary btn-sm">📸 Ganti Foto</label>
+            @if (_avatarUploading)
+            {
+                <small class="text-muted">Mengupload foto...</small>
+            }
+            @if (!string.IsNullOrEmpty(_avatarError))
+            {
+                <small class="text-danger">@_avatarError</small>
+            }
+        </div>
+        <h3 class="mt-2">@_user.FullName</h3>
+        <p>@_user.Email</p>
+        <span class="badge-tier @_user.Tier.ToLower()">@_user.Tier</span>
+        <div class="mt-2">@_user.LoyaltyPoints Loyalty Points</div>
+        <div class="mt-3"><a href="/account/orders" class="btn btn-secondary btn-sm">Pesanan Saya</a></div>
+    </div></div></div>
+        <div class="col-8"><div class="card"><div class="card-header">Edit Profil</div><div class="card-body">
+            <div class="row"><div class="col-6"><label class="form-label">Nama Lengkap</label><input class="form-input" @bind="_eName" /></div><div class="col-6"><label class="form-label">Email</label><input class="form-input" @bind="_eEmail" /></div></div>
+            <div class="row mt-2"><div class="col-6"><label class="form-label">Telepon</label><input class="form-input" @bind="_ePhone" /></div><div class="col-6"><label class="form-label">Tanggal Lahir</label><input class="form-input" @bind="_eDob" placeholder="yyyy-MM-dd" /></div></div>
+            <div class="mt-2"><label class="form-label">Alamat</label><textarea class="form-input" @bind="_eAddr" rows="2"></textarea></div>
+            <div class="row mt-2"><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_eCity" /></div><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_eProv" /></div><div class="col-4"><label class="form-label">Kode Pos</label><input class="form-input" @bind="_ePost" /></div></div>
+            <button class="btn btn-primary mt-3" @onclick="SaveProfile" disabled="@_saving">@(_saving?"Menyimpan...":"Simpan")</button>
+            <button class="btn btn-secondary mt-3 ml-2" @onclick="()=>_showPwd=!_showPwd">Ubah Password</button>
+            @if(_showPwd){<div class="card mt-3"><div class="card-body"><div class="row"><div class="col-6"><label class="form-label">Password Lama</label><input class="form-input" type="password" @bind="_oldPwd" /></div><div class="col-6"><label class="form-label">Password Baru</label><input class="form-input" type="password" @bind="_newPwd" /></div></div><button class="btn btn-primary mt-2" @onclick="DoPwd">Simpan Password</button></div></div>}
+    </div></div></div></div>
+}
+
+@code {
+    private User? _user; private string _eName="",_eEmail="",_ePhone="",_eAddr="",_eCity="",_eProv="",_ePost="",_eDob="",_msg="",_err=""; private bool _saving,_showPwd; private string _oldPwd="",_newPwd="";
+    private string? _avatarUrl; private bool _avatarUploading; private string _avatarError = "";
+
+    protected override async Task OnInitializedAsync() {
+        var auth=await AuthState.GetAuthenticationStateAsync(); var uid=auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if(!string.IsNullOrEmpty(uid)){
+            _user=await UserMgr.FindByIdAsync(uid);
+            if(_user!=null){
+                _eName=_user.FullName;_eEmail=_user.Email??"";_ePhone=_user.PhoneNumber??"";_eAddr=_user.Address??"";_eCity=_user.City??"";_eProv=_user.Province??"";_ePost=_user.PostalCode??"";_eDob=_user.DateOfBirth?.ToString("yyyy-MM-dd")??"";
+                _avatarUrl = _user.AvatarUrl;
+            }
+        } else Nav.NavigateTo("/account/login?redirect=/account");
+    }
+
+    private async Task SaveProfile(){if(_user==null)return;_saving=true;_err="";_user.FullName=_eName;_user.Email=_eEmail;_user.PhoneNumber=_ePhone;_user.Address=_eAddr;_user.City=_eCity;_user.Province=_eProv;_user.PostalCode=_ePost;if(DateTime.TryParse(_eDob,out var dob))_user.DateOfBirth=dob;var r=await UserMgr.UpdateAsync(_user);if(r.Succeeded)_msg="Profil disimpan!";else _err=string.Join(", ",r.Errors.Select(e=>e.Description));_saving=false;}
+    private async Task DoPwd(){if(_user==null||string.IsNullOrEmpty(_oldPwd)||string.IsNullOrEmpty(_newPwd)){_err="Isi semua field.";return;}var r=await UserMgr.ChangePasswordAsync(_user,_oldPwd,_newPwd);if(r.Succeeded){_msg="Password berhasil diubah!";_showPwd=false;}else _err=string.Join(", ",r.Errors.Select(e=>e.Description));}
+
+    private async Task HandleAvatarUpload(InputFileChangeEventArgs e)
+    {
+        if (_user == null) return;
+        var file = e.File;
+        if (file == null) return;
+
+        _avatarError = "";
+        _avatarUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (!file.ContentType.StartsWith("image/"))
+            {
+                _avatarError = "File harus berupa gambar.";
+                return;
+            }
+
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+            ms.Position = 0;
+
+            var storage = StorageFactory.GetStorageService();
+            var storedName = await storage.UploadAsync(file.Name, ms, file.ContentType);
+            var publicUrl = await storage.GetPublicUrlAsync(storedName);
+
+            _user.AvatarUrl = publicUrl;
+            var result = await UserMgr.UpdateAsync(_user);
+            if (result.Succeeded)
+            {
+                _avatarUrl = publicUrl;
+                _msg = "Foto profil berhasil diperbarui!";
+            }
+            else
+            {
+                _avatarError = string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            _avatarError = "Upload gagal: " + ex.Message;
+        }
+        finally
+        {
+            _avatarUploading = false;
+        }
+    }
+}

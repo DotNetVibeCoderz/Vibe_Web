@@ -1,0 +1,36 @@
+@page "/account/login"
+
+<div class="auth-container">
+    <h2 class="auth-title">Masuk ke Lapak</h2>
+    <p class="auth-subtitle">Selamat datang kembali! Masuk untuk melanjutkan belanja.</p>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="toast error mb-2">@error</div>
+    }
+
+    <form method="post" action="/api/account/login">
+        <AntiforgeryToken />
+        <input type="hidden" name="Redirect" value="@redirect" />
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" name="Email" type="email" placeholder="nama@email.com" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Password</label>
+            <input class="form-input" name="Password" type="password" placeholder="Min. 8 karakter" />
+        </div>
+        <div class="flex justify-between items-center mb-3">
+            <label><input type="checkbox" name="RememberMe" value="true" /> Ingat saya</label>
+            <a href="/account/forgot-password">Lupa password?</a>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Masuk</button>
+        <div class="auth-divider">atau</div>
+        <button class="btn-google" type="button">Masuk dengan Google (SSO)</button>
+        <p class="text-center mt-3">Belum punya akun? <a href="/account/register">Daftar sekarang</a></p>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? redirect { get; set; }
+    [SupplyParameterFromQuery] private string? error { get; set; }
+}

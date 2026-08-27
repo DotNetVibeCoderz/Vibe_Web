@@ -1,68 +1,546 @@
 @page "/checkout"
 @using Lapak.Models
+@using Lapak.Services.Payment
 @using Lapak.Services.Shipping
 @using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject Lapak.Data.LapakDbContext Db
 @inject IShippingService ShippingSvc
-@inject Lapak.Services.Payment.IPaymentService PaymentSvc
+@inject IPaymentService PaymentSvc
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthState
 
-<div class="page-header"><h1 class="page-title">Checkout</h1></div>
+<PageTitle>Checkout — Lapak</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Checkout</h1>
+    <p class="page-subtitle">@StepLabel</p>
+</div>
+
+@* Progress rail — the steps are a real sequence, so numbering them carries meaning *@
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="order-timeline">
+            @foreach (var (label, index) in Steps.Select((s, i) => (s, i)))
+            {
+                <div class="timeline-step @(index <= _step ? "active" : "")">
+                    <div class="timeline-dot">@(index < _step ? "✓" : (index + 1).ToString())</div>
+                    <div>@label</div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert error mb-3">@_error</div>
+}
+
 @if (_step == 0)
 {
-    <div class="row"><div class="col-8"><div class="card"><div class="card-header">Alamat Pengiriman</div><div class="card-body">
-        <div class="row"><div class="col-6"><label class="form-label">Nama Penerima</label><input class="form-input" @bind="_recipientName" /></div><div class="col-6"><label class="form-label">No. Telepon</label><input class="form-input" @bind="_recipientPhone" /></div></div>
-        <div class="mt-2"><label class="form-label">Alamat Lengkap</label><textarea class="form-input" @bind="_address" rows="2"></textarea></div>
-        <div class="row mt-2"><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_province" /></div><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_city" /></div><div class="col-4"><label class="form-label">Kode Pos</label><input class="form-input" @bind="_postalCode" /></div></div>
-        <div class="mt-2"><label class="form-label">Catatan</label><input class="form-input" @bind="_notes" /></div>
-        <button class="btn btn-primary mt-3" @onclick="NextStep">Lanjut ke Pengiriman</button>
-    </div></div></div><div class="col-4"><div class="card"><div class="card-header">Ringkasan</div><div class="card-body">@foreach(var ci in _cartItems){<div class="flex justify-between mb-1"><span>@ci.Product?.Name x@ci.Quantity</span><span>Rp@((ci.Product!.Price*ci.Quantity).ToString("N0"))</span></div>}<hr/><div class="flex justify-between"><strong>Total</strong><strong style="color:var(--accent);">Rp@(_total.ToString("N0"))</strong></div></div></div></div></div>
+    <div class="row">
+        <div class="col-8">
+            <div class="card">
+                <div class="card-header">Alamat pengiriman</div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6"><label class="form-label">Nama penerima</label><input class="form-input" @bind="_recipientName" /></div>
+                        <div class="col-6"><label class="form-label">No. telepon</label><input class="form-input" @bind="_recipientPhone" /></div>
+                    </div>
+                    <div class="mt-2"><label class="form-label">Alamat lengkap</label><textarea class="form-input" @bind="_address" rows="2"></textarea></div>
+                    <div class="row mt-2">
+                        <div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_province" /></div>
+                        <div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_city" /></div>
+                        <div class="col-4"><label class="form-label">Kode pos</label><input class="form-input" @bind="_postalCode" /></div>
+                    </div>
+                    <div class="mt-2"><label class="form-label">Catatan untuk penjual</label><input class="form-input" @bind="_notes" placeholder="Opsional" /></div>
+                    <button class="btn btn-primary btn-lg mt-3" @onclick="GoToShipping">Lanjut ke pengiriman</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-4">@RenderSummary(false)</div>
+    </div>
 }
 else if (_step == 1)
 {
-    <div class="row"><div class="col-8"><div class="card"><div class="card-header">Pilih Pengiriman</div><div class="card-body">
-        @if (_shippingCosts.Any()) { <div class="mb-2"><label class="form-label">Kurir</label><select class="form-input" @bind="_selectedCourier" @bind:after="FilterCosts"><option value="">Semua Kurir</option>@foreach(var c in _couriers){<option value="@c">@c</option>}</select></div> }
-        @if (_loadingShipping) { <div class="loading-spinner"></div> }
-        else if (!_shippingCosts.Any()) { <p class="text-muted">Memuat ongkos kirim...</p> }
-        else { foreach(var sc in _filteredCosts){ var shipKey = sc.Service+"|"+sc.Courier; var isSel = _selectedShipping == shipKey; <div style="border:2px solid @(isSel?"var(--accent)":"var(--border-color)");border-radius:var(--radius-md);padding:16px;margin-bottom:8px;cursor:pointer;background:@(isSel?"var(--accent-light)":"transparent");" @onclick="()=>_selectedShipping=shipKey"><div class="flex justify-between"><div><strong>@sc.Courier - @sc.Service</strong><br/><small class="text-muted">@sc.Description · @sc.EstimatedDays</small></div><div style="font-weight:700;">Rp@(sc.Cost.ToString("N0"))</div></div></div> } }
-        <button class="btn btn-primary mt-3" disabled="@(string.IsNullOrEmpty(_selectedShipping))" @onclick="NextStep">Lanjut ke Pembayaran</button>
-    </div></div></div><div class="col-4"><div class="card"><div class="card-header">Ringkasan</div><div class="card-body">@foreach(var ci in _cartItems){<div class="flex justify-between mb-1"><span>@ci.Product?.Name x@ci.Quantity</span><span>Rp@((ci.Product!.Price*ci.Quantity).ToString("N0"))</span></div>}<hr/><div class="flex justify-between"><span>Subtotal</span><span>Rp@(_total.ToString("N0"))</span></div>@if(_selectedShippingCost>0){<div class="flex justify-between"><span>Ongkir</span><span>Rp@(_selectedShippingCost.ToString("N0"))</span></div>}<hr/><div class="flex justify-between"><strong>Grand Total</strong><strong style="color:var(--accent);">Rp@((_total+_selectedShippingCost).ToString("N0"))</strong></div></div></div></div></div>
+    <div class="row">
+        <div class="col-8">
+            <div class="card">
+                <div class="card-header">Pilih pengiriman</div>
+                <div class="card-body">
+                    @if (_loadingShipping)
+                    {
+                        <div class="loading-spinner"></div>
+                        <p class="text-center text-muted">Menghitung ongkos kirim…</p>
+                    }
+                    else if (!_shippingCosts.Any())
+                    {
+                        <div class="alert warning">Ongkos kirim tidak bisa dihitung sekarang. Coba muat ulang halaman.</div>
+                    }
+                    else
+                    {
+                        <div class="mb-2">
+                            <label class="form-label">Saring kurir</label>
+                            <select class="form-input" @bind="_selectedCourier" @bind:after="FilterCosts">
+                                <option value="">Semua kurir</option>
+                                @foreach (var c in _shippingCosts.Select(x => x.Courier).Distinct())
+                                {
+                                    <option value="@c">@c</option>
+                                }
+                            </select>
+                        </div>
+
+                        @foreach (var sc in _filteredCosts)
+                        {
+                            var key = ShippingKey(sc);
+                            <button type="button" class="option-row @(_selectedShipping == key ? "selected" : "")" @onclick="() => _selectedShipping = key">
+                                <div class="option-row-main">
+                                    <div class="option-row-title">@sc.Courier · @sc.Service</div>
+                                    <div class="option-row-meta">@sc.Description — estimasi @sc.EstimatedDays</div>
+                                </div>
+                                <div class="option-row-price">Rp@(sc.Cost.ToString("N0"))</div>
+                            </button>
+                        }
+                    }
+
+                    <div class="flex gap-1 mt-3">
+                        <button class="btn btn-secondary" @onclick="() => _step = 0">Kembali</button>
+                        <button class="btn btn-primary btn-lg" disabled="@string.IsNullOrEmpty(_selectedShipping)" @onclick="() => _step = 2">Lanjut ke pembayaran</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-4">@RenderSummary(true)</div>
+    </div>
 }
 else if (_step == 2)
 {
-    var grandTotal = _total + _selectedShippingCost - _voucherDiscount;
-    <div class="row"><div class="col-8"><div class="card"><div class="card-header">Pembayaran</div><div class="card-body">
-        <label class="form-label">Metode Pembayaran</label><select class="form-input mb-3" @bind="_paymentMethod"><option value="bank_transfer">Transfer Bank</option><option value="ewallet">E-Wallet</option></select>
-        @if (_paymentMethod == "bank_transfer") { <label class="form-label">Bank</label><select class="form-input mb-3" @bind="_bankCode"><option value="bca">BCA</option><option value="mandiri">Mandiri</option><option value="bni">BNI</option><option value="bri">BRI</option></select> }
-        @if (_paymentMethod == "ewallet") { <label class="form-label">E-Wallet</label><select class="form-input mb-3" @bind="_bankCode"><option value="gopay">GoPay</option><option value="ovo">OVO</option><option value="dana">DANA</option></select> }
-        <label class="form-label">Kode Voucher</label><input class="form-input mb-3" @bind="_voucherCode" />
-        @if (!string.IsNullOrEmpty(_voucherError)) { <div class="text-danger mb-2">@_voucherError</div> }
-        @if (_voucherDiscount > 0) { <div class="text-success mb-2">Diskon: Rp@(_voucherDiscount.ToString("N0"))</div> }
-        <button class="btn btn-success btn-lg btn-block" @onclick="PlaceOrder" disabled="@_placingOrder">@(_placingOrder?"Memproses...":"Bayar Sekarang - Rp"+grandTotal.ToString("N0"))</button>
-    </div></div></div><div class="col-4"><div class="card"><div class="card-header">Ringkasan Akhir</div><div class="card-body">@foreach(var ci in _cartItems){<div class="flex justify-between mb-1"><span>@ci.Product?.Name x@ci.Quantity</span><span>Rp@((ci.Product!.Price*ci.Quantity).ToString("N0"))</span></div>}<hr/><div class="flex justify-between"><span>Subtotal</span><span>Rp@(_total.ToString("N0"))</span></div><div class="flex justify-between"><span>Ongkir</span><span>Rp@(_selectedShippingCost.ToString("N0"))</span></div>@if(_voucherDiscount>0){<div class="flex justify-between text-success"><span>Diskon</span><span>-Rp@(_voucherDiscount.ToString("N0"))</span></div>}<hr/><div class="flex justify-between"><strong>Grand Total</strong><strong style="color:var(--accent);font-size:1.3rem;">Rp@(grandTotal.ToString("N0"))</strong></div></div></div></div></div>
+    <div class="row">
+        <div class="col-8">
+            <div class="card mb-3">
+                <div class="card-header">Metode pembayaran</div>
+                <div class="card-body">
+                    @if (!_gateways.Any(g => g.IsConfigured))
+                    {
+                        <div class="alert warning mb-3">
+                            Belum ada payment gateway yang aktif di server ini. Pesanan tetap bisa dibuat dan akan
+                            menunggu pembayaran — lengkapi kredensial gateway di <code>appsettings.json</code> untuk mengaktifkannya.
+                        </div>
+                    }
+
+                    <label class="form-label">Penyedia pembayaran</label>
+                    <div class="mb-3">
+                        @foreach (var gateway in _gateways)
+                        {
+                            <button type="button"
+                                    class="option-row @(_selectedGateway == gateway.Name ? "selected" : "")"
+                                    disabled="@(!gateway.IsConfigured)"
+                                    @onclick="() => SelectGateway(gateway.Name)">
+                                <div class="option-row-main">
+                                    <div class="option-row-title">@gateway.DisplayName</div>
+                                    <div class="option-row-meta">
+                                        @if (gateway.IsConfigured)
+                                        {
+                                            @string.Join(" · ", gateway.Methods.Select(m => m.Group).Distinct())
+                                        }
+                                        else
+                                        {
+                                            <text>Belum dikonfigurasi di server</text>
+                                        }
+                                    </div>
+                                </div>
+                            </button>
+                        }
+                    </div>
+
+                    @if (_methods.Any())
+                    {
+                        <label class="form-label">Pilih cara bayar</label>
+                        <select class="form-input mb-3" @bind="_selectedMethod">
+                            @foreach (var group in _methods.GroupBy(m => m.Group))
+                            {
+                                <optgroup label="@group.Key">
+                                    @foreach (var m in group)
+                                    {
+                                        <option value="@m.Code">@m.Label</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Kode voucher</div>
+                <div class="card-body">
+                    <div class="flex gap-1 items-end">
+                        <div class="flex-1">
+                            <label class="form-label">Punya kode?</label>
+                            <input class="form-input" @bind="_voucherCode" placeholder="Contoh: HEMAT10" />
+                        </div>
+                        <button class="btn btn-secondary" @onclick="ApplyVoucher" disabled="@_checkingVoucher">Pakai</button>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_voucherError))
+                    {
+                        <div class="alert error mt-2">@_voucherError</div>
+                    }
+                    @if (_appliedVoucher != null)
+                    {
+                        <div class="alert success mt-2">
+                            Voucher <strong>@_appliedVoucher.Code</strong> dipakai — hemat Rp@(_voucherDiscount.ToString("N0")).
+                        </div>
+                    }
+
+                    <button class="btn btn-primary btn-lg btn-block mt-3" @onclick="PlaceOrder" disabled="@_placingOrder">
+                        @(_placingOrder ? "Memproses…" : $"Bayar sekarang — Rp{GrandTotal:N0}")
+                    </button>
+                    <button class="btn btn-ghost btn-block mt-1" @onclick="() => _step = 1" disabled="@_placingOrder">Kembali ke pengiriman</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-4">@RenderSummary(true)</div>
+    </div>
 }
 else if (_step == 3)
 {
-    <div class="text-center" style="padding:60px 0;"><div style="font-size:6rem;">🎉</div><h2>Pesanan Berhasil!</h2><p>Nomor Pesanan: <strong>@_orderNumber</strong></p>
-    @if (!string.IsNullOrEmpty(_vaNumber)) { <div class="card mt-3" style="max-width:400px;margin:16px auto;"><div class="card-body"><strong>Virtual Account</strong><br/><span style="font-size:2rem;letter-spacing:4px;">@_vaNumber</span></div></div> }
-    <div class="mt-3"><a href="/account/orders" class="btn btn-secondary">Pesanan Saya</a><a href="/products" class="btn btn-primary ml-2">Belanja Lagi</a></div></div>
+    <div class="card">
+        <div class="card-body text-center" style="padding: 44px 24px;">
+            <div style="font-size:3rem;" aria-hidden="true">🎉</div>
+            <h2 class="mt-2">Pesanan dibuat</h2>
+            <p class="text-muted">Nomor pesanan <strong>@_orderNumber</strong></p>
+
+            @if (!string.IsNullOrEmpty(_paymentUrl))
+            {
+                <p class="mt-3">@_paymentInstruction</p>
+                <a href="@_paymentUrl" class="btn btn-primary btn-lg mt-2" target="_blank" rel="noopener">Lanjutkan pembayaran</a>
+            }
+            else if (!string.IsNullOrEmpty(_vaNumber))
+            {
+                <div class="card mt-3" style="max-width:420px;margin:16px auto;">
+                    <div class="card-body">
+                        <div class="form-label">Nomor Virtual Account</div>
+                        <div class="text-price" style="font-size:1.8rem;letter-spacing:0.12em;">@_vaNumber</div>
+                        <p class="text-sm text-muted mt-1">@_paymentInstruction</p>
+                    </div>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(_paymentWarning))
+            {
+                <div class="alert warning mt-3" style="max-width:520px;margin:16px auto;text-align:left;">
+                    @_paymentWarning
+                </div>
+            }
+
+            <div class="flex gap-1 justify-center mt-3">
+                <a href="/account/orders/@_orderNumber" class="btn btn-secondary">Lihat pesanan</a>
+                <a href="/products" class="btn btn-primary">Belanja lagi</a>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
-    private List<CartItem> _cartItems=new(); private decimal _total; private int _step; private Guid _userId;
-    private string _recipientName="",_recipientPhone="",_address="",_city="",_province="",_postalCode="",_notes="";
-    private List<ShippingCostResult> _shippingCosts=new(),_filteredCosts=new();
-    private string[] _couriers=new[]{"JNE","J&T","SiCepat","Pos Indonesia"};
-    private string _selectedCourier="",_selectedShipping=""; private bool _loadingShipping=true;
-    private decimal _selectedShippingCost=>_filteredCosts.FirstOrDefault(c=>c.Service+"|"+c.Courier==_selectedShipping)?.Cost??0;
-    private string _paymentMethod="bank_transfer",_bankCode="bca",_voucherCode="",_voucherError="";
-    private decimal _voucherDiscount; private bool _placingOrder;
-    private string _orderNumber="",_vaNumber="";
+    private static readonly string[] Steps = { "Alamat", "Pengiriman", "Pembayaran", "Selesai" };
 
-    protected override async Task OnInitializedAsync(){var a=await AuthState.GetAuthenticationStateAsync();var u=a.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;if(string.IsNullOrEmpty(u)){Nav.NavigateTo("/account/login?redirect=/checkout");return;}_userId=Guid.Parse(u);_cartItems=Db.CartItems.Include(c=>c.Product).ThenInclude(p=>p.Store).Where(c=>c.UserId==_userId).ToList();if(!_cartItems.Any())Nav.NavigateTo("/cart");_total=_cartItems.Sum(c=>c.Product.Price*c.Quantity);var usr=Db.Users.Find(_userId);if(usr!=null){_recipientName=usr.FullName;_recipientPhone=usr.PhoneNumber??"";_address=usr.Address??"";_city=usr.City??"";_province=usr.Province??"";_postalCode=usr.PostalCode??"";}}
-    private async Task NextStep(){if(_step==0){_step=1;await LoadShipping();}else if(_step==1)_step=2;}
-    private async Task LoadShipping(){_loadingShipping=true;StateHasChanged();try{var w=(int)_cartItems.Sum(c=>c.Product.WeightInGrams*c.Quantity);_shippingCosts=await ShippingSvc.GetShippingCostsAsync(new ShippingCostRequest{OriginCityId="152",DestinationCityId="23",WeightInGrams=Math.Max(w,1000)});_filteredCosts=_shippingCosts;}catch{_shippingCosts=new();}_loadingShipping=false;}
-    private void FilterCosts(){_filteredCosts=string.IsNullOrEmpty(_selectedCourier)?_shippingCosts:_shippingCosts.Where(c=>c.Courier==_selectedCourier).ToList();}
-    private async Task PlaceOrder(){if(_placingOrder)return;_placingOrder=true;StateHasChanged();try{if(!string.IsNullOrEmpty(_voucherCode)){var v=Db.Vouchers.FirstOrDefault(x=>x.Code==_voucherCode&&x.IsActive&&x.EndDate>=DateTime.UtcNow&&x.CurrentUsage<x.MaxUsage);if(v==null)_voucherError="Voucher tidak valid.";else if(v.MinPurchase.HasValue&&_total<v.MinPurchase.Value)_voucherError="Min belanja Rp"+v.MinPurchase.Value.ToString("N0");else{_voucherDiscount=v.Type=="Percentage"?Math.Min(_total*v.Value/100,v.MaxDiscount??decimal.MaxValue):Math.Min(v.Value,_total);v.CurrentUsage++;}}var parts=_selectedShipping.Split('|');var on=new Random().Next(1000,9999);var order=new Order{OrderNumber="LPK-"+DateTime.UtcNow.ToString("yyMMddHHmm")+"-"+on,Status="Pending",PaymentStatus="Unpaid",SubTotal=_total,ShippingCost=_selectedShippingCost,Discount=_voucherDiscount,GrandTotal=_total+_selectedShippingCost-_voucherDiscount,ShippingCourier=parts.Length>1?parts[1]:"",ShippingService=parts.Length>0?parts[0]:"",ShippingAddress=_address,ShippingCity=_city,ShippingProvince=_province,ShippingPostalCode=_postalCode,ShippingNotes=_notes,PaymentMethod=_paymentMethod+"_"+_bankCode,UserId=_userId,StoreId=_cartItems.First().Product.StoreId,CreatedAt=DateTime.UtcNow};Db.Orders.Add(order);foreach(var ci in _cartItems)Db.OrderItems.Add(new OrderItem{OrderId=order.Id,ProductId=ci.ProductId,Quantity=ci.Quantity,Price=ci.Product.Price,SubTotal=ci.Product.Price*ci.Quantity});Db.CartItems.RemoveRange(_cartItems);Db.SaveChanges();try{var pr=await PaymentSvc.CreatePaymentAsync(new Lapak.Services.Payment.PaymentRequest{OrderId=order.Id,PaymentMethod=_paymentMethod,BankCode=_bankCode});if(pr.Success)_vaNumber=pr.VaNumber;}catch{}_orderNumber=order.OrderNumber;_step=3;}catch(Exception ex){_voucherError=ex.Message;}finally{_placingOrder=false;}}
+    private List<CartItem> _cartItems = new();
+    private decimal _subTotal;
+    private int _step;
+    private Guid _userId;
+    private string _error = "";
+
+    // Address
+    private string _recipientName = "", _recipientPhone = "", _address = "", _city = "", _province = "", _postalCode = "", _notes = "";
+
+    // Shipping
+    private List<ShippingCostResult> _shippingCosts = new();
+    private List<ShippingCostResult> _filteredCosts = new();
+    private string _selectedCourier = "", _selectedShipping = "";
+    private bool _loadingShipping = true;
+
+    // Payment
+    private IReadOnlyList<GatewayInfo> _gateways = Array.Empty<GatewayInfo>();
+    private IReadOnlyList<PaymentMethodOption> _methods = Array.Empty<PaymentMethodOption>();
+    private string _selectedGateway = "";
+    private string _selectedMethod = "";
+
+    // Voucher
+    private string _voucherCode = "", _voucherError = "";
+    private Voucher? _appliedVoucher;
+    private decimal _voucherDiscount;
+    private bool _checkingVoucher;
+
+    // Result
+    private bool _placingOrder;
+    private string _orderNumber = "", _vaNumber = "", _paymentUrl = "", _paymentInstruction = "", _paymentWarning = "";
+
+    private string StepLabel => _step switch
+    {
+        0 => "Ke mana pesanan ini dikirim?",
+        1 => "Pilih kurir dan layanan pengiriman.",
+        2 => "Pilih cara bayar, lalu selesaikan pesanan.",
+        _ => "Pesanan kamu sudah masuk."
+    };
+
+    private decimal ShippingCost => _filteredCosts.Concat(_shippingCosts)
+        .FirstOrDefault(c => ShippingKey(c) == _selectedShipping)?.Cost ?? 0;
+
+    private decimal GrandTotal => Math.Max(0, _subTotal + ShippingCost - _voucherDiscount);
+
+    private static string ShippingKey(ShippingCostResult c) => $"{c.Courier}|{c.Service}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(uid, out _userId))
+        {
+            Nav.NavigateTo("/account/login?redirect=/checkout");
+            return;
+        }
+
+        _cartItems = await Db.CartItems
+            .Include(c => c.Product).ThenInclude(p => p.Store)
+            .Where(c => c.UserId == _userId)
+            .ToListAsync();
+
+        if (!_cartItems.Any())
+        {
+            Nav.NavigateTo("/cart");
+            return;
+        }
+
+        _subTotal = _cartItems.Sum(c => c.Product.Price * c.Quantity);
+
+        var user = await Db.Users.FindAsync(_userId);
+        if (user != null)
+        {
+            _recipientName = user.FullName;
+            _recipientPhone = user.PhoneNumber ?? "";
+            _address = user.Address ?? "";
+            _city = user.City ?? "";
+            _province = user.Province ?? "";
+            _postalCode = user.PostalCode ?? "";
+        }
+
+        _gateways = PaymentSvc.GetAvailableGateways();
+        var firstUsable = _gateways.FirstOrDefault(g => g.IsConfigured) ?? _gateways.FirstOrDefault();
+        if (firstUsable != null) SelectGateway(firstUsable.Name);
+    }
+
+    private void SelectGateway(string name)
+    {
+        _selectedGateway = name;
+        _methods = PaymentSvc.GetMethods(name);
+        _selectedMethod = _methods.FirstOrDefault()?.Code ?? "";
+    }
+
+    private async Task GoToShipping()
+    {
+        _error = "";
+        if (string.IsNullOrWhiteSpace(_recipientName) || string.IsNullOrWhiteSpace(_address) || string.IsNullOrWhiteSpace(_city))
+        {
+            _error = "Nama penerima, alamat, dan kota harus diisi.";
+            return;
+        }
+
+        _step = 1;
+        await LoadShipping();
+    }
+
+    private async Task LoadShipping()
+    {
+        _loadingShipping = true;
+        StateHasChanged();
+        try
+        {
+            var weight = (int)_cartItems.Sum(c => c.Product.WeightInGrams * c.Quantity);
+            _shippingCosts = await ShippingSvc.GetShippingCostsAsync(new ShippingCostRequest
+            {
+                OriginCityId = "152",
+                DestinationCityId = "23",
+                WeightInGrams = Math.Max(weight, 1000)
+            });
+            _filteredCosts = _shippingCosts;
+        }
+        catch (Exception ex)
+        {
+            _shippingCosts = new();
+            _filteredCosts = new();
+            _error = "Gagal memuat ongkos kirim: " + ex.Message;
+        }
+        finally
+        {
+            _loadingShipping = false;
+        }
+    }
+
+    private void FilterCosts() =>
+        _filteredCosts = string.IsNullOrEmpty(_selectedCourier)
+            ? _shippingCosts
+            : _shippingCosts.Where(c => c.Courier == _selectedCourier).ToList();
+
+    /// <summary>
+    /// Validates and previews the voucher before the order exists, so an invalid
+    /// code can never slip through into a placed order.
+    /// </summary>
+    private async Task ApplyVoucher()
+    {
+        _voucherError = "";
+        _appliedVoucher = null;
+        _voucherDiscount = 0;
+
+        var code = _voucherCode.Trim();
+        if (string.IsNullOrEmpty(code)) return;
+
+        _checkingVoucher = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var voucher = await Db.Vouchers.FirstOrDefaultAsync(v =>
+                v.Code == code && v.IsActive && v.StartDate <= now && v.EndDate >= now);
+
+            if (voucher == null) { _voucherError = "Kode voucher tidak ditemukan atau sudah tidak berlaku."; return; }
+            if (voucher.CurrentUsage >= voucher.MaxUsage) { _voucherError = "Kuota voucher ini sudah habis."; return; }
+            if (voucher.MinPurchase.HasValue && _subTotal < voucher.MinPurchase.Value)
+            {
+                _voucherError = $"Voucher ini butuh minimal belanja Rp{voucher.MinPurchase.Value:N0}.";
+                return;
+            }
+
+            _voucherDiscount = voucher.Type switch
+            {
+                "Percentage" => Math.Min(_subTotal * voucher.Value / 100, voucher.MaxDiscount ?? decimal.MaxValue),
+                "Shipping" => Math.Min(ShippingCost, voucher.MaxDiscount ?? ShippingCost),
+                _ => Math.Min(voucher.Value, _subTotal)
+            };
+            _appliedVoucher = voucher;
+        }
+        finally
+        {
+            _checkingVoucher = false;
+        }
+    }
+
+    private async Task PlaceOrder()
+    {
+        if (_placingOrder) return;
+        _placingOrder = true;
+        _error = "";
+        StateHasChanged();
+
+        try
+        {
+            var parts = _selectedShipping.Split('|');
+            var order = new Order
+            {
+                OrderNumber = $"LPK-{DateTime.UtcNow:yyMMddHHmmss}-{Random.Shared.Next(100, 999)}",
+                Status = "Pending",
+                PaymentStatus = "Unpaid",
+                SubTotal = _subTotal,
+                ShippingCost = ShippingCost,
+                Discount = _voucherDiscount,
+                GrandTotal = GrandTotal,
+                ShippingCourier = parts.Length > 0 ? parts[0] : "",
+                ShippingService = parts.Length > 1 ? parts[1] : "",
+                ShippingAddress = _address,
+                ShippingCity = _city,
+                ShippingProvince = _province,
+                ShippingPostalCode = _postalCode,
+                ShippingNotes = _notes,
+                PaymentMethod = _selectedMethod,
+                PaymentGateway = _selectedGateway,
+                VoucherId = _appliedVoucher?.Id,
+                UserId = _userId,
+                StoreId = _cartItems.First().Product.StoreId
+            };
+
+            Db.Orders.Add(order);
+
+            foreach (var item in _cartItems)
+            {
+                Db.OrderItems.Add(new OrderItem
+                {
+                    OrderId = order.Id,
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    Price = item.Product.Price,
+                    SubTotal = item.Product.Price * item.Quantity
+                });
+
+                // Reserve the stock the buyer just committed to.
+                item.Product.Stock = Math.Max(0, item.Product.Stock - item.Quantity);
+                item.Product.SoldCount += item.Quantity;
+            }
+
+            if (_appliedVoucher != null) _appliedVoucher.CurrentUsage++;
+
+            Db.CartItems.RemoveRange(_cartItems);
+            await Db.SaveChangesAsync();
+
+            _orderNumber = order.OrderNumber;
+            _step = 3;
+
+            // The order exists either way; a gateway failure only means the buyer
+            // has to pay from the order page instead of right now.
+            var payment = await PaymentSvc.CreatePaymentAsync(new PaymentRequest
+            {
+                OrderId = order.Id,
+                Gateway = _selectedGateway,
+                PaymentMethod = _selectedMethod,
+                BankCode = _selectedMethod.Contains(':') ? _selectedMethod.Split(':')[1] : _selectedMethod
+            });
+
+            if (payment.Success)
+            {
+                _vaNumber = payment.VaNumber;
+                _paymentUrl = payment.PaymentUrl;
+                _paymentInstruction = payment.Instruction;
+            }
+            else
+            {
+                _paymentWarning = $"Pesanan sudah tersimpan, tapi pembayaran belum bisa dimulai: {payment.ErrorMessage} " +
+                                  "Kamu bisa melanjutkan pembayaran dari halaman pesanan.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = "Pesanan gagal dibuat: " + ex.Message;
+            _step = 2;
+        }
+        finally
+        {
+            _placingOrder = false;
+        }
+    }
+
+    private RenderFragment RenderSummary(bool withShipping) => @<div class="card">
+        <div class="card-header">Ringkasan</div>
+        <div class="card-body">
+            @foreach (var ci in _cartItems)
+            {
+                <div class="flex justify-between mb-1 text-sm">
+                    <span>@ci.Product?.Name <span class="text-muted">×@ci.Quantity</span></span>
+                    <span class="tabular">Rp@((ci.Product!.Price * ci.Quantity).ToString("N0"))</span>
+                </div>
+            }
+            <hr class="divider" />
+            <div class="flex justify-between mb-1"><span>Subtotal</span><span class="tabular">Rp@(_subTotal.ToString("N0"))</span></div>
+            @if (withShipping)
+            {
+                <div class="flex justify-between mb-1"><span>Ongkos kirim</span><span class="tabular">Rp@(ShippingCost.ToString("N0"))</span></div>
+            }
+            @if (_voucherDiscount > 0)
+            {
+                <div class="flex justify-between mb-1 text-success"><span>Diskon voucher</span><span class="tabular">−Rp@(_voucherDiscount.ToString("N0"))</span></div>
+            }
+            <hr class="divider" />
+            <div class="flex justify-between items-center">
+                <strong>Total</strong>
+                <span class="text-price" style="font-size:1.25rem;">Rp@(GrandTotal.ToString("N0"))</span>
+            </div>
+        </div>
+    </div>;
 }

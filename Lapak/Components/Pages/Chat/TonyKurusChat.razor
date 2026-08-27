@@ -7,45 +7,44 @@
 @inject ISkChatService SkChatService
 @inject IOptions<AiConfig> AiConfig
 @inject StorageServiceFactory StorageFactory
-@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
 
-@* 🤖 Tony Kurus - Shopping Assistant AI with Semantic Kernel *@
+<PageTitle>Tony Kurus — asisten belanja Lapak</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">🤖 Tony Kurus</h1>
-    <p class="page-subtitle">Asisten belanja AI dengan Semantic Kernel - Bisa cari produk, cek promo, rekomendasi, dan banyak lagi!</p>
+    <h1 class="page-title">Tony Kurus</h1>
+    <p class="page-subtitle">Asisten belanja yang membaca katalog Lapak langsung — produk, toko, promo, dan harga terkini.</p>
 </div>
 
 <div class="chat-container">
     <div class="chat-header">
-        <div class="chat-avatar" style="background: var(--accent-light);">🤖</div>
-        <div>
+        <div class="chat-avatar weave-tile" style="--weave-hue: 212;" aria-hidden="true">🤖</div>
+        <div class="flex-1">
             <div class="chat-bot-name">Tony Kurus</div>
             <div class="chat-bot-status">
-                @if (_isThinking) { <span>🧠 Berpikir & menggunakan tools...</span> }
-                else { <span>🟢 Online - Powered by Semantic Kernel</span> }
+                @if (_isThinking)
+                {
+                    <span>Sedang mencari di katalog…</span>
+                }
+                else
+                {
+                    <span class="text-success">● Online</span>
+                    <span>· @_messages.Count pesan</span>
+                }
             </div>
         </div>
-        <div style="margin-left: auto; font-size: 0.8rem; color: var(--text-muted);">
-            @_messages.Count pesan
-        </div>
+        @if (_messages.Any())
+        {
+            <button class="btn btn-sm btn-ghost" @onclick="ClearChat">Mulai baru</button>
+        }
     </div>
 
     <div class="chat-messages" id="tony-messages">
         <div class="chat-message bot">
             <div class="chat-message-bubble">
-                <strong>Halo! 👋 Aku Tony Kurus, asisten belanja AI-mu di Lapak! 🛍️</strong><br/><br/>
-                Aku sekarang didukung <strong>Semantic Kernel</strong> dan punya banyak tools keren:
-                <ul style="margin: 8px 0 0 20px;">
-                    <li>🔍 <strong>search_products</strong> - Cari produk real-time dari database</li>
-                    <li>🏪 <strong>search_stores</strong> - Cari toko terbaik</li>
-                    <li>📦 <strong>get_product_detail</strong> - Detail lengkap produk</li>
-                    <li>🎫 <strong>get_promos</strong> - Cek promo & voucher aktif</li>
-                    <li>🕐 <strong>get_current_time</strong> - Cek waktu saat ini</li>
-                    <li>🧮 <strong>calculate</strong> - Kalkulasi matematika</li>
-                    <li>🔍 <strong>search_internet</strong> - Cari info di internet</li>
-                </ul>
-                <br/>Bisa juga upload gambar produk buat aku analisis! Coba aja! 😄
+                <strong>Halo! Aku Tony Kurus 👋</strong><br />
+                Sebutkan barang yang kamu cari — aku carikan langsung dari katalog Lapak, lengkap dengan harga,
+                rating, dan tokonya. Bisa juga tanya promo yang sedang jalan, atau kirim foto barang yang mirip.
             </div>
         </div>
 
@@ -53,22 +52,15 @@
         {
             <div class="chat-message @(msg.IsUser ? "user" : "bot")">
                 <div class="chat-message-bubble">
-                    @if (!msg.IsUser && !string.IsNullOrEmpty(msg.ToolInfo))
-                    {
-                        <details style="margin-bottom: 6px; font-size: 0.8rem;">
-                            <summary style="color: var(--accent); cursor: pointer;">🔧 Tools dipakai</summary>
-                            <pre style="background: var(--bg-tertiary); padding: 8px; border-radius: 4px; margin-top: 4px; white-space: pre-wrap; font-size: 0.75rem;">@msg.ToolInfo</pre>
-                        </details>
-                    }
                     @if (msg.HasImage)
                     {
-                        <a href="@msg.ImageUrl" target="_blank">
-                            <img src="@msg.ImageUrl" style="max-width: 200px; border-radius: 8px; margin-bottom: 8px;" alt="Uploaded image" />
+                        <a href="@msg.ImageUrl" target="_blank" rel="noopener">
+                            <img src="@msg.ImageUrl" class="chat-image" alt="Gambar yang diunggah" />
                         </a>
                     }
                     @((MarkupString)msg.Content)
                 </div>
-                <small class="text-muted" style="font-size: 0.7rem;">@msg.Timestamp.ToString("HH:mm")</small>
+                <span class="chat-message-time">@msg.Timestamp.ToString("HH:mm")</span>
             </div>
         }
 
@@ -77,46 +69,46 @@
             <div class="chat-message bot">
                 <div class="chat-message-bubble">
                     <div class="typing-indicator">
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
                     </div>
-                    <small style="display: block; margin-top: 4px; font-size: 0.7rem; color: var(--text-muted);">⚡ Menjalankan tools...</small>
                 </div>
             </div>
         }
     </div>
 
     <div class="chat-input-area">
-        <InputFile OnChange="HandleFileUpload" accept="image/*" id="tony-file-input">
-            <button class="chat-upload-btn" type="button" title="Upload Gambar" @onclick:preventDefault>
-                📎
-            </button>
-        </InputFile>
+        <InputFile OnChange="HandleFileUpload" accept="image/*" id="tony-file" class="visually-hidden-file" />
+        <label for="tony-file" class="chat-upload-btn" title="Kirim gambar">📎</label>
 
-        <textarea class="chat-input" @bind="_currentInput" @onkeydown="HandleKeyDown"
-            placeholder="Coba: 'Cari laptop di bawah 10 juta dengan rating 4+'" rows="1"
-            disabled="@_isThinking"></textarea>
+        <textarea class="chat-input" @bind="_currentInput" @bind:event="oninput" @onkeydown="HandleKeyDown"
+                  placeholder="Contoh: cari headphone di bawah 500 ribu" rows="1" disabled="@_isThinking"
+                  aria-label="Tulis pesan untuk Tony Kurus"></textarea>
 
         <button class="chat-send-btn" @onclick="SendMessage"
-            disabled="@(string.IsNullOrWhiteSpace(_currentInput) || _isThinking)">
-            ➤
-        </button>
+                disabled="@(string.IsNullOrWhiteSpace(_currentInput) || _isThinking)" aria-label="Kirim pesan">➤</button>
     </div>
 
-    @if (_isUploading)
-    {
-        <div style="padding: 8px 20px; background: var(--bg-tertiary); font-size: 0.8rem; color: var(--accent);">
-            📤 Mengupload file... @_uploadProgress%
-        </div>
-    }
-
-    <div style="padding: 8px 20px; background: var(--bg-tertiary); font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
-        <span>Provider: @AiConfig.Value.DefaultProvider</span>
-        <span>Model: @AiConfig.Value.Providers.GetValueOrDefault(AiConfig.Value.DefaultProvider)?.Model</span>
-        <span>SK Tools: 7 kernel functions</span>
+    <div class="chat-quickbar">
+        <span class="chat-quick-label">Coba</span>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Ask("Rekomendasikan produk terlaris minggu ini")'>Produk terlaris</button>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Ask("Promo dan voucher apa yang sedang aktif?")'>Promo aktif</button>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Ask("Cari elektronik di bawah 1 juta")'>Elektronik &lt; 1jt</button>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Ask("Toko mana yang ratingnya paling bagus?")'>Toko terbaik</button>
     </div>
 </div>
+
+@if (!_aiConfigured)
+{
+    <div class="alert warning mt-3">
+        Belum ada API key AI yang terpasang di server, jadi Tony belum bisa menjawab.
+        Isi <code>AI:Providers</code> di <code>appsettings.json</code> untuk mengaktifkannya.
+    </div>
+}
+
+<style>
+    .chat-image { max-width: 220px; border-radius: var(--radius-md); margin-bottom: 8px; display: block; }
+    .visually-hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+</style>
 
 @code {
     private class ChatMsg
@@ -124,18 +116,40 @@
         public bool IsUser { get; set; }
         public string Content { get; set; } = string.Empty;
         public DateTime Timestamp { get; set; } = DateTime.Now;
-        public string ToolInfo { get; set; } = string.Empty;
         public bool HasImage { get; set; }
         public string? ImageUrl { get; set; }
     }
 
-    private List<ChatMsg> _messages = new();
+    private readonly List<ChatMsg> _messages = new();
     private string _currentInput = string.Empty;
-    private bool _isThinking = false;
-    private bool _isUploading = false;
-    private int _uploadProgress = 0;
-    private string? _pendingImageUrl = null;
-    private string? _pendingImageName = null;
+    private bool _isThinking;
+    private string? _pendingAttachmentUrl;
+    private bool _aiConfigured;
+    private int _renderedCount;
+
+    protected override void OnInitialized() =>
+        _aiConfigured = AiConfig.Value.Providers.Values.Any(p => !string.IsNullOrWhiteSpace(p.ApiKey));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keep the newest message in view without yanking the scroll on every keystroke.
+        if (_messages.Count == _renderedCount && !firstRender) return;
+        _renderedCount = _messages.Count;
+        try { await JS.InvokeVoidAsync("lapak.scrollToBottom", "tony-messages"); }
+        catch (JSException) { /* prerender */ }
+    }
+
+    private async Task Ask(string prompt)
+    {
+        _currentInput = prompt;
+        await SendMessage();
+    }
+
+    private void ClearChat()
+    {
+        _messages.Clear();
+        _pendingAttachmentUrl = null;
+    }
 
     private async Task SendMessage()
     {
@@ -144,55 +158,52 @@
         var userMessage = _currentInput.Trim();
         _currentInput = string.Empty;
 
-        var msg = new ChatMsg { IsUser = true, Content = FormatMessage(userMessage), Timestamp = DateTime.Now };
-
-        if (_pendingImageUrl != null)
+        var outgoing = new ChatMsg { IsUser = true, Content = FormatMessage(userMessage) };
+        if (_pendingAttachmentUrl != null)
         {
-            msg.HasImage = true;
-            msg.ImageUrl = _pendingImageUrl;
-            msg.Content = "🖼️ " + (_pendingImageName ?? "Gambar") + "\n" + msg.Content;
+            outgoing.HasImage = true;
+            outgoing.ImageUrl = _pendingAttachmentUrl;
         }
+        _messages.Add(outgoing);
 
-        _messages.Add(msg);
         _isThinking = true;
         StateHasChanged();
 
         try
         {
-            // Build history as simple role-content pairs
             var history = _messages
-                .Where(m => m.Content != null)
-                .TakeLast(12)
+                .SkipLast(1)
+                .TakeLast(10)
                 .Select(m => new Microsoft.SemanticKernel.ChatMessageContent(
-                    m.IsUser ? AuthorRole.User : AuthorRole.Assistant, m.Content))
+                    m.IsUser ? AuthorRole.User : AuthorRole.Assistant, StripHtml(m.Content)))
                 .ToList();
 
-            // Use SK streaming with optional image URL
-            var fullResponseBuilder = new System.Text.StringBuilder();
-            var currentAssistantMsg = new ChatMsg { IsUser = false, Timestamp = DateTime.Now };
-            _messages.Add(currentAssistantMsg);
+            var reply = new ChatMsg { IsUser = false };
+            _messages.Add(reply);
 
-            await foreach (var token in SkChatService.ChatStreamAsync("TonyKurus", userMessage, history, _pendingImageUrl))
+            var builder = new System.Text.StringBuilder();
+            await foreach (var token in SkChatService.ChatStreamAsync("TonyKurus", userMessage, history, _pendingAttachmentUrl))
             {
-                fullResponseBuilder.Append(token);
-                currentAssistantMsg.Content = FormatMessage(fullResponseBuilder.ToString());
+                builder.Append(token);
+                reply.Content = FormatMessage(builder.ToString());
                 StateHasChanged();
             }
+
+            if (builder.Length == 0)
+                reply.Content = "Maaf, aku belum bisa menjawab sekarang. Coba lagi sebentar lagi ya.";
         }
         catch (Exception ex)
         {
             _messages.Add(new ChatMsg
             {
                 IsUser = false,
-                Content = "❌ Maaf, ada kendala: " + ex.Message + ". Silakan coba lagi nanti ya! 🙏",
-                Timestamp = DateTime.Now
+                Content = FormatMessage("Ada kendala teknis: " + ex.Message + ". Coba lagi sebentar lagi ya.")
             });
         }
         finally
         {
             _isThinking = false;
-            _pendingImageUrl = null;
-            _pendingImageName = null;
+            _pendingAttachmentUrl = null;
         }
     }
 
@@ -201,56 +212,46 @@
         var file = e.File;
         if (file == null) return;
 
-        _isUploading = true;
-        StateHasChanged();
-
         try
         {
+            if (!file.ContentType.StartsWith("image/"))
+            {
+                _messages.Add(new ChatMsg { IsUser = false, Content = "File itu bukan gambar. Kirim foto produknya ya." });
+                return;
+            }
+
             using var ms = new MemoryStream();
             await file.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
             ms.Position = 0;
 
             var storage = StorageFactory.GetStorageService();
             var storedName = await storage.UploadAsync(file.Name, ms, file.ContentType);
-            var publicUrl = await storage.GetPublicUrlAsync(storedName);
-
-            _pendingImageUrl = publicUrl;
-            _pendingImageName = file.Name;
-            _uploadProgress = 100;
+            _pendingAttachmentUrl = await storage.GetPublicUrlAsync(storedName);
 
             _messages.Add(new ChatMsg
             {
                 IsUser = false,
-                Content = "📸 Gambar **" + file.Name + "** (" + (file.Size / 1024) + "KB) berhasil diupload! Silakan ketik pertanyaanmu tentang gambar ini. 🖼️",
-                Timestamp = DateTime.Now,
+                Content = $"Gambar <strong>{System.Net.WebUtility.HtmlEncode(file.Name)}</strong> siap dikirim. Tulis pertanyaanmu soal gambar ini.",
                 HasImage = true,
-                ImageUrl = publicUrl
+                ImageUrl = _pendingAttachmentUrl
             });
         }
         catch (Exception ex)
         {
-            _messages.Add(new ChatMsg
-            {
-                IsUser = false,
-                Content = "❌ Upload gagal: " + ex.Message,
-                Timestamp = DateTime.Now
-            });
-        }
-        finally
-        {
-            _isUploading = false;
-            _uploadProgress = 0;
+            _messages.Add(new ChatMsg { IsUser = false, Content = "Gagal mengunggah gambar: " + System.Net.WebUtility.HtmlEncode(ex.Message) });
         }
     }
 
-    private string FormatMessage(string msg)
+    /// <summary>Escapes first, then re-adds the small subset of formatting we allow.</summary>
+    private static string FormatMessage(string message)
     {
-        msg = System.Net.WebUtility.HtmlEncode(msg);
-        msg = msg.Replace("\n", "<br/>");
-        msg = System.Text.RegularExpressions.Regex.Replace(msg, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
-        msg = System.Text.RegularExpressions.Regex.Replace(msg, @"`([^`]+)`", "<code>$1</code>");
-        return msg;
+        var encoded = System.Net.WebUtility.HtmlEncode(message);
+        encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        return encoded.Replace("\n", "<br/>");
     }
+
+    private static string StripHtml(string html) =>
+        System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(html, "<.*?>", " "));
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {

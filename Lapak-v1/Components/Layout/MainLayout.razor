@@ -1,0 +1,76 @@
+@inherits LayoutComponentBase
+@using Lapak.Models
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
+
+@code {
+    private bool _isDarkMode = false;
+    private string ThemeClass => _isDarkMode ? "dark-theme" : "";
+    private string ThemeIcon => _isDarkMode ? "☀️" : "🌙";
+    private bool _sidebarCollapsed = false;
+    private string SidebarClass => _sidebarCollapsed ? "sidebar-collapsed" : "";
+    private int _cartCount = 0;
+    private bool _isAuthenticated = false;
+    private string _searchText = "";
+
+    private void ToggleTheme() => _isDarkMode = !_isDarkMode;
+    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+
+    private void DoSearch()
+    {
+        if (!string.IsNullOrWhiteSpace(_searchText))
+            Navigation.NavigateTo("/products?q=" + Uri.EscapeDataString(_searchText.Trim()));
+    }
+
+    private async Task HandleSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") DoSearch();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+    }
+}
+
+<div class="lapak-app @ThemeClass @SidebarClass">
+    <nav class="top-nav">
+        <div class="nav-left">
+            <button class="btn-icon" @onclick="ToggleSidebar" title="Toggle Menu"><span>☰</span></button>
+            <a href="/" class="brand"><span class="brand-icon">🛍️</span><span class="brand-text">Lapak</span></a>
+        </div>
+        <div class="nav-search">
+            <div class="search-box">
+                <input type="text" class="search-input" @bind="_searchText" @onkeydown="HandleSearchKey" placeholder="Cari produk, toko, atau kategori..." />
+                <button class="search-btn" @onclick="DoSearch">🔍</button>
+            </div>
+        </div>
+        <div class="nav-right">
+            <button class="btn-icon" @onclick="ToggleTheme" title="Light/Dark"><span>@ThemeIcon</span></button>
+            <a href="/cart" class="btn-icon cart-btn" title="Keranjang"><span>🛒</span>@if(_cartCount>0){<span class="badge">@_cartCount</span>}</a>
+            <div class="user-menu">
+                @if(_isAuthenticated){<div class="dropdown"><button class="btn-user">👤 Akun ▾</button><div class="dropdown-content"><a href="/account/profile">Profil</a><a href="/account/orders">Pesanan</a><a href="/account/wishlist">Wishlist</a><a href="/account/logout">Logout</a></div></div>}
+                else{<a href="/account/login" class="btn-login">Masuk</a><a href="/account/register" class="btn-register">Daftar</a>}
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <aside class="sidebar">
+            <div class="sidebar-menu">
+                <a href="/" class="sidebar-item @(Navigation.Uri.EndsWith("/")||Navigation.Uri.EndsWith("lapak/")?"active":"")"><span class="sidebar-icon">🏠</span><span class="sidebar-text">Beranda</span></a>
+                <a href="/products" class="sidebar-item"><span class="sidebar-icon">📦</span><span class="sidebar-text">Produk</span></a>
+                <a href="/stores" class="sidebar-item"><span class="sidebar-icon">🏪</span><span class="sidebar-text">Toko</span></a>
+                <a href="/promos" class="sidebar-item"><span class="sidebar-icon">🎫</span><span class="sidebar-text">Promo</span></a>
+                <div class="sidebar-divider"></div><div class="sidebar-label">AI Assistant</div>
+                <a href="/chat/tony-kurus" class="sidebar-item"><span class="sidebar-icon">🤖</span><span class="sidebar-text">Tony Kurus</span></a>
+                <a href="/chat/siti-bohay" class="sidebar-item"><span class="sidebar-icon">💁</span><span class="sidebar-text">Siti Bohay</span></a>
+                @if(_isAuthenticated){<div class="sidebar-divider"></div><a href="/dashboard" class="sidebar-item"><span class="sidebar-icon">📊</span><span class="sidebar-text">Dashboard</span></a>}
+            </div>
+            <div class="sidebar-footer"><span class="version">Lapak v1.0</span></div>
+        </aside>
+        <main class="main-content">@Body</main>
+    </div>
+    <nav class="mobile-nav"><a href="/" class="mobile-nav-item">🏠</a><a href="/products" class="mobile-nav-item">📦</a><a href="/chat/tony-kurus" class="mobile-nav-item">🤖</a><a href="/cart" class="mobile-nav-item">🛒</a><a href="/account" class="mobile-nav-item">👤</a></nav>
+</div>

@@ -1,10 +1,19 @@
 using Lapak.Models;
+using Microsoft.AspNetCore.Identity;
 
 namespace Lapak.Data;
 
 public static class SeedData
 {
     private static readonly Random _rng = new(42);
+
+    /// <summary>
+    /// Password given to every seeded demo account so the sample data is actually
+    /// explorable. Demo data only — real accounts are created through /account/register.
+    /// </summary>
+    public const string DemoPassword = "Lapak2025!";
+
+    private static readonly PasswordHasher<User> _passwordHasher = new();
 
     public static void Initialize(LapakDbContext db)
     {
@@ -56,6 +65,9 @@ public static class SeedData
         for(int i=0;i<userNames.Length;i++){
             var u=new User{UserName=userNames[i].ToLower().Replace(" ",".")+"@lapak.com",Email=userNames[i].ToLower().Replace(" ",".")+"@lapak.com",NormalizedEmail=userNames[i].ToUpper().Replace(" ",".")+"@LAPAK.COM",NormalizedUserName=userNames[i].ToUpper().Replace(" ",".")+"@LAPAK.COM",FullName=userNames[i],PhoneNumber="08"+_rng.Next(100000000,999999999),Address="Jl. Merdeka No. "+_rng.Next(1,200),City=ucs[_rng.Next(8)],Province=ups[_rng.Next(6)],PostalCode=_rng.Next(10000,99999).ToString(),UserType=i==25?"Admin":"Buyer",IsActive=true,EmailConfirmed=true,CreatedAt=DateTime.UtcNow.AddDays(-_rng.Next(1,400)),LastLoginAt=DateTime.UtcNow.AddDays(-_rng.Next(0,7)),Score=_rng.Next(0,1500),TotalTransactions=_rng.Next(0,100),TotalTransactionValue=_rng.Next(0,50000000),LoyaltyPoints=_rng.Next(0,5000)};
             u.Tier=u.Score>=1000?"Platinum":(u.Score>=500?"Gold":(u.Score>=100?"Silver":"Bronze"));
+            u.PasswordHash = _passwordHasher.HashPassword(u, DemoPassword);
+            u.SecurityStamp = Guid.NewGuid().ToString("N");
+            u.ConcurrencyStamp = Guid.NewGuid().ToString("N");
             db.Users.Add(u);users.Add(u);
         }
         for(int i=0;i<stores.Count&&i<users.Count;i++){stores[i].UserId=users[i].Id;users[i].Store=stores[i];users[i].UserType="Seller";}

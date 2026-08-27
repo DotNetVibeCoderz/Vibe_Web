@@ -118,12 +118,21 @@ public class AzureBlobStorageConfig
 public class PaymentGatewayConfig
 {
     public string DefaultGateway { get; set; } = "Midtrans";
+
+    /// <summary>
+    /// Absolute origin the gateways redirect buyers back to. Must be reachable from
+    /// the internet in production — a relative path is rejected by Xendit and Stripe.
+    /// </summary>
+    public string PublicBaseUrl { get; set; } = "https://localhost:7205";
+
     public MidtransConfig Midtrans { get; set; } = new();
     public XenditConfig Xendit { get; set; } = new();
+    public StripeConfig Stripe { get; set; } = new();
 }
 
 public class MidtransConfig
 {
+    public bool Enabled { get; set; } = true;
     public string ServerKey { get; set; } = string.Empty;
     public string ClientKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://api.midtrans.com/v2";
@@ -134,9 +143,25 @@ public class MidtransConfig
 
 public class XenditConfig
 {
+    public bool Enabled { get; set; } = true;
     public string ApiKey { get; set; } = string.Empty;
     public string CallbackToken { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://api.xendit.co";
+    public bool IsProduction { get; set; } = false;
+    public string CallbackUrl { get; set; } = string.Empty;
+}
+
+public class StripeConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string SecretKey { get; set; } = string.Empty;
+    public string PublishableKey { get; set; } = string.Empty;
+
+    /// <summary>Signing secret (whsec_…) used to authenticate inbound webhooks.</summary>
+    public string WebhookSecret { get; set; } = string.Empty;
+
+    public string BaseUrl { get; set; } = "https://api.stripe.com";
+    public string Currency { get; set; } = "idr";
     public bool IsProduction { get; set; } = false;
     public string CallbackUrl { get; set; } = string.Empty;
 }

@@ -1,0 +1,295 @@
+@page "/chat/siti-bohay"
+@using Microsoft.AspNetCore.Components.Forms
+@using Lapak.Services.SemanticKernel
+@using Lapak.Services.Rag
+@using Lapak.Services.Storage
+@using Lapak.Models.Configurations
+@using Microsoft.Extensions.Options
+@inject ISkChatService SkChatService
+@inject IVectorRagService RagService
+@inject IOptions<AiConfig> AiConfig
+@inject StorageServiceFactory StorageFactory
+
+@* Siti Bohay - Customer Support AI with Semantic Kernel + Vector RAG *@
+
+<div class="page-header">
+    <h1 class="page-title">💁 Siti Bohay</h1>
+    <p class="page-subtitle">Customer Support AI + RAG - Jawaban akurat dari database kebijakan platform Lapak!</p>
+</div>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <div class="chat-avatar" style="background: #ffe0ec;">💁</div>
+        <div>
+            <div class="chat-bot-name">Siti Bohay</div>
+            <div class="chat-bot-status">
+                @if (_isThinking) { <span>🧠 Mencari di knowledge base...</span> }
+                else { <span>🟢 Online - RAG: @_indexedChunks dokumen terindeks</span> }
+            </div>
+        </div>
+        <div style="margin-left: auto; display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-secondary" @onclick="ReindexDocs">🔄 Reindex</button>
+            <a href="mailto:support@lapak.com" class="btn btn-sm btn-secondary">📧 Email</a>
+            <a href="https://wa.me/6281234567890" target="_blank" class="btn btn-sm btn-success">💬 WA</a>
+        </div>
+    </div>
+
+    <div class="chat-messages" id="siti-messages">
+        <div class="chat-message bot">
+            <div class="chat-message-bubble">
+                <strong>Halo! 👋 Aku Siti Bohay, Customer Support Lapak dengan RAG!</strong><br/><br/>
+                Aku sekarang didukung <strong>Semantic Kernel + Vector Search</strong>:
+                <ul style="margin: 8px 0 0 20px;">
+                    <li>📚 <strong>Search Knowledge Base</strong> - Mencari di database kebijakan</li>
+                    <li>📋 <strong>check_order_status</strong> - Cek status pesananmu</li>
+                    <li>🕐 <strong>get_current_time</strong> - Waktu saat ini</li>
+                    <li>🧮 <strong>calculate</strong> - Bantuan kalkulasi</li>
+                </ul>
+                <br/><strong>📸 Upload foto/ screenshot masalahmu</strong> - aku akan bantu analisis!
+                <br/>Kalau gak bisa aku selesaikan, langsung eskalasi ke <strong>WhatsApp/Email</strong>! 😊
+            </div>
+        </div>
+
+        @foreach (var msg in _messages)
+        {
+            <div class="chat-message @(msg.IsUser ? "user" : "bot")">
+                <div class="chat-message-bubble">
+                    @if (msg.HasImage)
+                    {
+                        <a href="@msg.ImageUrl" target="_blank">
+                            <img src="@msg.ImageUrl" style="max-width: 200px; border-radius: 8px; margin-bottom: 8px;" alt="Uploaded" />
+                        </a>
+                    }
+                    @if (!msg.IsUser && !string.IsNullOrEmpty(msg.RagInfo))
+                    {
+                        <details style="margin-bottom: 6px; font-size: 0.8rem;">
+                            <summary style="color: var(--accent); cursor: pointer;">📚 Sumber RAG</summary>
+                            <pre style="background: var(--bg-tertiary); padding: 8px; border-radius: 4px; white-space: pre-wrap; font-size: 0.7rem;">@msg.RagInfo</pre>
+                        </details>
+                    }
+                    @((MarkupString)msg.Content)
+                    @if (msg.HasHandover)
+                    {
+                        <br/><br/>
+                        <div style="background: var(--bg-secondary); padding: 8px; border-radius: var(--radius-sm); font-size: 0.9rem;">
+                            📧 <strong>Email:</strong> support@lapak.com<br/>
+                            💬 <strong>WhatsApp:</strong> +62 812-3456-7890
+                        </div>
+                    }
+                </div>
+                <small class="text-muted" style="font-size: 0.7rem;">@msg.Timestamp.ToString("HH:mm")</small>
+            </div>
+        }
+
+        @if (_isThinking)
+        {
+            <div class="chat-message bot">
+                <div class="chat-message-bubble">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+                    </div>
+                    <small style="font-size:0.7rem;color:var(--text-muted);">🔍 Searching knowledge base & running tools...</small>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="chat-input-area">
+        <InputFile OnChange="HandleFileUpload" accept="image/*,.pdf,.doc,.docx" id="siti-file-input">
+            <button class="chat-upload-btn" type="button" title="Upload Gambar/Dokumen" @onclick:preventDefault>📎</button>
+        </InputFile>
+
+        <textarea class="chat-input" @bind="_currentInput" @onkeydown="HandleKeyDown"
+            placeholder="Ceritakan masalahmu atau upload screenshot..."
+            rows="1" disabled="@_isThinking"></textarea>
+
+        <button class="chat-send-btn" @onclick="SendMessage"
+            disabled="@(string.IsNullOrWhiteSpace(_currentInput) || _isThinking)">➤</button>
+    </div>
+
+    <div style="padding: 8px 20px; background: var(--bg-tertiary); display: flex; gap: 8px; flex-wrap: wrap;">
+        <span style="font-size: 0.75rem; color: var(--text-muted);">⚡ Cepat:</span>
+        <button class="btn btn-sm btn-secondary" @onclick="AskLacak">📦 Lacak Pesanan</button>
+        <button class="btn btn-sm btn-secondary" @onclick="AskRetur">🔄 Cara Retur</button>
+        <button class="btn btn-sm btn-secondary" @onclick="AskRefund">💳 Info Refund</button>
+        <button class="btn btn-sm btn-secondary" @onclick="AskSeller">🏪 Hubungi Penjual</button>
+    </div>
+</div>
+
+@code {
+    private class ChatMsg
+    {
+        public bool IsUser { get; set; }
+        public string Content { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string RagInfo { get; set; } = string.Empty;
+        public bool HasImage { get; set; }
+        public string? ImageUrl { get; set; }
+        public bool HasHandover { get; set; }
+    }
+
+    private List<ChatMsg> _messages = new();
+    private string _currentInput = string.Empty;
+    private bool _isThinking = false;
+    private string? _pendingAttachmentUrl = null;
+    private int _indexedChunks = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await IndexDocsOnce();
+    }
+
+    private async Task IndexDocsOnce()
+    {
+        try
+        {
+            await RagService.IndexDocumentsAsync();
+            if (RagService is VectorRagService vrs) _indexedChunks = vrs.GetChunkCount();
+        }
+        catch { _indexedChunks = 0; }
+    }
+
+    private async Task ReindexDocs()
+    {
+        await IndexDocsOnce();
+        _messages.Add(new ChatMsg { IsUser = false, Content = "🔄 Reindex selesai! " + _indexedChunks + " chunks dokumen terindeks.", Timestamp = DateTime.Now });
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_currentInput) || _isThinking) return;
+
+        var userMessage = _currentInput.Trim();
+        _currentInput = string.Empty;
+
+        var msg = new ChatMsg { IsUser = true, Content = FormatMessage(userMessage), Timestamp = DateTime.Now };
+
+        if (_pendingAttachmentUrl != null)
+        {
+            msg.HasImage = true;
+            msg.ImageUrl = _pendingAttachmentUrl;
+            msg.Content = "🖼️ [Screenshot/Lampiran]\n" + msg.Content;
+        }
+
+        _messages.Add(msg);
+        _isThinking = true;
+        StateHasChanged();
+
+        try
+        {
+            // Search RAG knowledge base
+            string ragContext = "";
+            try
+            {
+                var ragResults = await RagService.SearchAsync(userMessage, topK: 3);
+                if (ragResults.Count > 0 && !ragResults[0].Content.StartsWith("Belum ada"))
+                {
+                    ragContext = string.Join("\n\n", ragResults.Select(r =>
+                        "[Dari: " + r.DocumentName + " | Relevansi: " + r.RelevanceScore + "]\n" + r.Content));
+                }
+            }
+            catch { /* RAG unavailable */ }
+
+            var enhancedMessage = userMessage;
+            if (!string.IsNullOrEmpty(ragContext))
+            {
+                enhancedMessage = "PERTANYAAN USER:\n" + userMessage + "\n\n" +
+                    "INFORMASI DARI DATABASE PENGETAHUAN LAPAK:\n" + ragContext + "\n\n" +
+                    "Jawab berdasarkan informasi di atas. Jika tidak cukup, katakan jujur dan tawarkan eskalasi.";
+            }
+
+            var history = _messages
+                .Where(m => m.Content != null)
+                .TakeLast(10)
+                .Select(m => new Microsoft.SemanticKernel.ChatMessageContent(
+                    m.IsUser ? AuthorRole.User : AuthorRole.Assistant, m.Content))
+                .ToList();
+
+            var fullResponseBuilder = new System.Text.StringBuilder();
+            var currentAssistantMsg = new ChatMsg { IsUser = false, Timestamp = DateTime.Now, RagInfo = ragContext };
+            _messages.Add(currentAssistantMsg);
+
+            await foreach (var token in SkChatService.ChatStreamAsync("SitiBohay", enhancedMessage, history, _pendingAttachmentUrl))
+            {
+                fullResponseBuilder.Append(token);
+                currentAssistantMsg.Content = FormatMessage(fullResponseBuilder.ToString());
+                StateHasChanged();
+            }
+
+            var finalText = fullResponseBuilder.ToString();
+            currentAssistantMsg.HasHandover = finalText.Contains("[HANDOVER]") ||
+                                              (finalText.Contains("WhatsApp") && finalText.Contains("Email"));
+        }
+        catch (Exception ex)
+        {
+            _messages.Add(new ChatMsg
+            {
+                IsUser = false,
+                Content = "❌ Maaf, ada kendala teknis: " + ex.Message + ". Silakan hubungi kami via WhatsApp/Email. 🙏",
+                Timestamp = DateTime.Now,
+                HasHandover = true
+            });
+        }
+        finally
+        {
+            _isThinking = false;
+            _pendingAttachmentUrl = null;
+        }
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
+            ms.Position = 0;
+
+            var storage = StorageFactory.GetStorageService();
+            var storedName = await storage.UploadAsync(file.Name, ms, file.ContentType);
+            var publicUrl = await storage.GetPublicUrlAsync(storedName);
+
+            _pendingAttachmentUrl = publicUrl;
+            var isImage = file.ContentType.StartsWith("image/");
+
+            _messages.Add(new ChatMsg
+            {
+                IsUser = false,
+                Content = "📎 " + (isImage ? "Gambar" : "Dokumen") + " **" + file.Name + "** (" + (file.Size / 1024) + "KB) berhasil diupload! Silakan ceritakan masalahmu. 🖼️",
+                Timestamp = DateTime.Now,
+                HasImage = isImage,
+                ImageUrl = isImage ? publicUrl : null
+            });
+        }
+        catch (Exception ex)
+        {
+            _messages.Add(new ChatMsg
+            {
+                IsUser = false,
+                Content = "❌ Upload gagal: " + ex.Message,
+                Timestamp = DateTime.Now
+            });
+        }
+    }
+
+    private string FormatMessage(string msg)
+    {
+        msg = System.Net.WebUtility.HtmlEncode(msg);
+        msg = msg.Replace("\n", "<br/>");
+        msg = System.Text.RegularExpressions.Regex.Replace(msg, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        return msg;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey) await SendMessage();
+    }
+
+    private async Task AskLacak() { _currentInput = "Bagaimana cara melacak pesanan saya?"; await SendMessage(); }
+    private async Task AskRetur() { _currentInput = "Bagaimana cara retur barang?"; await SendMessage(); }
+    private async Task AskRefund() { _currentInput = "Berapa lama proses refund?"; await SendMessage(); }
+    private async Task AskSeller() { _currentInput = "Bagaimana cara menghubungi penjual?"; await SendMessage(); }
+}

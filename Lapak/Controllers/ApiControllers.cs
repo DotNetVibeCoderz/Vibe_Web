@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Lapak.Controllers;
 
 /// <summary>
-/// Payment gateway callback/notification endpoints
+/// Payment gateway webhook endpoints. Each gateway gets its own route because the
+/// URL is registered in that gateway's dashboard, but they share one handler —
+/// signature and token checks live in the provider, not here.
 /// </summary>
 [ApiController]
 [Route("api/payment")]
@@ -19,43 +21,46 @@ public class PaymentController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Midtrans payment notification callback
-    /// </summary>
     [HttpPost("midtrans-callback")]
-    public async Task<IActionResult> MidtransCallback(CancellationToken ct)
-    {
-        using var reader = new StreamReader(Request.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
+    public Task<IActionResult> MidtransCallback(CancellationToken ct) => HandleCallback("Midtrans", ct);
 
-        _logger.LogInformation("Midtrans callback received: {Body}", rawBody);
-
-        var result = await _paymentService.ProcessCallbackAsync("midtrans", rawBody, ct);
-
-        if (result.Success)
-            return Ok(new { status = "success", message = "Callback processed" });
-
-        return BadRequest(new { status = "error", message = result.ErrorMessage });
-    }
-
-    /// <summary>
-    /// Xendit payment notification callback
-    /// </summary>
     [HttpPost("xendit-callback")]
-    public async Task<IActionResult> XenditCallback(CancellationToken ct)
+    public Task<IActionResult> XenditCallback(CancellationToken ct) => HandleCallback("Xendit", ct);
+
+    [HttpPost("stripe-callback")]
+    public Task<IActionResult> StripeCallback(CancellationToken ct) => HandleCallback("Stripe", ct);
+
+    private async Task<IActionResult> HandleCallback(string gateway, CancellationToken ct)
     {
         using var reader = new StreamReader(Request.Body);
         var rawBody = await reader.ReadToEndAsync(ct);
 
-        // Verify Xendit callback token header
-        var callbackToken = Request.Headers["x-callback-token"].FirstOrDefault();
-        _logger.LogInformation("Xendit callback received. Token: {Token}", callbackToken);
+        var context = new PaymentCallbackContext
+        {
+            RawBody = rawBody,
+            // Signature material travels in headers for Xendit and Stripe. Never log
+            // these values — they authenticate the request.
+            Headers = Request.Headers.ToDictionary(
+                h => h.Key,
+                h => h.Value.ToString(),
+                StringComparer.OrdinalIgnoreCase)
+        };
 
-        var result = await _paymentService.ProcessCallbackAsync("xendit", rawBody, ct);
+        var result = await _paymentService.ProcessCallbackAsync(gateway, context, ct);
 
         if (result.Success)
-            return Ok(new { status = "success", message = "Callback processed" });
+        {
+            _logger.LogInformation("{Gateway} callback processed for order {OrderNumber}", gateway, result.OrderNumber);
+            return Ok(new { status = "success", order = result.OrderNumber, state = result.State.ToString() });
+        }
 
+        if (result.Unauthorized)
+        {
+            _logger.LogWarning("{Gateway} callback rejected: {Reason}", gateway, result.ErrorMessage);
+            return Unauthorized(new { status = "rejected", message = result.ErrorMessage });
+        }
+
+        _logger.LogWarning("{Gateway} callback failed: {Reason}", gateway, result.ErrorMessage);
         return BadRequest(new { status = "error", message = result.ErrorMessage });
     }
 }

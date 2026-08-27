@@ -1,33 +1,202 @@
 @page "/seller/manage-store"
 @using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "SellerOnly")]
 @inject Lapak.Data.LapakDbContext Db
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthState
 
-<div class="page-header"><h1 class="page-title">Kelola Toko</h1></div>
-@if (_store == null) { <div class="text-center mt-4"><p>Kamu belum punya toko. <a href="/seller/register-store">Daftarkan sekarang!</a></p></div> }
-else {
-    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
-    <div style="display:flex;gap:12px;margin-bottom:20px;"><a href="/seller/manage-products" class="btn btn-primary">Kelola Produk</a><a href="/stores/@_store.Slug" class="btn btn-secondary">Lihat Toko</a></div>
-    <div class="row"><div class="col-8"><div class="card"><div class="card-header">Edit Informasi</div><div class="card-body">
-    <div class="row"><div class="col-6"><label class="form-label">Nama Toko</label><input class="form-input" @bind="_name" /></div><div class="col-6"><label class="form-label">Slug</label><input class="form-input" @bind="_slug" /></div></div>
-    <div class="mt-2"><label class="form-label">Deskripsi</label><textarea class="form-input" @bind="_desc" rows="3"></textarea></div>
-    <div class="row mt-2"><div class="col-6"><label class="form-label">Telepon</label><input class="form-input" @bind="_phone" /></div><div class="col-6"><label class="form-label">Email</label><input class="form-input" @bind="_storeEmail" /></div></div>
-    <div class="mt-2"><label class="form-label">Alamat</label><textarea class="form-input" @bind="_addr" rows="2"></textarea></div>
-    <div class="row mt-2"><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_cty" /></div><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_prov" /></div></div>
-    <button class="btn btn-primary mt-3" @onclick="SaveStore">Simpan</button>
-    </div></div></div><div class="col-4"><div class="card text-center"><div class="card-body"><div style="font-size:4rem;">🏪</div><h3>@_store.Name</h3><p>@(_store.IsVerified?"Verified":"Pending")</p><div>⭐@_store.AverageRating.ToString("F1") · @_store.TotalProducts produk</div></div></div></div></div>
+<PageTitle>Kelola toko — Lapak</PageTitle>
+
+@if (_store == null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">🏪</div>
+        <h3>Kamu belum punya toko</h3>
+        <p>Daftarkan toko dulu untuk mulai berjualan di Lapak.</p>
+        <a href="/seller/register-store" class="btn btn-primary">Daftarkan toko</a>
+    </div>
 }
+else
+{
+    <div class="page-header">
+        <h1 class="page-title">@_store.Name</h1>
+        <p class="page-subtitle">Kelola identitas dan kontak tokomu.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert success mb-3">@_message</div>
+    }
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert error mb-3">@_error</div>
+    }
+
+    <div class="flex gap-1 mb-3 flex-wrap">
+        <a href="/seller/manage-products" class="btn btn-primary">Kelola produk</a>
+        <a href="/stores/@_store.Slug" class="btn btn-secondary">Lihat halaman toko</a>
+        <a href="/dashboard" class="btn btn-secondary">Dashboard penjualan</a>
+    </div>
+
+    <div class="row">
+        <div class="col-8">
+            <div class="card">
+                <div class="card-header">Informasi toko</div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label" for="s-name">Nama toko</label>
+                            <input id="s-name" class="form-input" @bind="_name" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="s-slug">Slug URL</label>
+                            <input id="s-slug" class="form-input" @bind="_slug" />
+                            <div class="form-hint">Alamat toko: /stores/@_slug</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="form-label" for="s-desc">Deskripsi</label>
+                        <textarea id="s-desc" class="form-input" @bind="_desc" rows="3" placeholder="Ceritakan apa yang kamu jual dan apa yang membuat tokomu beda"></textarea>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <label class="form-label" for="s-phone">Telepon</label>
+                            <input id="s-phone" class="form-input" type="tel" @bind="_phone" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="s-email">Email toko</label>
+                            <input id="s-email" class="form-input" type="email" @bind="_storeEmail" />
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="form-label" for="s-addr">Alamat</label>
+                        <textarea id="s-addr" class="form-input" @bind="_addr" rows="2"></textarea>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <label class="form-label" for="s-city">Kota</label>
+                            <input id="s-city" class="form-input" @bind="_city" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="s-prov">Provinsi</label>
+                            <input id="s-prov" class="form-input" @bind="_province" />
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary btn-lg mt-3" @onclick="SaveStore" disabled="@_saving">
+                        @(_saving ? "Menyimpan…" : "Simpan perubahan")
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-4">
+            <div class="card">
+                <div class="store-hero weave" style="--weave-hue: @Hue(_store.Slug);"></div>
+                <div class="card-body text-center">
+                    <h3>@_store.Name</h3>
+                    <div class="mt-1">
+                        <span class="badge-status" style="color:@(_store.IsVerified ? "var(--success)" : "var(--warning)"); border-color:@(_store.IsVerified ? "var(--success)" : "var(--warning)");">
+                            @(_store.IsVerified ? "Terverifikasi" : _store.VerificationStatus)
+                        </span>
+                    </div>
+                    <hr class="divider" />
+                    <div class="flex justify-between text-sm mb-1"><span class="text-muted">Rating</span><strong>⭐ @_store.AverageRating.ToString("F1")</strong></div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-muted">Ulasan</span><strong>@_store.RatingCount</strong></div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-muted">Produk</span><strong>@_store.TotalProducts</strong></div>
+                    <div class="flex justify-between text-sm"><span class="text-muted">Penjualan</span><strong>@_store.TotalSales</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .store-hero { height: 92px; }
+</style>
 
 @code {
     private Lapak.Models.Store? _store;
-    private string _name="",_slug="",_desc="",_phone="",_storeEmail="",_addr="",_cty="",_prov="",_msg="";
+    private string _name = "", _slug = "", _desc = "", _phone = "", _storeEmail = "", _addr = "", _city = "", _province = "";
+    private string _message = "", _error = "";
+    private bool _saving;
 
-    protected override async Task OnInitializedAsync() {
-        var auth = await AuthState.GetAuthenticationStateAsync(); var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login"); return; }
-        _store = Db.Stores.FirstOrDefault(s => s.UserId == Guid.Parse(uid));
-        if (_store != null) { _name=_store.Name;_slug=_store.Slug;_desc=_store.Description??"";_phone=_store.PhoneNumber??"";_storeEmail=_store.Email??"";_addr=_store.Address??"";_cty=_store.City??"";_prov=_store.Province??""; }
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(uid, out var userId)) return;
+
+        _store = await Db.Stores.FirstOrDefaultAsync(s => s.UserId == userId);
+        if (_store == null) return;
+
+        _name = _store.Name;
+        _slug = _store.Slug;
+        _desc = _store.Description ?? "";
+        _phone = _store.PhoneNumber ?? "";
+        _storeEmail = _store.Email ?? "";
+        _addr = _store.Address ?? "";
+        _city = _store.City ?? "";
+        _province = _store.Province ?? "";
     }
-    private async Task SaveStore() { if(_store==null)return; _store.Name=_name;_store.Slug=_slug;_store.Description=_desc;_store.PhoneNumber=_phone;_store.Email=_storeEmail;_store.Address=_addr;_store.City=_cty;_store.Province=_prov; Db.SaveChanges(); _msg="Toko berhasil diupdate!"; }
+
+    private async Task SaveStore()
+    {
+        _message = _error = "";
+        if (_store == null) return;
+
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "Nama toko harus diisi."; return; }
+
+        var slug = Slugify(string.IsNullOrWhiteSpace(_slug) ? _name : _slug);
+        if (await Db.Stores.AnyAsync(s => s.Slug == slug && s.Id != _store.Id))
+        {
+            _error = $"Slug \"{slug}\" sudah dipakai toko lain.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            _store.Name = _name.Trim();
+            _store.Slug = slug;
+            _slug = slug;
+            _store.Description = _desc;
+            _store.PhoneNumber = _phone;
+            _store.Email = _storeEmail;
+            _store.Address = _addr;
+            _store.City = _city;
+            _store.Province = _province;
+            _store.UpdatedAt = DateTime.UtcNow;
+
+            await Db.SaveChangesAsync();
+            _message = "Perubahan tersimpan.";
+        }
+        catch (Exception ex)
+        {
+            _error = "Gagal menyimpan: " + ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string Slugify(string value)
+    {
+        var slug = new string(value.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        return slug.Trim('-');
+    }
+
+    private static int Hue(string seed)
+    {
+        var hash = 0;
+        foreach (var ch in seed) hash = unchecked(hash * 31 + ch);
+        return Math.Abs(hash) % 360;
+    }
 }

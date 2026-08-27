@@ -3,6 +3,7 @@ using System.Text;
 using Lapak.Data;
 using Lapak.Models;
 using Lapak.Models.Configurations;
+using Lapak.Services.Rag;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,14 +24,15 @@ public class SkChatService : ISkChatService
     private readonly AiConfig _aiConfig;
     private readonly LapakDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IVectorRagService _ragService;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<SkChatService> _logger;
     private static readonly string[] FallbackOrder = { "OpenAI", "Gemini", "Anthropic", "Ollama" };
 
     public SkChatService(
         IOptions<AiConfig> aiConfig, LapakDbContext db, IHttpClientFactory httpClientFactory,
-        IServiceProvider serviceProvider, ILogger<SkChatService> logger)
-    { _aiConfig = aiConfig.Value; _db = db; _httpClientFactory = httpClientFactory; _serviceProvider = serviceProvider; _logger = logger; }
+        IVectorRagService ragService, IServiceProvider serviceProvider, ILogger<SkChatService> logger)
+    { _aiConfig = aiConfig.Value; _db = db; _httpClientFactory = httpClientFactory; _ragService = ragService; _serviceProvider = serviceProvider; _logger = logger; }
 
     private Kernel GetKernel(string providerName)
     {
@@ -42,10 +44,12 @@ public class SkChatService : ISkChatService
         builder.AddOpenAIChatCompletion(modelId: config.Model, endpoint: new Uri(config.BaseUrl), apiKey: config.ApiKey);
         builder.Services.AddSingleton(_db);
         builder.Services.AddSingleton(_httpClientFactory);
+        builder.Services.AddSingleton(_ragService);
 
         builder.Plugins.AddFromType<ProductSearchTools>("ProductSearch");
         builder.Plugins.AddFromType<StoreSearchTools>("StoreSearch");
         builder.Plugins.AddFromType<OrderTools>("OrderTools");
+        builder.Plugins.AddFromType<KnowledgeBaseTools>("KnowledgeBase");
         builder.Plugins.AddFromType<GeneralTools>("GeneralTools");
 
         return builder.Build();
@@ -286,6 +290,32 @@ public class OrderTools
         sb.AppendLine("Produk:");
         foreach (var i in o.OrderItems) sb.AppendLine($"- {i.Product?.Name} x{i.Quantity} @ Rp{i.Price:N0}");
         if (o.ShippingTrackings.Any()) { sb.AppendLine("📦 Tracking:"); foreach (var t in o.ShippingTrackings.OrderByDescending(t => t.EventDate)) sb.AppendLine($"  [{t.EventDate:dd/MM HH:mm}] {t.Status}: {t.Description} @ {t.Location}"); }
+        return sb.ToString();
+    }
+}
+
+public class KnowledgeBaseTools
+{
+    private readonly IVectorRagService _rag;
+    public KnowledgeBaseTools(IVectorRagService rag) => _rag = rag;
+
+    [KernelFunction("search_knowledge_base")]
+    [Description("Mencari jawaban di dokumen kebijakan & FAQ resmi Lapak (retur, refund, pengiriman, pembayaran, aturan akun). Gunakan ini SEBELUM menjawab pertanyaan seputar aturan platform.")]
+    public async Task<string> SearchKnowledgeBase(
+        [Description("Pertanyaan atau kata kunci")] string query,
+        [Description("Jumlah kutipan yang diambil (default 3)")] int topK = 3)
+    {
+        var results = await _rag.SearchAsync(query, Math.Clamp(topK, 1, 8));
+        if (results.Count == 0) return "Tidak ada informasi relevan di dokumen kebijakan. Tawarkan eskalasi ke WhatsApp/Email.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"📚 {results.Count} kutipan dari dokumen kebijakan Lapak:");
+        foreach (var r in results)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"[Sumber: {r.DocumentName} | relevansi {r.RelevanceScore}]");
+            sb.AppendLine(r.Content);
+        }
         return sb.ToString();
     }
 }

@@ -1,0 +1,58 @@
+@page "/seller/manage-products"
+@page "/seller/manage-products/{ProductId:guid}"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+@if (_productId == Guid.Empty)
+{
+    <div class="page-header flex justify-between items-center"><div><h1 class="page-title">Kelola Produk</h1><p class="page-subtitle">@_products.Count produk</p></div><a href="/seller/manage-products/00000000-0000-0000-0000-000000000001" class="btn btn-primary">Tambah Produk</a></div>
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
+    <div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:var(--bg-tertiary)"><th style="padding:10px;text-align:left;">Produk</th><th>Harga</th><th>Stok</th><th>Terjual</th><th>Status</th><th>Aksi</th></tr></thead>
+    <tbody>@foreach(var p in _products){<tr style="border-bottom:1px solid var(--border-color)"><td style="padding:10px;"><strong>@p.Name</strong><br/><small>@p.Category?.Name</small></td><td>Rp@p.Price.ToString("N0")</td><td>@p.Stock</td><td>@p.SoldCount</td><td>@(p.IsActive?"Aktif":"Nonaktif")</td><td><a href="/seller/manage-products/@p.Id" class="btn btn-sm btn-secondary">Edit</a><button class="btn btn-sm btn-danger ml-1" @onclick="()=>DeleteProduct(p)">Hapus</button></td></tr>}</tbody></table></div></div>
+}
+else
+{
+    <div class="page-header"><h1 class="page-title">@(_isEdit?"Edit Produk":"Tambah Produk")</h1></div>
+    @if (!string.IsNullOrEmpty(_err)) { <div class="toast error mb-2">@_err</div> }
+    <div class="card"><div class="card-body">
+    <div class="row"><div class="col-8"><label class="form-label">Nama Produk *</label><input class="form-input" @bind="_fName" /></div><div class="col-4"><label class="form-label">Slug</label><input class="form-input" @bind="_fSlug" /></div></div>
+    <div class="row mt-2"><div class="col-6"><label class="form-label">Deskripsi Singkat</label><input class="form-input" @bind="_fShort" /></div><div class="col-6"><label class="form-label">Kategori *</label><select class="form-input" @bind="_fCatId"><option value="">Pilih</option>@foreach(var c in _cats){<option value="@c.Id">@c.Name</option>@foreach(var sc in c.SubCategories){<option value="@sc.Id">-- @sc.Name</option>}}</select></div></div>
+    <div class="mt-2"><label class="form-label">Deskripsi Lengkap</label><textarea class="form-input" @bind="_fDesc" rows="4"></textarea></div>
+    <div class="row mt-2"><div class="col-3"><label class="form-label">Harga *</label><input class="form-input" type="number" @bind="_fPrice" /></div><div class="col-3"><label class="form-label">Harga Asli</label><input class="form-input" type="number" @bind="_fOrig" /></div><div class="col-3"><label class="form-label">Stok *</label><input class="form-input" type="number" @bind="_fStock" /></div><div class="col-3"><label class="form-label">Berat (g)</label><input class="form-input" type="number" @bind="_fWeight" /></div></div>
+    <div class="row mt-2"><div class="col-4"><label class="form-label">Min Order</label><input class="form-input" type="number" @bind="_fMin" /></div><div class="col-4"><label class="form-label">Max Order</label><input class="form-input" type="number" @bind="_fMax" /></div><div class="col-4"><label class="form-label">Status</label><select class="form-input" @bind="_fActive"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></div></div>
+    <div class="mt-3 flex gap-2"><button class="btn btn-primary btn-lg" @onclick="SaveProduct">Simpan</button><a href="/seller/manage-products" class="btn btn-secondary btn-lg">Batal</a></div>
+    </div></div>
+}
+
+@code {
+    [Parameter] public string? ProductId { get; set; }
+    private Guid _productId; private bool _isEdit;
+    private List<Product> _products = new(); private List<Category> _cats = new();
+    private string _msg="",_err="";
+    private string _fName="",_fSlug="",_fShort="",_fDesc=""; private Guid _fCatId;
+    private decimal _fPrice,_fOrig; private int _fStock=10,_fWeight=1000,_fMin=1,_fMax=10; private bool _fActive=true;
+    private Lapak.Models.Store? _store;
+
+    protected override async Task OnInitializedAsync() {
+        var auth=await AuthState.GetAuthenticationStateAsync(); var uid=auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if(string.IsNullOrEmpty(uid)){Nav.NavigateTo("/account/login");return;}
+        _store=Db.Stores.FirstOrDefault(s=>s.UserId==Guid.Parse(uid));
+        _cats=Db.Categories.Where(c=>c.ParentCategoryId==null&&c.IsActive).Include(c=>c.SubCategories).ToList();
+        if(Guid.TryParse(ProductId,out _productId)&&_productId!=Guid.Empty){
+            _isEdit=true; var p=Db.Products.FirstOrDefault(p=>p.Id==_productId&&p.Store!.UserId==Guid.Parse(uid));
+            if(p!=null){_fName=p.Name;_fSlug=p.Slug;_fShort=p.ShortDescription??"";_fDesc=p.Description??"";_fCatId=p.CategoryId;_fPrice=p.Price;_fOrig=p.OriginalPrice??0;_fStock=p.Stock;_fWeight=(int)p.WeightInGrams;_fMin=p.MinOrder;_fMax=p.MaxOrder;_fActive=p.IsActive;}
+        }else{_productId=Guid.Empty;_products=Db.Products.Where(p=>p.Store!.UserId==Guid.Parse(uid)).Include(p=>p.Category).OrderByDescending(p=>p.CreatedAt).ToList();}
+    }
+    private async Task SaveProduct() {
+        if(_store==null){_err="Toko tidak ditemukan.";return;} if(string.IsNullOrWhiteSpace(_fName)){_err="Nama harus diisi.";return;} if(_fCatId==Guid.Empty){_err="Kategori harus dipilih.";return;}
+        var slug=string.IsNullOrWhiteSpace(_fSlug)?_fName.ToLower().Replace(" ","-"):_fSlug.ToLower().Replace(" ","-");
+        var dPct=_fOrig>_fPrice?(int)((1-_fPrice/_fOrig)*100):0;
+        if(_isEdit){var p=Db.Products.Find(_productId);if(p==null)return;p.Name=_fName;p.Slug=slug;p.ShortDescription=_fShort;p.Description=_fDesc;p.CategoryId=_fCatId;p.Price=_fPrice;p.OriginalPrice=_fOrig>0?_fOrig:null;p.DiscountPercentage=dPct>0?dPct:null;p.Stock=_fStock;p.WeightInGrams=_fWeight;p.MinOrder=_fMin;p.MaxOrder=_fMax;p.IsActive=_fActive;}
+        else{Db.Products.Add(new Product{Name=_fName,Slug=slug,ShortDescription=_fShort,Description=_fDesc,CategoryId=_fCatId,StoreId=_store.Id,Price=_fPrice,OriginalPrice=_fOrig>0?_fOrig:null,DiscountPercentage=dPct>0?dPct:null,Stock=_fStock,MinOrder=_fMin,MaxOrder=_fMax,WeightInGrams=_fWeight,IsActive=_fActive,StockStatus=_fStock>10?"Available":(_fStock>0?"LowStock":"OutOfStock")});_store.TotalProducts++;}
+        Db.SaveChanges(); _msg=_isEdit?"Produk diupdate!":"Produk ditambahkan!"; Nav.NavigateTo("/seller/manage-products");
+    }
+    private async Task DeleteProduct(Product p){p.IsActive=false;Db.SaveChanges();_products.Remove(p);}
+}

@@ -25,135 +25,296 @@ public interface IVectorRagService
     Task IndexDocumentsAsync(CancellationToken ct = default);
     Task<List<VectorSearchResult>> SearchAsync(string query, int topK = 5, CancellationToken ct = default);
     Task<string> GetRagContextAsync(string query, int topK = 3);
+    int GetChunkCount();
+    DateTime LastIndexedAt { get; }
 }
 
-public class VectorRagService : IVectorRagService, IDisposable
+/// <summary>
+/// In-memory TF-IDF index over the files in the configured document folder.
+/// </summary>
+/// <remarks>
+/// The index is built off to the side and swapped in under a short lock. Reads
+/// never block on file I/O, and — importantly — no lock is ever held across an
+/// <c>await</c>: doing that with a thread-affine lock leaves it permanently
+/// stuck when the continuation resumes on a different thread.
+/// </remarks>
+public class VectorRagService : IVectorRagService
 {
+    /// <summary>An immutable index generation. Swapping the reference is atomic.</summary>
+    private sealed record IndexSnapshot(
+        IReadOnlyList<DocumentChunk> Chunks,
+        IReadOnlyDictionary<string, Dictionary<string, double>> InvertedIndex,
+        DateTime IndexedAt)
+    {
+        public static readonly IndexSnapshot Empty = new(
+            Array.Empty<DocumentChunk>(),
+            new Dictionary<string, Dictionary<string, double>>(),
+            DateTime.MinValue);
+    }
+
     private readonly VectorDatabaseConfig _config;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<VectorRagService> _logger;
-    private readonly List<DocumentChunk> _chunks = new();
-    private readonly Dictionary<string, Dictionary<string, double>> _invertedIndex = new();
-    private readonly ReaderWriterLockSlim _lock = new();
-    private DateTime _lastIndexed = DateTime.MinValue;
+
+    private volatile IndexSnapshot _snapshot = IndexSnapshot.Empty;
+
+    /// <summary>Serialises re-indexing so the background timer and a manual reindex don't duplicate work.</summary>
+    private readonly SemaphoreSlim _indexGate = new(1, 1);
 
     public VectorRagService(IOptions<VectorDatabaseConfig> config, IWebHostEnvironment env, ILogger<VectorRagService> logger)
     {
-        _config = config.Value; _env = env; _logger = logger;
+        _config = config.Value;
+        _env = env;
+        _logger = logger;
     }
+
+    public DateTime LastIndexedAt => _snapshot.IndexedAt;
+
+    public int GetChunkCount() => _snapshot.Chunks.Count;
 
     public async Task IndexDocumentsAsync(CancellationToken ct = default)
     {
         var docsPath = Path.Combine(_env.ContentRootPath, _config.DocumentFolderPath);
-        if (!Directory.Exists(docsPath)) { Directory.CreateDirectory(docsPath); return; }
-        var files = Directory.GetFiles(docsPath, "*.*").Where(f => IsSupportedFile(f)).ToList();
-        if (files.Count == 0) return;
+        if (!Directory.Exists(docsPath))
+        {
+            Directory.CreateDirectory(docsPath);
+            _logger.LogInformation("Created empty document folder at {Path}", docsPath);
+            return;
+        }
 
-        _lock.EnterWriteLock();
+        var files = Directory.GetFiles(docsPath, "*.*").Where(IsSupportedFile).ToList();
+        if (files.Count == 0)
+        {
+            _logger.LogInformation("No indexable documents found in {Path}", docsPath);
+            return;
+        }
+
+        await _indexGate.WaitAsync(ct);
         try
         {
-            _chunks.Clear(); _invertedIndex.Clear();
+            var chunks = new List<DocumentChunk>();
             foreach (var file in files)
             {
                 try
                 {
                     var content = await File.ReadAllTextAsync(file, ct);
-                    var chunks = ChunkDocument(content, Path.GetFileName(file));
-                    foreach (var chunk in chunks) { _chunks.Add(chunk); IndexChunk(chunk); }
+                    chunks.AddRange(ChunkDocument(content, Path.GetFileName(file)));
                 }
-                catch (Exception ex) { _logger.LogWarning(ex, "Failed to index: {File}", file); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Skipped unreadable document: {File}", file);
+                }
             }
-            _lastIndexed = DateTime.UtcNow;
+
+            _snapshot = new IndexSnapshot(chunks, BuildInvertedIndex(chunks), DateTime.UtcNow);
+
+            _logger.LogInformation(
+                "Indexed {ChunkCount} chunks from {FileCount} documents", chunks.Count, files.Count);
         }
-        finally { _lock.ExitWriteLock(); }
+        finally
+        {
+            _indexGate.Release();
+        }
     }
 
-    public async Task<List<VectorSearchResult>> SearchAsync(string query, int topK = 5, CancellationToken ct = default)
+    public Task<List<VectorSearchResult>> SearchAsync(string query, int topK = 5, CancellationToken ct = default)
     {
-        _lock.EnterReadLock();
-        try
+        var snapshot = _snapshot;
+
+        if (snapshot.Chunks.Count == 0)
         {
-            if (_chunks.Count == 0) return new() { new() { Content = "Belum ada dokumen kebijakan.", DocumentName = "System", RelevanceScore = 1.0 } };
-            var queryTerms = Tokenize(query); var scores = new Dictionary<string, double>();
-            foreach (var chunk in _chunks)
+            return Task.FromResult(new List<VectorSearchResult>
             {
-                double score = 0;
-                foreach (var term in queryTerms)
-                    if (_invertedIndex.TryGetValue(term, out var postings) && postings.TryGetValue(chunk.Id, out var tfidf)) score += tfidf;
-                if (chunk.Content.Contains(query, StringComparison.OrdinalIgnoreCase)) score *= 1.5;
-                if (score > 0) scores[chunk.Id] = score;
-            }
-            return scores.OrderByDescending(kv => kv.Value).Take(topK).Select(kv =>
-            {
-                var chunk = _chunks.First(c => c.Id == kv.Key);
-                return new VectorSearchResult { Content = chunk.Content, DocumentName = chunk.DocumentName, RelevanceScore = Math.Round(kv.Value, 4) };
-            }).ToList();
+                new() { Content = "Belum ada dokumen kebijakan yang terindeks.", DocumentName = "System", RelevanceScore = 0 }
+            });
         }
-        finally { _lock.ExitReadLock(); }
+
+        var queryTerms = Tokenize(query);
+        var scores = new Dictionary<string, double>();
+
+        foreach (var chunk in snapshot.Chunks)
+        {
+            double score = 0;
+            foreach (var term in queryTerms)
+            {
+                if (snapshot.InvertedIndex.TryGetValue(term, out var postings) &&
+                    postings.TryGetValue(chunk.Id, out var tfidf))
+                    score += tfidf;
+            }
+
+            // An exact phrase hit is worth more than the sum of its terms.
+            if (score > 0 && chunk.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
+                score *= 1.5;
+
+            if (score > 0) scores[chunk.Id] = score;
+        }
+
+        var byId = snapshot.Chunks.ToDictionary(c => c.Id);
+
+        var results = scores
+            .OrderByDescending(kv => kv.Value)
+            .Take(topK)
+            .Select(kv => new VectorSearchResult
+            {
+                Content = byId[kv.Key].Content,
+                DocumentName = byId[kv.Key].DocumentName,
+                RelevanceScore = Math.Round(kv.Value, 4)
+            })
+            .ToList();
+
+        return Task.FromResult(results);
     }
 
     public async Task<string> GetRagContextAsync(string query, int topK = 3)
     {
         var results = await SearchAsync(query, topK);
         if (results.Count == 0) return "Tidak ada informasi relevan.";
+
         var sb = new StringBuilder();
-        foreach (var r in results) { sb.AppendLine($"--- Dari: {r.DocumentName} ---"); sb.AppendLine(r.Content); sb.AppendLine(); }
+        foreach (var r in results)
+        {
+            sb.AppendLine($"--- Dari: {r.DocumentName} ---");
+            sb.AppendLine(r.Content);
+            sb.AppendLine();
+        }
         return sb.ToString();
     }
 
     private List<DocumentChunk> ChunkDocument(string content, string docName)
     {
-        var chunks = new List<DocumentChunk>(); var paras = content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
-        var cur = new StringBuilder(); int idx = 0;
-        foreach (var p in paras)
+        var chunks = new List<DocumentChunk>();
+        var paragraphs = content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
+        var current = new StringBuilder();
+        var index = 0;
+
+        foreach (var paragraph in paragraphs)
         {
-            if (cur.Length + p.Length > _config.ChunkSize && cur.Length > 0)
+            if (current.Length + paragraph.Length > _config.ChunkSize && current.Length > 0)
             {
-                chunks.Add(new DocumentChunk { DocumentName = docName, Content = cur.ToString().Trim(), ChunkIndex = idx++ });
-                cur.Clear();
+                var text = current.ToString().Trim();
+                chunks.Add(new DocumentChunk { DocumentName = docName, Content = text, ChunkIndex = index++ });
+
+                // Carry the tail of the previous chunk forward so an answer that
+                // straddles a boundary is still retrievable from one chunk.
+                current.Clear();
+                if (_config.ChunkOverlap > 0 && text.Length > _config.ChunkOverlap)
+                    current.AppendLine(text[^_config.ChunkOverlap..]);
             }
-            cur.AppendLine(p);
+            current.AppendLine(paragraph);
         }
-        if (cur.Length > 0) chunks.Add(new DocumentChunk { DocumentName = docName, Content = cur.ToString().Trim(), ChunkIndex = idx });
+
+        if (current.Length > 0)
+            chunks.Add(new DocumentChunk { DocumentName = docName, Content = current.ToString().Trim(), ChunkIndex = index });
+
         return chunks;
     }
 
-    private void IndexChunk(DocumentChunk chunk)
+    /// <summary>
+    /// Builds TF-IDF postings in two passes. Document frequency has to be known
+    /// for the whole corpus before any weight is computed, so a single streaming
+    /// pass would score early chunks against an incomplete corpus.
+    /// </summary>
+    private static Dictionary<string, Dictionary<string, double>> BuildInvertedIndex(List<DocumentChunk> chunks)
     {
-        var terms = Tokenize(chunk.Content); var tf = new Dictionary<string, int>();
-        foreach (var t in terms) { tf.TryGetValue(t, out var c); tf[t] = c + 1; }
-        foreach (var (term, freq) in tf)
+        var termFrequencies = new List<(string ChunkId, Dictionary<string, int> Terms)>(chunks.Count);
+        var documentFrequency = new Dictionary<string, int>();
+
+        foreach (var chunk in chunks)
         {
-            if (!_invertedIndex.ContainsKey(term)) _invertedIndex[term] = new();
-            double idf = Math.Log((double)_chunks.Count / (_invertedIndex[term].Count + 1)) + 1;
-            _invertedIndex[term][chunk.Id] = freq * idf;
+            var tf = new Dictionary<string, int>();
+            foreach (var term in TokenizeAll(chunk.Content))
+            {
+                tf.TryGetValue(term, out var count);
+                tf[term] = count + 1;
+            }
+
+            termFrequencies.Add((chunk.Id, tf));
+
+            foreach (var term in tf.Keys)
+            {
+                documentFrequency.TryGetValue(term, out var df);
+                documentFrequency[term] = df + 1;
+            }
         }
+
+        var index = new Dictionary<string, Dictionary<string, double>>();
+        var totalChunks = Math.Max(chunks.Count, 1);
+
+        foreach (var (chunkId, terms) in termFrequencies)
+        {
+            foreach (var (term, freq) in terms)
+            {
+                var idf = Math.Log((double)totalChunks / documentFrequency[term]) + 1;
+
+                if (!index.TryGetValue(term, out var postings))
+                    index[term] = postings = new Dictionary<string, double>();
+
+                postings[chunkId] = freq * idf;
+            }
+        }
+
+        return index;
     }
 
-    private static List<string> Tokenize(string text) => text.ToLowerInvariant()
-        .Split(new[] { ' ', '\n', '\r', '\t', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'' }, StringSplitOptions.RemoveEmptyEntries)
-        .Where(t => t.Length >= 2).Distinct().ToList();
+    /// <summary>Distinct query terms — repeats in a question add no signal.</summary>
+    private static List<string> Tokenize(string text) => TokenizeAll(text).Distinct().ToList();
 
-    private static bool IsSupportedFile(string path) => Path.GetExtension(path).ToLowerInvariant() is ".txt" or ".md" or ".csv" or ".html" or ".htm" or ".json";
+    /// <summary>Every term occurrence, needed for term frequency.</summary>
+    private static IEnumerable<string> TokenizeAll(string text) => text.ToLowerInvariant()
+        .Split(
+            new[] { ' ', '\n', '\r', '\t', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'', '-', '/' },
+            StringSplitOptions.RemoveEmptyEntries)
+        .Where(t => t.Length >= 2);
 
-    public int GetChunkCount() { _lock.EnterReadLock(); try { return _chunks.Count; } finally { _lock.ExitReadLock(); } }
-    public void Dispose() => _lock?.Dispose();
+    private static bool IsSupportedFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is ".txt" or ".md" or ".csv" or ".html" or ".htm" or ".json";
 }
 
+/// <summary>Re-indexes the document folder on a timer so edits are picked up without a restart.</summary>
 public class VectorIndexingBackgroundService : BackgroundService
 {
-    private readonly IServiceScopeFactory _sf; private readonly ILogger<VectorIndexingBackgroundService> _log; private readonly VectorDatabaseConfig _cfg;
-    public VectorIndexingBackgroundService(IServiceScopeFactory sf, IOptions<VectorDatabaseConfig> cfg, ILogger<VectorIndexingBackgroundService> log)
-    { _sf = sf; _cfg = cfg.Value; _log = log; }
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<VectorIndexingBackgroundService> _logger;
+    private readonly VectorDatabaseConfig _config;
 
-    protected override async Task ExecuteAsync(CancellationToken st)
+    public VectorIndexingBackgroundService(
+        IServiceScopeFactory scopeFactory,
+        IOptions<VectorDatabaseConfig> config,
+        ILogger<VectorIndexingBackgroundService> logger)
     {
-        _log.LogInformation("Vector indexing started. Interval: {M} min", _cfg.ReindexIntervalMinutes);
-        while (!st.IsCancellationRequested)
+        _scopeFactory = scopeFactory;
+        _config = config.Value;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Vector indexing started. Interval: {Minutes} min", _config.ReindexIntervalMinutes);
+
+        while (!stoppingToken.IsCancellationRequested)
         {
-            try { using var s = _sf.CreateScope(); await s.ServiceProvider.GetRequiredService<IVectorRagService>().IndexDocumentsAsync(st); }
-            catch (Exception ex) { _log.LogError(ex, "Indexing error"); }
-            await Task.Delay(TimeSpan.FromMinutes(_cfg.ReindexIntervalMinutes), st);
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<IVectorRagService>().IndexDocumentsAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Document indexing failed; will retry on the next interval");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(_config.ReindexIntervalMinutes), stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 }

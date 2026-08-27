@@ -1,43 +1,163 @@
 @page "/seller/register-store"
 @using Microsoft.AspNetCore.Identity
 @using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject Lapak.Data.LapakDbContext Db
 @inject UserManager<User> UserMgr
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthState
 
-<div class="auth-container" style="max-width:700px;">
-    <h2 class="auth-title">Daftarkan Toko Anda</h2>
-    <p class="auth-subtitle">Isi data toko untuk mulai berjualan di Lapak!</p>
-    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
-    @if (!string.IsNullOrEmpty(_err)) { <div class="toast error mb-2">@_err</div> }
-    <div class="row"><div class="col-6"><label class="form-label">Nama Toko *</label><input class="form-input" @bind="_name" /></div><div class="col-6"><label class="form-label">Slug</label><input class="form-input" @bind="_slug" /></div></div>
-    <div class="mt-2"><label class="form-label">Deskripsi</label><textarea class="form-input" @bind="_desc" rows="3"></textarea></div>
-    <div class="row mt-2"><div class="col-6"><label class="form-label">Telepon</label><input class="form-input" @bind="_phone" /></div><div class="col-6"><label class="form-label">Email</label><input class="form-input" @bind="_email" /></div></div>
-    <div class="mt-2"><label class="form-label">Alamat</label><textarea class="form-input" @bind="_address" rows="2"></textarea></div>
-    <div class="row mt-2"><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_city" /></div><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_province" /></div></div>
-    <button class="btn btn-primary btn-lg btn-block mt-3" @onclick="DoRegisterStore" disabled="@_loading">@(_loading?"Mendaftarkan...":"Daftarkan Toko")</button>
+<PageTitle>Daftarkan toko — Lapak</PageTitle>
+
+<div class="auth-container" style="max-width: 680px;">
+    <h2 class="auth-title">Buka lapakmu sendiri</h2>
+    <p class="auth-subtitle">Isi data toko. Produk bisa langsung ditambahkan setelah ini — verifikasi berjalan di belakang.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert success mb-2">@_message</div>
+    }
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert error mb-2">@_error</div>
+    }
+
+    <div class="row">
+        <div class="col-6">
+            <label class="form-label" for="rs-name">Nama toko <span class="text-danger">*</span></label>
+            <input id="rs-name" class="form-input" @bind="_name" placeholder="Contoh: Warung Kopi Gayo" />
+        </div>
+        <div class="col-6">
+            <label class="form-label" for="rs-slug">Slug URL</label>
+            <input id="rs-slug" class="form-input" @bind="_slug" placeholder="dibuat otomatis" />
+        </div>
+    </div>
+
+    <div class="mt-2">
+        <label class="form-label" for="rs-desc">Deskripsi</label>
+        <textarea id="rs-desc" class="form-input" @bind="_desc" rows="3" placeholder="Apa yang kamu jual, dan apa yang membuat tokomu beda?"></textarea>
+    </div>
+
+    <div class="row mt-2">
+        <div class="col-6">
+            <label class="form-label" for="rs-phone">Telepon</label>
+            <input id="rs-phone" class="form-input" type="tel" @bind="_phone" />
+        </div>
+        <div class="col-6">
+            <label class="form-label" for="rs-email">Email toko</label>
+            <input id="rs-email" class="form-input" type="email" @bind="_email" />
+        </div>
+    </div>
+
+    <div class="mt-2">
+        <label class="form-label" for="rs-addr">Alamat</label>
+        <textarea id="rs-addr" class="form-input" @bind="_address" rows="2"></textarea>
+    </div>
+
+    <div class="row mt-2">
+        <div class="col-6">
+            <label class="form-label" for="rs-city">Kota</label>
+            <input id="rs-city" class="form-input" @bind="_city" />
+        </div>
+        <div class="col-6">
+            <label class="form-label" for="rs-prov">Provinsi</label>
+            <input id="rs-prov" class="form-input" @bind="_province" />
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg btn-block mt-3" @onclick="DoRegisterStore" disabled="@_loading">
+        @(_loading ? "Mendaftarkan…" : "Daftarkan toko")
+    </button>
+
+    <p class="text-xs text-muted text-center mt-2">
+        Toko langsung aktif. Lencana “terverifikasi” muncul setelah admin memeriksa datamu.
+    </p>
 </div>
 
 @code {
-    private string _name="", _slug="", _desc="", _phone="", _email="", _address="", _city="", _province="", _msg="", _err=""; private bool _loading;
-    private async Task DoRegisterStore()
+    private string _name = "", _slug = "", _desc = "", _phone = "", _email = "", _address = "", _city = "", _province = "";
+    private string _message = "", _error = "";
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
     {
-        if (string.IsNullOrWhiteSpace(_name)) { _err="Nama toko harus diisi."; return; }
         var auth = await AuthState.GetAuthenticationStateAsync();
         var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login"); return; }
-        _loading=true;
+        if (!Guid.TryParse(uid, out var userId)) return;
+
+        // Someone who already runs a shop belongs on the management page.
+        if (await Db.Stores.AnyAsync(s => s.UserId == userId))
+            Nav.NavigateTo("/seller/manage-store");
+    }
+
+    private async Task DoRegisterStore()
+    {
+        _message = _error = "";
+
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "Nama toko harus diisi."; return; }
+
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(uid, out var userId))
+        {
+            Nav.NavigateTo("/account/login?redirect=/seller/register-store");
+            return;
+        }
+
+        _loading = true;
         try
         {
-            var slug = string.IsNullOrWhiteSpace(_slug) ? _name.ToLower().Replace(" ","-") : _slug.ToLower().Replace(" ","-");
-            if (Db.Stores.Any(s=>s.Slug==slug)) { _err="Slug sudah digunakan."; _loading=false; return; }
-            Db.Stores.Add(new Lapak.Models.Store { Name=_name, Slug=slug, Description=_desc, PhoneNumber=_phone, Email=_email, Address=_address, City=_city, Province=_province, UserId=Guid.Parse(uid), IsActive=true, VerificationStatus="Pending" });
+            var slug = Slugify(string.IsNullOrWhiteSpace(_slug) ? _name : _slug);
+            if (await Db.Stores.AnyAsync(s => s.Slug == slug))
+            {
+                _error = $"Slug \"{slug}\" sudah dipakai. Coba nama atau slug lain.";
+                return;
+            }
+
+            Db.Stores.Add(new Lapak.Models.Store
+            {
+                Name = _name.Trim(),
+                Slug = slug,
+                Description = _desc,
+                PhoneNumber = _phone,
+                Email = _email,
+                Address = _address,
+                City = _city,
+                Province = _province,
+                UserId = userId,
+                IsActive = true,
+                VerificationStatus = "Pending"
+            });
+
+            await Db.SaveChangesAsync();
+
+            // Promote the account so the seller menus and pages open up.
             var user = await UserMgr.FindByIdAsync(uid);
-            if (user != null) { user.UserType="Seller"; await UserMgr.UpdateAsync(user); }
-            Db.SaveChanges(); _msg="Toko berhasil didaftarkan!"; Nav.NavigateTo("/seller/manage-store");
+            if (user != null && user.UserType != "Admin")
+            {
+                user.UserType = "Seller";
+                await UserMgr.UpdateAsync(user);
+            }
+
+            // The cookie still carries the old "Buyer" role, and only a real HTTP
+            // response can replace it — so route through the refresh endpoint.
+            Nav.NavigateTo("/account/refresh?redirect=" + Uri.EscapeDataString("/seller/manage-store"), forceLoad: true);
         }
-        catch (Exception ex) { _err=ex.Message; }
-        _loading=false;
+        catch (Exception ex)
+        {
+            _error = "Gagal mendaftarkan toko: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Slugify(string value)
+    {
+        var slug = new string(value.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        return slug.Trim('-');
     }
 }

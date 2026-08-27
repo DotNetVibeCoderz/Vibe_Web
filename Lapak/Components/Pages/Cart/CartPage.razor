@@ -1,72 +1,183 @@
 @page "/cart"
 @using Lapak.Models
 @using Microsoft.EntityFrameworkCore
+@using Lapak.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject Lapak.Data.LapakDbContext Db
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthState
 
-<div class="page-header"><h1 class="page-title">🛒 Keranjang Belanja</h1></div>
+<PageTitle>Keranjang — Lapak</PageTitle>
 
-@if (!_items.Any()) { <div class="text-center mt-4"><div style="font-size:5rem;">🛒</div><h3>Keranjang kosong</h3><p class="text-muted">Yuk, mulai belanja!</p><a href="/products" class="btn btn-primary mt-2">Lihat Produk</a></div> }
+<div class="page-header">
+    <h1 class="page-title">Keranjang</h1>
+    <p class="page-subtitle">@(_items.Any() ? $"{_items.Sum(i => i.Quantity)} barang siap dibayar" : "Belum ada barang di sini")</p>
+</div>
+
+@if (!_items.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">🧺</div>
+        <h3>Keranjangmu masih kosong</h3>
+        <p>Cari barangnya dulu, atau minta Tony Kurus carikan.</p>
+        <div class="flex gap-1 justify-center">
+            <a href="/products" class="btn btn-primary">Lihat produk</a>
+            <a href="/chat/tony-kurus" class="btn btn-secondary">Tanya Tony Kurus</a>
+        </div>
+    </div>
+}
 else
 {
     <div class="row">
         <div class="col-8">
-            <div class="card"><div class="card-header flex justify-between"><span>@_items.Sum(i => i.Quantity) item</span><button class="btn btn-sm btn-danger" @onclick="ClearCart">🗑️ Kosongkan</button></div>
-            @foreach (var item in _items)
-            {
-                var p = item.Product;
-                var subtotal = p.Price * item.Quantity;
-                <div style="border-bottom:1px solid var(--border-color);padding:16px 20px;display:flex;gap:16px;align-items:center;">
-                    <div style="width:80px;height:80px;background:var(--bg-tertiary);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:2rem;">📦</div>
-                    <div style="flex:1;">
-                        <a href="/products/@p.Slug" style="font-weight:600;color:var(--text-primary);">@p.Name</a>
-                        <div class="text-muted" style="font-size:0.85rem;">🏪 @p.Store?.Name</div>
-                        <div style="color:var(--accent);font-weight:700;">Rp@p.Price.ToString("N0")</div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <button class="btn btn-sm btn-secondary" @onclick="()=>UpdateQty(item,-1)" disabled="@(item.Quantity<=1)">−</button>
-                        <span style="min-width:32px;text-align:center;font-weight:600;">@item.Quantity</span>
-                        <button class="btn btn-sm btn-secondary" @onclick="()=>UpdateQty(item,1)" disabled="@(item.Quantity>=p.MaxOrder)">+</button>
-                    </div>
-                    <div style="font-weight:700;min-width:120px;text-align:right;">Rp@(subtotal.ToString("N0"))</div>
-                    <button class="btn btn-sm btn-danger" @onclick="()=>RemoveItem(item)">🗑️</button>
+            <div class="card">
+                <div class="card-header flex justify-between items-center">
+                    <span>@_items.Count jenis barang</span>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearCart">Kosongkan keranjang</button>
                 </div>
-            }
+
+                @foreach (var item in _items)
+                {
+                    var product = item.Product;
+                    var subtotal = product.Price * item.Quantity;
+                    <div class="cart-line">
+                        <a href="/products/@product.Slug" class="cart-line-thumb weave-tile"
+                           style="--weave-hue: @ProductIcons.HueFor(product.Category?.Name, product.Slug);" aria-label="@product.Name">
+                            <GlyphIcon Name="@ProductIcons.For(product.Category?.Name)" Size="1.7rem" />
+                        </a>
+
+                        <div class="cart-line-main">
+                            <a href="/products/@product.Slug" class="fw-600">@product.Name</a>
+                            <div class="text-xs text-muted">🏪 @product.Store?.Name</div>
+                            <div class="text-sm text-price mt-1">Rp@(product.Price.ToString("N0"))</div>
+                            @if (product.Stock <= 0)
+                            {
+                                <div class="text-xs text-danger mt-1">Stok habis — hapus dari keranjang untuk lanjut checkout</div>
+                            }
+                            else if (item.Quantity > product.Stock)
+                            {
+                                <div class="text-xs text-warning mt-1">Sisa stok @product.Stock</div>
+                            }
+                        </div>
+
+                        <div class="qty-stepper">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => UpdateQty(item, -1)" disabled="@(item.Quantity <= 1)" aria-label="Kurangi jumlah">−</button>
+                            <span class="qty-value tabular">@item.Quantity</span>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => UpdateQty(item, 1)" disabled="@(item.Quantity >= MaxFor(product))" aria-label="Tambah jumlah">+</button>
+                        </div>
+
+                        <div class="cart-line-total tabular">Rp@(subtotal.ToString("N0"))</div>
+
+                        <button class="btn btn-sm btn-ghost" @onclick="() => RemoveItem(item)" title="Hapus barang" aria-label="Hapus @product.Name">🗑️</button>
+                    </div>
+                }
             </div>
         </div>
+
         <div class="col-4">
-            <div class="card"><div class="card-header">Ringkasan Belanja</div><div class="card-body">
-                <div class="flex justify-between mb-2"><span>Total Harga</span><strong>Rp@(_totalPrice.ToString("N0"))</strong></div>
-                <hr style="border-color:var(--border-color);margin:12px 0;"/>
-                <div class="flex justify-between mb-3"><span style="font-size:1.2rem;">Grand Total</span><span style="font-size:1.4rem;font-weight:700;color:var(--accent);">Rp@(_totalPrice.ToString("N0"))</span></div>
-                <button class="btn btn-primary btn-lg btn-block" @onclick="GoCheckout">🛍️ Checkout (@_items.Sum(i=>i.Quantity) item)</button>
-                <a href="/products" class="btn btn-secondary btn-block mt-2">Lanjut Belanja</a>
-            </div></div>
+            <div class="card">
+                <div class="card-header">Ringkasan belanja</div>
+                <div class="card-body">
+                    <div class="flex justify-between mb-2">
+                        <span>Total harga (@_items.Sum(i => i.Quantity) barang)</span>
+                        <strong class="tabular">Rp@(_totalPrice.ToString("N0"))</strong>
+                    </div>
+                    <p class="text-xs text-muted">Ongkos kirim dihitung di langkah berikutnya.</p>
+                    <hr class="divider" />
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="fw-600">Perkiraan total</span>
+                        <span class="text-price" style="font-size:1.35rem;">Rp@(_totalPrice.ToString("N0"))</span>
+                    </div>
+
+                    @if (_hasOutOfStock)
+                    {
+                        <div class="alert warning mb-2">Ada barang yang stoknya habis. Hapus dulu sebelum checkout.</div>
+                    }
+
+                    <button class="btn btn-primary btn-lg btn-block" @onclick="GoCheckout" disabled="@_hasOutOfStock">Checkout</button>
+                    <a href="/products" class="btn btn-secondary btn-block mt-1">Lanjut belanja</a>
+                </div>
+            </div>
         </div>
     </div>
 }
 
+<style>
+    .cart-line {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .cart-line:last-child { border-bottom: none; }
+    .cart-line-thumb {
+        width: 68px; height: 68px;
+        border-radius: var(--radius-md);
+        display: grid; place-items: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+    .cart-line-main { flex: 1; min-width: 0; }
+    .cart-line-total { font-weight: 700; min-width: 108px; text-align: right; font-family: var(--font-display); }
+    .qty-stepper { display: flex; align-items: center; gap: 6px; }
+    .qty-value { min-width: 30px; text-align: center; font-weight: 700; }
+
+    @@media (max-width: 768px) {
+        .cart-line { flex-wrap: wrap; }
+        .cart-line-main { flex: 1 1 60%; }
+        .cart-line-total { min-width: auto; flex: 1; text-align: left; }
+    }
+</style>
+
 @code {
     private List<CartItem> _items = new();
-    private decimal _totalPrice => _items.Sum(i => i.Product.Price * i.Quantity);
     private Guid _userId;
+
+    private decimal _totalPrice => _items.Sum(i => i.Product.Price * i.Quantity);
+    private bool _hasOutOfStock => _items.Any(i => i.Product.Stock <= 0);
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login?redirect=/cart"); return; }
-        _userId = Guid.Parse(uid);
-        _items = Db.CartItems.Include(c => c.Product).ThenInclude(p => p.Store).Where(c => c.UserId == _userId).ToList();
+        if (!Guid.TryParse(uid, out _userId))
+        {
+            Nav.NavigateTo("/account/login?redirect=/cart");
+            return;
+        }
+
+        _items = await Db.CartItems
+            .Include(c => c.Product).ThenInclude(p => p.Store)
+            .Include(c => c.Product).ThenInclude(p => p.Category)
+            .Where(c => c.UserId == _userId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
     }
+
+    /// <summary>Never let the buyer order more than the seller has, or more than MaxOrder.</summary>
+    private static int MaxFor(Product p) => Math.Max(1, Math.Min(p.MaxOrder, p.Stock));
 
     private async Task UpdateQty(CartItem item, int delta)
     {
-        item.Quantity = Math.Clamp(item.Quantity + delta, 1, item.Product.MaxOrder);
-        Db.SaveChanges();
+        item.Quantity = Math.Clamp(item.Quantity + delta, 1, MaxFor(item.Product));
+        await Db.SaveChangesAsync();
     }
-    private async Task RemoveItem(CartItem item) { Db.CartItems.Remove(item); Db.SaveChanges(); _items.Remove(item); }
-    private async Task ClearCart() { Db.CartItems.RemoveRange(_items); Db.SaveChanges(); _items.Clear(); }
+
+    private async Task RemoveItem(CartItem item)
+    {
+        Db.CartItems.Remove(item);
+        await Db.SaveChangesAsync();
+        _items.Remove(item);
+    }
+
+    private async Task ClearCart()
+    {
+        Db.CartItems.RemoveRange(_items);
+        await Db.SaveChangesAsync();
+        _items.Clear();
+    }
+
     private void GoCheckout() => Nav.NavigateTo("/checkout");
+
 }

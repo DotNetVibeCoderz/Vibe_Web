@@ -1,76 +1,282 @@
 @inherits LayoutComponentBase
 @using Lapak.Models
+@using Lapak.Data
+@using Microsoft.EntityFrameworkCore
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthState
-
-@code {
-    private bool _isDarkMode = false;
-    private string ThemeClass => _isDarkMode ? "dark-theme" : "";
-    private string ThemeIcon => _isDarkMode ? "☀️" : "🌙";
-    private bool _sidebarCollapsed = false;
-    private string SidebarClass => _sidebarCollapsed ? "sidebar-collapsed" : "";
-    private int _cartCount = 0;
-    private bool _isAuthenticated = false;
-    private string _searchText = "";
-
-    private void ToggleTheme() => _isDarkMode = !_isDarkMode;
-    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
-
-    private void DoSearch()
-    {
-        if (!string.IsNullOrWhiteSpace(_searchText))
-            Navigation.NavigateTo("/products?q=" + Uri.EscapeDataString(_searchText.Trim()));
-    }
-
-    private async Task HandleSearchKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") DoSearch();
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
-    }
-}
+@inject IServiceScopeFactory ScopeFactory
+@inject IJSRuntime JS
+@implements IDisposable
 
 <div class="lapak-app @ThemeClass @SidebarClass">
     <nav class="top-nav">
         <div class="nav-left">
-            <button class="btn-icon" @onclick="ToggleSidebar" title="Toggle Menu"><span>☰</span></button>
-            <a href="/" class="brand"><span class="brand-icon">🛍️</span><span class="brand-text">Lapak</span></a>
+            <button class="btn-icon" @onclick="ToggleSidebar" title="Buka atau tutup menu" aria-label="Buka atau tutup menu">☰</button>
+            <a href="/" class="brand">
+                <span class="brand-icon" aria-hidden="true"><GlyphIcon Name="keranjang" Size="1.15rem" /></span>
+                <span class="brand-text">Lapak</span>
+            </a>
         </div>
+
         <div class="nav-search">
             <div class="search-box">
-                <input type="text" class="search-input" @bind="_searchText" @onkeydown="HandleSearchKey" placeholder="Cari produk, toko, atau kategori..." />
-                <button class="search-btn" @onclick="DoSearch">🔍</button>
+                <input type="search" class="search-input" @bind="_searchText" @bind:event="oninput" @onkeydown="HandleSearchKey"
+                       placeholder="Cari produk, toko, atau kategori" aria-label="Cari di Lapak" />
+                <button class="search-btn" @onclick="DoSearch" aria-label="Cari"><GlyphIcon Name="cari" Size="1.05rem" /></button>
             </div>
         </div>
+
         <div class="nav-right">
-            <button class="btn-icon" @onclick="ToggleTheme" title="Light/Dark"><span>@ThemeIcon</span></button>
-            <a href="/cart" class="btn-icon cart-btn" title="Keranjang"><span>🛒</span>@if(_cartCount>0){<span class="badge">@_cartCount</span>}</a>
-            <div class="user-menu">
-                @if(_isAuthenticated){<div class="dropdown"><button class="btn-user">👤 Akun ▾</button><div class="dropdown-content"><a href="/account/profile">Profil</a><a href="/account/orders">Pesanan</a><a href="/account/wishlist">Wishlist</a><a href="/account/logout">Logout</a></div></div>}
-                else{<a href="/account/login" class="btn-login">Masuk</a><a href="/account/register" class="btn-register">Daftar</a>}
-            </div>
+            <button class="btn-icon" @onclick="ToggleTheme" title="@ThemeTitle" aria-label="@ThemeTitle">@ThemeIcon</button>
+
+            <a href="/cart" class="btn-icon" title="Keranjang" aria-label="Keranjang belanja">
+                <GlyphIcon Name="keranjang" Size="1.2rem" />
+                @if (_cartCount > 0)
+                {
+                    <span class="badge">@_cartCount</span>
+                }
+            </a>
+
+            @if (_isAuthenticated)
+            {
+                <div class="dropdown">
+                    <button class="btn-user">@_displayName ▾</button>
+                    <div class="dropdown-content">
+                        <a href="/account/profile">Profil saya</a>
+                        <a href="/account/orders">Pesanan saya</a>
+                        <a href="/account/wishlist">Wishlist</a>
+                        @if (_isSeller)
+                        {
+                            <div class="dropdown-divider"></div>
+                            <a href="/seller/manage-store">Kelola toko</a>
+                            <a href="/seller/manage-products">Kelola produk</a>
+                        }
+                        @if (_isAdmin)
+                        {
+                            <div class="dropdown-divider"></div>
+                            <a href="/admin">Panel admin</a>
+                        }
+                        <div class="dropdown-divider"></div>
+                        <a href="/account/logout">Keluar</a>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <a href="/account/login" class="btn-login">Masuk</a>
+                <a href="/account/register" class="btn-register">Daftar</a>
+            }
         </div>
     </nav>
 
     <div class="main-container">
         <aside class="sidebar">
-            <div class="sidebar-menu">
-                <a href="/" class="sidebar-item @(Navigation.Uri.EndsWith("/")||Navigation.Uri.EndsWith("lapak/")?"active":"")"><span class="sidebar-icon">🏠</span><span class="sidebar-text">Beranda</span></a>
-                <a href="/products" class="sidebar-item"><span class="sidebar-icon">📦</span><span class="sidebar-text">Produk</span></a>
-                <a href="/stores" class="sidebar-item"><span class="sidebar-icon">🏪</span><span class="sidebar-text">Toko</span></a>
-                <a href="/promos" class="sidebar-item"><span class="sidebar-icon">🎫</span><span class="sidebar-text">Promo</span></a>
-                <div class="sidebar-divider"></div><div class="sidebar-label">AI Assistant</div>
-                <a href="/chat/tony-kurus" class="sidebar-item"><span class="sidebar-icon">🤖</span><span class="sidebar-text">Tony Kurus</span></a>
-                <a href="/chat/siti-bohay" class="sidebar-item"><span class="sidebar-icon">💁</span><span class="sidebar-text">Siti Bohay</span></a>
-                @if(_isAuthenticated){<div class="sidebar-divider"></div><a href="/dashboard" class="sidebar-item"><span class="sidebar-icon">📊</span><span class="sidebar-text">Dashboard</span></a>}
+            <nav class="sidebar-menu">
+                <div class="sidebar-label">Belanja</div>
+                <a href="/" class="sidebar-item @Active("/", exact: true)"><span class="sidebar-icon"><GlyphIcon Name="rumah" Size="1.15rem" /></span><span class="sidebar-text">Beranda</span></a>
+                <a href="/products" class="sidebar-item @Active("/products")"><span class="sidebar-icon"><GlyphIcon Name="kotak" Size="1.15rem" /></span><span class="sidebar-text">Produk</span></a>
+                <a href="/stores" class="sidebar-item @Active("/stores")"><span class="sidebar-icon"><GlyphIcon Name="toko" Size="1.15rem" /></span><span class="sidebar-text">Toko</span></a>
+                <a href="/promos" class="sidebar-item @Active("/promos")"><span class="sidebar-icon"><GlyphIcon Name="tiket" Size="1.15rem" /></span><span class="sidebar-text">Promo</span></a>
+
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-label">Asisten AI</div>
+                <a href="/chat/tony-kurus" class="sidebar-item @Active("/chat/tony-kurus")"><span class="sidebar-icon">🤖</span><span class="sidebar-text">Tony Kurus</span></a>
+                <a href="/chat/siti-bohay" class="sidebar-item @Active("/chat/siti-bohay")"><span class="sidebar-icon">💁</span><span class="sidebar-text">Siti Bohay</span></a>
+
+                @if (_isAuthenticated)
+                {
+                    <div class="sidebar-divider"></div>
+                    <div class="sidebar-label">Akun</div>
+                    <a href="/cart" class="sidebar-item @Active("/cart")">
+                        <span class="sidebar-icon"><GlyphIcon Name="keranjang" Size="1.15rem" /></span><span class="sidebar-text">Keranjang</span>
+                        @if (_cartCount > 0)
+                        {
+                            <span class="sidebar-badge">@_cartCount</span>
+                        }
+                    </a>
+                    <a href="/account/orders" class="sidebar-item @Active("/account/orders")"><span class="sidebar-icon"><GlyphIcon Name="nota" Size="1.15rem" /></span><span class="sidebar-text">Pesanan</span></a>
+                    <a href="/account/wishlist" class="sidebar-item @Active("/account/wishlist")"><span class="sidebar-icon"><GlyphIcon Name="hati" Size="1.15rem" /></span><span class="sidebar-text">Wishlist</span></a>
+                }
+
+                @if (_isSeller)
+                {
+                    <div class="sidebar-divider"></div>
+                    <div class="sidebar-label">Penjual</div>
+                    <a href="/seller/manage-store" class="sidebar-item @Active("/seller/manage-store")"><span class="sidebar-icon"><GlyphIcon Name="toko" Size="1.15rem" /></span><span class="sidebar-text">Kelola toko</span></a>
+                    <a href="/seller/manage-products" class="sidebar-item @Active("/seller/manage-products")"><span class="sidebar-icon"><GlyphIcon Name="kotak" Size="1.15rem" /></span><span class="sidebar-text">Kelola produk</span></a>
+                    <a href="/dashboard" class="sidebar-item @Active("/dashboard")"><span class="sidebar-icon"><GlyphIcon Name="grafik" Size="1.15rem" /></span><span class="sidebar-text">Dashboard</span></a>
+                }
+
+                @if (_isAdmin)
+                {
+                    <div class="sidebar-divider"></div>
+                    <div class="sidebar-label">Admin</div>
+                    <a href="/admin" class="sidebar-item @Active("/admin")"><span class="sidebar-icon"><GlyphIcon Name="perisai" Size="1.15rem" /></span><span class="sidebar-text">Panel admin</span></a>
+                    <a href="/dashboard" class="sidebar-item @Active("/dashboard")"><span class="sidebar-icon"><GlyphIcon Name="grafik" Size="1.15rem" /></span><span class="sidebar-text">Dashboard</span></a>
+                }
+            </nav>
+            <div class="sidebar-footer">
+                <span class="version">Lapak v2.0 · Pasar digital Indonesia</span>
             </div>
-            <div class="sidebar-footer"><span class="version">Lapak v1.0</span></div>
         </aside>
+
         <main class="main-content">@Body</main>
     </div>
-    <nav class="mobile-nav"><a href="/" class="mobile-nav-item">🏠</a><a href="/products" class="mobile-nav-item">📦</a><a href="/chat/tony-kurus" class="mobile-nav-item">🤖</a><a href="/cart" class="mobile-nav-item">🛒</a><a href="/account" class="mobile-nav-item">👤</a></nav>
+
+    <nav class="mobile-nav">
+        <a href="/" class="mobile-nav-item @Active("/", exact: true)" aria-label="Beranda"><GlyphIcon Name="rumah" Size="1.3rem" /></a>
+        <a href="/products" class="mobile-nav-item @Active("/products")" aria-label="Produk"><GlyphIcon Name="kotak" Size="1.3rem" /></a>
+        <a href="/chat/tony-kurus" class="mobile-nav-item @Active("/chat")" aria-label="Asisten AI">🤖</a>
+        <a href="/cart" class="mobile-nav-item @Active("/cart")" aria-label="Keranjang"><GlyphIcon Name="keranjang" Size="1.3rem" /></a>
+        <a href="/account/profile" class="mobile-nav-item @Active("/account")" aria-label="Akun"><GlyphIcon Name="orang" Size="1.3rem" /></a>
+    </nav>
 </div>
+
+@code {
+    private bool _isDarkMode;
+    private bool _sidebarCollapsed;
+    private bool _isAuthenticated;
+    private bool _isSeller;
+    private bool _isAdmin;
+    private int _cartCount;
+    private string _displayName = "Akun";
+    private string _searchText = "";
+    private Guid? _userId;
+
+    private string ThemeClass => _isDarkMode ? "dark-theme" : "";
+    private string SidebarClass => _sidebarCollapsed ? "sidebar-collapsed" : "";
+    private string ThemeIcon => _isDarkMode ? "☀️" : "🌙";
+    private string ThemeTitle => _isDarkMode ? "Beralih ke tampilan terang" : "Beralih ke tampilan gelap";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await LoadUserAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // The stored theme can only be read once the browser is connected, so the
+        // first paint uses the light palette and switches here if needed.
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("lapak.getTheme");
+            if (theme == "dark" && !_isDarkMode)
+            {
+                _isDarkMode = true;
+                StateHasChanged();
+            }
+        }
+        catch (JSException) { /* prerender or disconnected circuit */ }
+    }
+
+    private async Task LoadUserAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _isAuthenticated = user.Identity?.IsAuthenticated ?? false;
+
+        if (!_isAuthenticated)
+        {
+            _userId = null;
+            _cartCount = 0;
+            _isSeller = _isAdmin = false;
+            return;
+        }
+
+        var id = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(id, out var parsed)) return;
+
+        _userId = parsed;
+
+        // The layout runs its own scope: the circuit-wide DbContext belongs to the
+        // page, and a navigation-triggered refresh here must never overlap a query
+        // the page is already awaiting on that same instance.
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LapakDbContext>();
+
+        var profile = await db.Users
+            .AsNoTracking()
+            .Where(u => u.Id == parsed)
+            .Select(u => new { u.FullName, u.UserType })
+            .FirstOrDefaultAsync();
+
+        if (profile != null)
+        {
+            _displayName = FirstName(profile.FullName);
+            _isSeller = profile.UserType == "Seller";
+            _isAdmin = profile.UserType == "Admin";
+        }
+
+        _cartCount = await CountCartAsync(db);
+    }
+
+    private async Task RefreshCartCountAsync()
+    {
+        if (_userId is null) { _cartCount = 0; return; }
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LapakDbContext>();
+        _cartCount = await CountCartAsync(db);
+    }
+
+    private async Task<int> CountCartAsync(LapakDbContext db) =>
+        _userId is null
+            ? 0
+            : await db.CartItems.AsNoTracking().Where(c => c.UserId == _userId).SumAsync(c => (int?)c.Quantity) ?? 0;
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Keep the cart badge honest as the buyer moves around the site.
+        try
+        {
+            await RefreshCartCountAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException) { /* circuit went away mid-navigation */ }
+    }
+
+    private async Task ToggleTheme()
+    {
+        _isDarkMode = !_isDarkMode;
+        try
+        {
+            await JS.InvokeVoidAsync("lapak.setTheme", _isDarkMode ? "dark" : "light");
+        }
+        catch (JSException) { /* the toggle still applies for this session */ }
+    }
+
+    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+
+    private void DoSearch()
+    {
+        var term = _searchText.Trim();
+        Navigation.NavigateTo(string.IsNullOrEmpty(term)
+            ? "/products"
+            : "/products?q=" + Uri.EscapeDataString(term));
+    }
+
+    private async Task HandleSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") DoSearch();
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Marks the sidebar entry matching the current URL.</summary>
+    private string Active(string path, bool exact = false)
+    {
+        var current = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].TrimEnd('/');
+        if (exact) return current == "/" ? "active" : "";
+        return current.StartsWith(path, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+    }
+
+    private static string FirstName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "Akun";
+        var first = fullName.Trim().Split(' ')[0];
+        return first.Length > 14 ? first[..14] : first;
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

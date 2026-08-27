@@ -1,61 +1,332 @@
 @page "/account/orders"
 @page "/account/orders/{OrderNumber}"
 @using Lapak.Models
+@using Lapak.Services.Payment
 @using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject Lapak.Data.LapakDbContext Db
+@inject IPaymentService PaymentSvc
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthState
 
+<PageTitle>Pesanan saya — Lapak</PageTitle>
+
 @if (string.IsNullOrEmpty(OrderNumber))
 {
-    <div class="page-header"><h1 class="page-title">📋 Pesanan Saya</h1></div>
-    @if (!_orders.Any()) { <div class="text-center mt-4"><div style="font-size:4rem;">📋</div><h3>Belum ada pesanan</h3><a href="/products" class="btn btn-primary mt-2">Mulai Belanja</a></div> }
-    else { foreach(var o in _orders) {
-        <div class="card mb-2"><div class="card-body"><div class="flex justify-between items-center"><div><strong>#@o.OrderNumber</strong> <small class="text-muted">@o.CreatedAt.ToString("dd MMM yyyy HH:mm")</small></div><span class="badge-status" style="background:@GetStatusColor(o.Status)">@o.Status</span></div>
-        <div class="mt-2">@foreach(var oi in o.OrderItems){<span class="mr-2">@oi.Product?.Name x@oi.Quantity</span>}</div>
-        <div class="flex justify-between mt-2"><span>Total: <strong>Rp@(o.GrandTotal.ToString("N0"))</strong></span><a href="/account/orders/@o.OrderNumber" class="btn btn-sm btn-primary">Detail</a></div></div></div>
-    }}
+    <div class="page-header">
+        <h1 class="page-title">Pesanan saya</h1>
+        <p class="page-subtitle">@_orders.Count pesanan terakhir</p>
+    </div>
+
+    @if (!_orders.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <h3>Belum ada pesanan</h3>
+            <p>Pesanan yang kamu buat akan muncul di sini, lengkap dengan status pengiriman.</p>
+            <a href="/products" class="btn btn-primary">Mulai belanja</a>
+        </div>
+    }
+    else
+    {
+        @foreach (var o in _orders)
+        {
+            <div class="card mb-2">
+                <div class="card-body">
+                    <div class="flex justify-between items-center flex-wrap gap-1">
+                        <div>
+                            <a href="/account/orders/@o.OrderNumber" class="fw-700">@o.OrderNumber</a>
+                            <span class="text-xs text-muted ml-1">@o.CreatedAt.ToString("d MMM yyyy · HH:mm")</span>
+                        </div>
+                        <div class="flex gap-1 items-center">
+                            <span class="badge-status" style="color:@StatusColor(o.Status); border-color:@StatusColor(o.Status);">@o.Status</span>
+                            @if (o.PaymentStatus != "Paid")
+                            {
+                                <span class="badge-status" style="color:var(--warning); border-color:var(--warning);">Belum dibayar</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="text-sm text-muted mt-2">
+                        @string.Join(" · ", o.OrderItems.Select(oi => $"{oi.Product?.Name} ×{oi.Quantity}"))
+                    </div>
+
+                    <div class="flex justify-between items-center mt-2">
+                        <span>Total <strong class="text-price">Rp@(o.GrandTotal.ToString("N0"))</strong></span>
+                        <a href="/account/orders/@o.OrderNumber" class="btn btn-sm btn-secondary">Lihat detail</a>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+else if (_order == null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">🔍</div>
+        <h3>Pesanan tidak ditemukan</h3>
+        <p>Nomor pesanan ini tidak ada, atau bukan milik akunmu.</p>
+        <a href="/account/orders" class="btn btn-primary">Kembali ke daftar pesanan</a>
+    </div>
 }
 else
 {
-    @if (_order == null) { <div class="text-center mt-4"><h3>Pesanan tidak ditemukan</h3></div> }
-    else
+    <nav class="breadcrumb mb-2"><a href="/account/orders">← Pesanan saya</a></nav>
+
+    <div class="page-header">
+        <h1 class="page-title">@_order.OrderNumber</h1>
+        <p class="page-subtitle">Dibuat @_order.CreatedAt.ToString("d MMMM yyyy, HH:mm")</p>
+    </div>
+
+    @if (_paymentResultMessage is not null)
     {
-        <nav class="breadcrumb mb-2"><a href="/account/orders">← Pesanan Saya</a></nav>
-        <div class="page-header"><h1 class="page-title">Pesanan #@_order.OrderNumber</h1></div>
-        <div class="row">
-            <div class="col-8">
-                <div class="card mb-3"><div class="card-header">Status Pesanan</div><div class="card-body"><div class="order-timeline">
-                    @{ var statuses = new[]{"Pending","Paid","Processing","Shipped","Delivered","Completed"};
-                       var currentIdx = Array.IndexOf(statuses, _order.Status); if(currentIdx<0)currentIdx=0;
-                       for(int i=0;i<statuses.Length;i++){<div class="timeline-step @(i<=currentIdx?"active":"")"><div class="timeline-dot">@(i<=currentIdx?"✅":"⭕")</div><div>@statuses[i]</div></div>} }
-                </div></div></div>
-                <div class="card mb-3"><div class="card-header">Item Pesanan</div><div class="card-body">@foreach(var oi in _order.OrderItems){<div class="flex justify-between items-center mb-2"><div>@oi.Product?.Name x@oi.Quantity</div><div>Rp@(oi.SubTotal.ToString("N0"))</div></div>}<hr/><div class="flex justify-between"><strong>Total</strong><strong style="color:var(--accent);">Rp@(_order.GrandTotal.ToString("N0"))</strong></div></div></div>
-                @if (_order.ShippingTrackings.Any()) { <div class="card mb-3"><div class="card-header">📦 Tracking</div><div class="card-body">@foreach(var t in _order.ShippingTrackings.OrderByDescending(t=>t.EventDate)){<div class="mb-2"><strong>@t.Status</strong><br/>@t.Description<br/><small class="text-muted">@t.Location · @t.EventDate.ToString("dd MMM yyyy HH:mm")</small></div>}</div></div> }
+        <div class="alert @(_paymentResultOk ? "success" : "error") mb-3">@_paymentResultMessage</div>
+    }
+
+    <div class="row">
+        <div class="col-8">
+            <div class="card mb-3">
+                <div class="card-header">Status pesanan</div>
+                <div class="card-body">
+                    <div class="order-timeline">
+                        @foreach (var (label, index) in StatusFlow.Select((s, i) => (s, i)))
+                        {
+                            <div class="timeline-step @(index <= CurrentStatusIndex ? "active" : "")">
+                                <div class="timeline-dot">@(index < CurrentStatusIndex ? "✓" : (index + 1).ToString())</div>
+                                <div>@label</div>
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
-            <div class="col-4">
-                <div class="card mb-3"><div class="card-header">Info Pengiriman</div><div class="card-body"><p>@_order.ShippingAddress</p><p>@_order.ShippingCity, @_order.ShippingProvince @_order.ShippingPostalCode</p><p>Kurir: @_order.ShippingCourier @_order.ShippingService</p><p>Resi: @_order.TrackingNumber</p></div></div>
-                <div class="card"><div class="card-header">Pembayaran</div><div class="card-body"><p>Status: <strong>@_order.PaymentStatus</strong></p><p>Metode: @_order.PaymentMethod</p><p>Gateway: @_order.PaymentGateway</p>@if(_order.PaymentStatus=="Unpaid"){<a href="/chat/siti-bohay" class="btn btn-sm btn-secondary mt-2">💁 Bantuan Bayar</a>}</div></div>
+
+            <div class="card mb-3">
+                <div class="card-header">Barang yang dipesan</div>
+                <div class="card-body">
+                    @foreach (var oi in _order.OrderItems)
+                    {
+                        <div class="flex justify-between items-center mb-2">
+                            <div>
+                                @if (oi.Product != null)
+                                {
+                                    <a href="/products/@oi.Product.Slug">@oi.Product.Name</a>
+                                }
+                                else
+                                {
+                                    <span>Produk tidak tersedia</span>
+                                }
+                                <span class="text-muted">×@oi.Quantity</span>
+                            </div>
+                            <span class="tabular">Rp@(oi.SubTotal.ToString("N0"))</span>
+                        </div>
+                    }
+                    <hr class="divider" />
+                    <div class="flex justify-between mb-1"><span>Subtotal</span><span class="tabular">Rp@(_order.SubTotal.ToString("N0"))</span></div>
+                    <div class="flex justify-between mb-1"><span>Ongkos kirim</span><span class="tabular">Rp@(_order.ShippingCost.ToString("N0"))</span></div>
+                    @if (_order.Discount > 0)
+                    {
+                        <div class="flex justify-between mb-1 text-success"><span>Diskon</span><span class="tabular">−Rp@(_order.Discount.ToString("N0"))</span></div>
+                    }
+                    <hr class="divider" />
+                    <div class="flex justify-between items-center">
+                        <strong>Total</strong>
+                        <span class="text-price" style="font-size:1.25rem;">Rp@(_order.GrandTotal.ToString("N0"))</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (_order.ShippingTrackings.Any())
+            {
+                <div class="card mb-3">
+                    <div class="card-header">Riwayat pengiriman</div>
+                    <div class="card-body">
+                        @foreach (var t in _order.ShippingTrackings.OrderByDescending(t => t.EventDate))
+                        {
+                            <div class="tracking-event">
+                                <strong>@t.Status</strong>
+                                <div class="text-sm">@t.Description</div>
+                                <div class="text-xs text-muted">@t.Location · @t.EventDate.ToString("d MMM yyyy HH:mm")</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-4">
+            <div class="card mb-3">
+                <div class="card-header">Alamat pengiriman</div>
+                <div class="card-body text-sm">
+                    <p>@_order.ShippingAddress</p>
+                    <p>@_order.ShippingCity, @_order.ShippingProvince @_order.ShippingPostalCode</p>
+                    <hr class="divider-dashed" />
+                    <p><span class="text-muted">Kurir</span><br />@_order.ShippingCourier @_order.ShippingService</p>
+                    <p class="mt-1"><span class="text-muted">Nomor resi</span><br />@(_order.TrackingNumber ?? "Belum tersedia")</p>
+                    @if (!string.IsNullOrWhiteSpace(_order.ShippingNotes))
+                    {
+                        <p class="mt-1"><span class="text-muted">Catatan</span><br />@_order.ShippingNotes</p>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Pembayaran</div>
+                <div class="card-body text-sm">
+                    <p>
+                        <span class="text-muted">Status</span><br />
+                        <strong class="@(_order.PaymentStatus == "Paid" ? "text-success" : "text-warning")">
+                            @(_order.PaymentStatus == "Paid" ? "Lunas" : _order.PaymentStatus)
+                        </strong>
+                    </p>
+                    <p class="mt-1"><span class="text-muted">Metode</span><br />@(string.IsNullOrEmpty(_order.PaymentMethod) ? "—" : _order.PaymentMethod)</p>
+                    <p class="mt-1"><span class="text-muted">Gateway</span><br />@(_order.PaymentGateway ?? "—")</p>
+
+                    @if (_order.PaymentStatus != "Paid")
+                    {
+                        <hr class="divider" />
+                        @if (!string.IsNullOrEmpty(_retryPaymentUrl))
+                        {
+                            <a href="@_retryPaymentUrl" class="btn btn-primary btn-block" target="_blank" rel="noopener">Lanjutkan pembayaran</a>
+                        }
+                        else if (!string.IsNullOrEmpty(_retryVaNumber))
+                        {
+                            <div class="form-label">Virtual Account</div>
+                            <div class="text-price" style="font-size:1.25rem;letter-spacing:0.1em;">@_retryVaNumber</div>
+                        }
+                        else
+                        {
+                            <button class="btn btn-primary btn-block" @onclick="RetryPayment" disabled="@_retrying">
+                                @(_retrying ? "Menyiapkan…" : "Bayar sekarang")
+                            </button>
+                        }
+                        <a href="/chat/siti-bohay" class="btn btn-ghost btn-block mt-1">💁 Tanya Siti Bohay</a>
+                    }
+                </div>
             </div>
         </div>
-    }
+    </div>
 }
 
+<style>
+    .tracking-event {
+        border-left: 2px solid var(--border-color);
+        padding: 0 0 14px 14px;
+        position: relative;
+    }
+    .tracking-event:last-child { padding-bottom: 0; }
+    .tracking-event::before {
+        content: '';
+        position: absolute;
+        left: -5px; top: 6px;
+        width: 8px; height: 8px;
+        border-radius: var(--radius-circle);
+        background: var(--gold);
+    }
+</style>
+
 @code {
+    private static readonly string[] StatusFlow = { "Pending", "Paid", "Processing", "Shipped", "Delivered", "Completed" };
+
     [Parameter] public string? OrderNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "payment")] private string? PaymentResult { get; set; }
+
     private List<Order> _orders = new();
     private Order? _order;
     private Guid _userId;
+
+    private bool _retrying;
+    private string _retryPaymentUrl = "", _retryVaNumber = "";
+    private string? _paymentResultMessage;
+    private bool _paymentResultOk;
+
+    private int CurrentStatusIndex
+    {
+        get
+        {
+            var index = Array.IndexOf(StatusFlow, _order?.Status);
+            return index < 0 ? 0 : index;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login?redirect=/account/orders"); return; }
-        _userId = Guid.Parse(uid);
-        if (!string.IsNullOrEmpty(OrderNumber)) _order = Db.Orders.Include(o=>o.OrderItems).ThenInclude(oi=>oi.Product).Include(o=>o.ShippingTrackings).FirstOrDefault(o=>o.OrderNumber==OrderNumber&&o.UserId==_userId);
-        else _orders = Db.Orders.Include(o=>o.OrderItems).ThenInclude(oi=>oi.Product).Where(o=>o.UserId==_userId).OrderByDescending(o=>o.CreatedAt).Take(20).ToList();
+        if (!Guid.TryParse(uid, out _userId)) return;
+
+        // Gateways send the buyer back here with ?payment=success|cancelled.
+        _paymentResultMessage = PaymentResult switch
+        {
+            "success" => "Pembayaran diterima. Status pesanan akan diperbarui begitu konfirmasi dari gateway masuk.",
+            "cancelled" => "Pembayaran dibatalkan. Kamu masih bisa membayar pesanan ini kapan saja.",
+            _ => null
+        };
+        _paymentResultOk = PaymentResult == "success";
+
+        if (!string.IsNullOrEmpty(OrderNumber))
+        {
+            _order = await Db.Orders
+                .Include(o => o.OrderItems).ThenInclude(oi => oi.Product)
+                .Include(o => o.ShippingTrackings)
+                .FirstOrDefaultAsync(o => o.OrderNumber == OrderNumber && o.UserId == _userId);
+        }
+        else
+        {
+            _orders = await Db.Orders
+                .Include(o => o.OrderItems).ThenInclude(oi => oi.Product)
+                .Where(o => o.UserId == _userId)
+                .OrderByDescending(o => o.CreatedAt)
+                .Take(20)
+                .ToListAsync();
+        }
     }
 
-    private string GetStatusColor(string s) => s switch {"Completed"=>"var(--success)","Paid"=>"var(--info)","Processing"=>"var(--warning)","Shipped"=>"var(--accent)","Cancelled"=>"var(--danger)",_=>"var(--text-muted)"};
+    /// <summary>
+    /// Restarts a payment for an order that was created but never paid — the case
+    /// where the gateway was unreachable at checkout, or the buyer walked away.
+    /// </summary>
+    private async Task RetryPayment()
+    {
+        if (_order == null || _retrying) return;
+
+        _retrying = true;
+        try
+        {
+            var response = await PaymentSvc.CreatePaymentAsync(new PaymentRequest
+            {
+                OrderId = _order.Id,
+                Gateway = _order.PaymentGateway,
+                PaymentMethod = string.IsNullOrEmpty(_order.PaymentMethod) ? "bank_transfer:bca" : _order.PaymentMethod
+            });
+
+            if (response.Success)
+            {
+                _retryPaymentUrl = response.PaymentUrl;
+                _retryVaNumber = response.VaNumber;
+                _paymentResultOk = true;
+                _paymentResultMessage = string.IsNullOrEmpty(response.Instruction)
+                    ? "Pembayaran siap dilanjutkan."
+                    : response.Instruction;
+            }
+            else
+            {
+                _paymentResultOk = false;
+                _paymentResultMessage = "Pembayaran belum bisa dimulai: " + response.ErrorMessage;
+            }
+        }
+        finally
+        {
+            _retrying = false;
+        }
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "Completed" or "Delivered" => "var(--success)",
+        "Paid" => "var(--info)",
+        "Processing" => "var(--warning)",
+        "Shipped" => "var(--gold)",
+        "Cancelled" or "Refunded" => "var(--danger)",
+        _ => "var(--text-muted)"
+    };
 }

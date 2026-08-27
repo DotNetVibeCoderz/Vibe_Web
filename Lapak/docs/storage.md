@@ -1,13 +1,32 @@
 # 💾 Konfigurasi Storage - Lapak
 
-## Provider yang Didukung
+Unggahan (foto profil dan lampiran chat) melewati `StorageServiceFactory`, yang
+memilih implementasi berdasarkan `Storage:Provider`.
 
-| Provider | Keterangan | Use Case |
-|----------|------------|----------|
-| FileSystem | Local file storage | Development / Single server |
-| MinIO | S3-compatible object storage | Self-hosted production |
-| Amazon S3 | AWS cloud storage | Cloud production |
-| Azure Blob | Azure cloud storage | Azure production |
+## Status implementasi
+
+| Provider | Status | Keterangan |
+|----------|--------|------------|
+| `FileSystem` | **Berjalan penuh** | Bawaan. Berkas disimpan di `wwwroot/uploads/` |
+| `MinIO` | **Sebagian** | Unggah dan URL publik berjalan; `DeleteAsync` masih placeholder |
+| `AmazonS3` | **Belum** | Saat ini dialihkan ke implementasi MinIO (protokol S3-compatible) |
+| `AzureBlob` | **Belum** | Saat ini jatuh kembali ke `FileSystem` |
+
+> Konfigurasi untuk keempatnya sudah ada, tetapi hanya `FileSystem` yang siap
+> produksi. Untuk S3 atau Azure Blob sungguhan, tambahkan implementasi
+> `IStorageService` baru lalu daftarkan di `StorageServiceFactory`.
+
+## Cara memakainya dari kode
+
+`IStorageService` **tidak** didaftarkan langsung di DI. Inject factory-nya:
+
+```csharp
+@inject Lapak.Services.Storage.StorageServiceFactory StorageFactory
+
+var storage = StorageFactory.GetStorageService();
+var storedName = await storage.UploadAsync(fileName, stream, contentType);
+var publicUrl = await storage.GetPublicUrlAsync(storedName);
+```
 
 ## Konfigurasi via appsettings.json
 

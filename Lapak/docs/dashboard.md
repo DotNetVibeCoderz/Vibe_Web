@@ -1,61 +1,119 @@
-# 📊 Dashboard & Pelaporan - Lapak
+# 📊 Dashboard & Laporan — Lapak
 
-## Fitur Dashboard
+Rute: `/dashboard` — terbuka untuk pengguna yang sudah masuk; tautannya muncul di
+sidebar untuk penjual dan admin.
 
-### Statistik Utama
-- Total Pendapatan
-- Total Pesanan
-- Jumlah Pelanggan
-- Rata-rata Rating Produk
+![Dashboard](screenshots/20-dashboard.png)
 
-### Grafik & Visualisasi
-- Ikhtisar Penjualan (30 hari)
-- Distribusi Tier Pelanggan
-- Status Pesanan (Pie chart)
-- Produk Terlaris
+---
 
-### Tabel Data
-- Daftar Pesanan Terbaru
-- Filter berdasarkan status, tanggal, tier
+## Filter menentukan segalanya
 
-## Konfigurasi Chart
+Filter berada di paling atas karena **seluruh isi halaman mengikutinya** — kartu
+statistik, grafik, dan tabel semuanya dihitung ulang dari kueri yang sama.
 
-Dashboard menggunakan **ChartJs.Blazor.Fork** untuk rendering chart. Konfigurasi:
+| Filter | Perilaku |
+|---|---|
+| Dari / sampai tanggal | Inklusif di kedua ujung; bawaannya 30 hari terakhir |
+| Tier pelanggan | Menyaring pesanan berdasarkan tier pemiliknya |
+| Status pesanan | Pending, Paid, Processing, Shipped, Delivered, Completed, Cancelled |
 
-```csharp
-// Di Program.cs
-builder.Services.AddChartJs(); // Setup ChartJs
+Tombol **Reset** mengembalikan ke rentang 30 hari tanpa filter lain.
 
-// Di komponen
-<Chart Config="_barChartConfig" />
+---
+
+## Kartu statistik
+
+| Kartu | Yang dihitung |
+|---|---|
+| Pendapatan (lunas) | Jumlah `GrandTotal` pesanan yang `PaymentStatus = Paid` atau `Status = Completed` |
+| Pesanan | Jumlah pesanan dalam rentang, apa pun statusnya |
+| Pelanggan aktif | Pengguna `IsActive`, ikut tersaring bila tier dipilih |
+| Rata-rata per pesanan | Total nilai pesanan dibagi jumlah pesanan |
+
+Nilai rupiah diringkas (`rb` / `jt` / `M`) supaya kartu tetap terbaca; angka
+lengkapnya ada di tabel dan di CSV.
+
+Pendapatan sengaja hanya menghitung uang yang benar-benar diterima — pesanan yang
+dibuat tapi belum dibayar tidak masuk hitungan.
+
+---
+
+## Grafik
+
+**Pesanan per hari** memplot jumlah pesanan harian yang sebenarnya, dikelompokkan
+di database (`GROUP BY CreatedAt.Date`), lalu diisi nol untuk hari tanpa pesanan
+supaya sumbu waktunya tidak bolong. Rentang lebih dari 60 hari dipotong agar batang
+tetap terbaca.
+
+**Segmentasi pelanggan** memakai `ICustomerScoringService.GetTierDistributionAsync()`
+dan menampilkan jumlah serta persentase tiap tier.
+
+Grafik digambar dengan CSS grid dan flexbox, bukan pustaka chart — tidak ada
+JavaScript yang perlu dimuat, dan warnanya otomatis ikut tema terang/gelap.
+
+![Dashboard tema gelap](screenshots/21-dashboard-gelap.png)
+
+---
+
+## Tabel pesanan terbaru
+
+12 pesanan terakhir dalam rentang, lengkap dengan nama pelanggan, tier, dan toko.
+Nomor pesanan menautkan ke halaman detailnya.
+
+---
+
+## Ekspor CSV
+
+Tombol **Unduh CSV** mengarah ke `GET /api/reports/orders.csv` dengan filter yang
+sedang aktif diteruskan sebagai query string:
+
+```
+/api/reports/orders.csv?from=2026-07-29&to=2026-08-27&tier=Gold&status=Completed
 ```
 
-## Filter Lanjutan
+Endpoint memakai kueri yang sama dengan halaman, jadi **berkasnya selalu cocok
+dengan apa yang terlihat di layar**. Batas amannya 5.000 baris per unduhan.
 
-Dashboard mendukung filter:
-- **Rentang Tanggal**: Filter data berdasarkan periode
-- **Kategori**: Filter berdasarkan kategori produk
-- **Toko**: Filter berdasarkan toko tertentu
-- **Nilai Transaksi**: Filter berdasarkan range nilai
-- **Tier Pelanggan**: Filter berdasarkan segmentasi
+Kolom: nomor pesanan, tanggal, pelanggan, email, tier, toko, subtotal, ongkir,
+diskon, total, status, status bayar, gateway, kurir, resi.
 
-## Real-time Updates
+Berkas ditulis dengan BOM UTF-8 supaya Excel di Windows membaca teks Indonesianya
+dengan benar, dan setiap kolom dikutip sehingga koma di dalam nama tidak menggeser
+kolom.
 
-Dashboard menggunakan SignalR untuk update real-time:
-- Status pesanan berubah → Dashboard terupdate otomatis
-- Transaksi baru → Statistik terupdate
-- Perubahan data → Chart ter-refresh
+Endpoint ini `[Authorize]` — unduhan hanya untuk pengguna yang sudah masuk.
 
-## Export Laporan
+---
 
-Fitur export mendukung:
-- PDF (coming soon)
-- Excel/CSV (coming soon)
+## Segmentasi pelanggan
 
-## Customer Scoring Dashboard
+Tier dihitung `CustomerScoringService` dari jumlah transaksi, nilai transaksi, dan
+keragaman kategori, dengan bobot yang diatur di `appsettings.json`:
 
-Segmentasi pelanggan ditampilkan dengan visualisasi:
-- Bronze (0-99 poin)
-- Silver (100-499 poin)
-- Gold (500-999 poin)
-- Platinum (1000+ poin)
+```json
+"CustomerScoring": {
+  "BronzeThreshold": 0,
+  "SilverThreshold": 100,
+  "GoldThreshold": 500,
+  "PlatinumThreshold": 1000,
+  "TransactionCountWeight": 0.3,
+  "TransactionValueWeight": 0.5,
+  "CategoryDiversityWeight": 0.2
+}
+```
+
+| Tier | Skor |
+|---|---|
+| Bronze | 0 – 99 |
+| Silver | 100 – 499 |
+| Gold | 500 – 999 |
+| Platinum | 1000+ |
+
+---
+
+## Catatan
+
+`DashboardHub` (`/hubs/dashboard`) sudah terpasang dan siap dipakai untuk mendorong
+pembaruan langsung ke klien, tetapi halaman dashboard saat ini memuat datanya lewat
+kueri biasa saat dibuka dan saat filter diterapkan.

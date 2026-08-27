@@ -1,64 +1,248 @@
 @page "/"
 @using Lapak.Models
 @using Lapak.Data
+@using Lapak.Services
 @using Microsoft.EntityFrameworkCore
 @inject LapakDbContext Db
 @inject NavigationManager Nav
 
-@* LAPAK LANDING PAGE *@
+<PageTitle>Lapak — pasar digital Indonesia</PageTitle>
 
-<div class="hero-banner">
+<section class="hero-banner">
     <div class="hero-content">
-        <h1 class="hero-title">Selamat Datang di <span class="gradient-text">Lapak</span></h1>
-        <p class="hero-subtitle">Platform e-commerce modern dengan AI Shopping Assistant. Temukan produk terbaik, dapatkan rekomendasi pintar!</p>
+        <span class="hero-eyebrow">Pasar digital Indonesia</span>
+        <h1 class="hero-title">Gelar lapaknya.<br />Semua ada <em>di sini</em>.</h1>
+        <p class="hero-subtitle">
+            @_productCount.ToString("N0") produk dari @_storeCount.ToString("N0") toko di seluruh Indonesia —
+            dan dua asisten AI yang siap mencarikan barangnya untukmu.
+        </p>
         <div class="hero-actions">
-            <a href="/products" class="btn btn-primary btn-lg">Mulai Belanja</a>
+            <a href="/products" class="btn btn-primary btn-lg">Mulai belanja</a>
             <a href="/chat/tony-kurus" class="btn btn-secondary btn-lg">Tanya Tony Kurus</a>
         </div>
+
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="hs-num">@_productCount.ToString("N0")</span>
+                <span class="hs-label">Produk terdaftar</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hs-num">@_storeCount.ToString("N0")</span>
+                <span class="hs-label">Toko aktif</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hs-num">@_verifiedCount.ToString("N0")</span>
+                <span class="hs-label">Toko terverifikasi</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hs-num">@_soldCount.ToString("N0")</span>
+                <span class="hs-label">Barang terjual</span>
+            </div>
+        </div>
     </div>
-</div>
+</section>
 
-<div class="section"><div class="section-header"><h2>Kategori</h2></div>
-<div class="category-grid">
-@foreach (var cat in _categories) { <a href="/products?category=@cat.Slug" class="category-card"><div class="cat-icon">@GetIcon(cat.Name)</div><div class="cat-name">@cat.Name</div></a> }
-</div></div>
+<section class="section">
+    <div class="section-header">
+        <h2>Kategori</h2>
+        <a href="/products" class="see-all">Lihat semua produk →</a>
+    </div>
+    <div class="category-grid">
+        @foreach (var cat in _categories)
+        {
+            <a href="/products?category=@cat.Slug" class="category-card">
+                <div class="cat-swatch weave-tile" style="--weave-hue: @ProductIcons.HueFor(cat.Name, cat.Slug);">
+                    <GlyphIcon Name="@ProductIcons.For(cat.Name)" />
+                </div>
+                <div class="cat-name">@cat.Name</div>
+                <div class="cat-count">@(_categoryCounts.GetValueOrDefault(cat.Id)) produk</div>
+            </a>
+        }
+    </div>
+</section>
 
-<div class="section"><div class="section-header"><h2>Produk Unggulan</h2></div>
-<div class="product-grid">
-@foreach (var p in _featured) { <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" /> }
-</div></div>
+@if (_featured.Any())
+{
+    <section class="section">
+        <div class="section-header">
+            <h2>Produk unggulan</h2>
+            <a href="/products?sort=popular" class="see-all">Lihat semua →</a>
+        </div>
+        <div class="product-grid">
+            @foreach (var p in _featured)
+            {
+                <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" />
+            }
+        </div>
+    </section>
+}
 
-<div class="section"><div class="section-header"><h2>Terlaris</h2></div>
-<div class="product-grid">
-@foreach (var p in _top) { <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" /> }
-</div></div>
+<section class="section">
+    <div class="section-header">
+        <h2>Paling laris minggu ini</h2>
+        <a href="/products?sort=popular" class="see-all">Lihat semua →</a>
+    </div>
+    <div class="product-grid">
+        @foreach (var p in _top)
+        {
+            <ProductCard Product="p" OnClick="() => GoToProduct(p.Slug)" />
+        }
+    </div>
+</section>
 
-<div class="section"><div class="section-header"><h2>Toko Rekomendasi</h2></div>
-<div class="store-grid">
-@foreach (var s in _topStores) { <a href="/stores/@s.Slug" class="store-card"><div class="store-card-header"><div class="store-avatar">🏪</div><div><strong>@s.Name</strong><br/>📍@s.City</div>@if(s.IsVerified){<span>✅</span>}</div><div>⭐@s.AverageRating.ToString("F1") · @s.TotalProducts produk</div></a> }
-</div></div>
+<section class="section">
+    <div class="section-header">
+        <h2>Dua asisten, satu keranjang</h2>
+    </div>
+    <div class="ai-cards">
+        <a href="/chat/tony-kurus" class="ai-card">
+            <div class="ai-card-icon weave-tile" style="--weave-hue: 212;" aria-hidden="true">🤖</div>
+            <h3>Tony Kurus</h3>
+            <p>Cari produk, banding harga, minta rekomendasi. Dia baca katalog Lapak langsung, bukan menebak.</p>
+            <span class="btn btn-secondary btn-sm">Mulai chat</span>
+        </a>
+        <a href="/chat/siti-bohay" class="ai-card">
+            <div class="ai-card-icon weave-tile" style="--weave-hue: 336;" aria-hidden="true">💁</div>
+            <h3>Siti Bohay</h3>
+            <p>Retur, refund, lacak pesanan. Jawabannya diambil dari dokumen kebijakan resmi Lapak.</p>
+            <span class="btn btn-secondary btn-sm">Mulai chat</span>
+        </a>
+    </div>
+</section>
 
-<div class="section"><div class="section-header"><h2>Promo & Voucher</h2></div>
-<div class="promo-grid">
-@foreach (var v in _vouchers) { <div class="promo-card"><div class="promo-card-type">@v.Code</div><div class="promo-card-body"><strong>@v.Name</strong><br/>@v.Description<br/><small>s/d @v.EndDate.ToString("dd MMM")</small></div></div> }
-</div></div>
+@if (_topStores.Any())
+{
+    <section class="section">
+        <div class="section-header">
+            <h2>Toko pilihan</h2>
+            <a href="/stores" class="see-all">Semua toko →</a>
+        </div>
+        <div class="store-grid">
+            @foreach (var s in _topStores)
+            {
+                <a href="/stores/@s.Slug" class="store-card">
+                    <div class="store-card-header">
+                        <div class="store-avatar weave-tile" style="--weave-hue: @ProductIcons.StableHue(s.Slug);">
+                            <GlyphIcon Name="toko" Size="1.5rem" />
+                        </div>
+                        <div class="flex-1">
+                            <div class="store-card-name">
+                                @s.Name
+                                @if (s.IsVerified)
+                                {
+                                    <span class="badge-verified" title="Toko terverifikasi">✓ Terverifikasi</span>
+                                }
+                            </div>
+                            <div class="store-card-city">📍 @s.City</div>
+                        </div>
+                    </div>
+                    <div class="store-card-stats">
+                        <span>⭐ @s.AverageRating.ToString("F1")</span>
+                        <span>📦 @s.TotalProducts produk</span>
+                    </div>
+                </a>
+            }
+        </div>
+    </section>
+}
+
+@if (_vouchers.Any())
+{
+    <section class="section">
+        <div class="section-header">
+            <h2>Voucher yang bisa dipakai sekarang</h2>
+            <a href="/promos" class="see-all">Semua promo →</a>
+        </div>
+        <div class="promo-grid">
+            @foreach (var v in _vouchers)
+            {
+                <div class="promo-card">
+                    <div class="promo-card-type @(v.Type == "Percentage" ? "promo-percent" : "promo-fixed")">
+                        @(v.Type switch
+                        {
+                            "Percentage" => $"Diskon {v.Value:0.#}%",
+                            "Shipping" => "Gratis ongkir",
+                            _ => $"Potongan Rp{v.Value:N0}"
+                        })
+                    </div>
+                    <div class="promo-card-body">
+                        <div class="promo-card-name">@v.Name</div>
+                        <div class="mt-1"><span class="voucher-code">@v.Code</span></div>
+                        @if (v.MinPurchase.HasValue)
+                        {
+                            <div class="promo-card-min">Min. belanja Rp@(v.MinPurchase.Value.ToString("N0"))</div>
+                        }
+                        <div class="promo-card-expire">Berlaku sampai @v.EndDate.ToString("d MMM yyyy")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+<section class="cta-section">
+    <h2>Punya barang untuk dijual?</h2>
+    <p>Buka lapakmu sendiri hari ini. Gratis, dan produk pertamamu bisa tayang dalam hitungan menit.</p>
+    <div class="cta-buttons">
+        <a href="/seller/register-store" class="btn btn-primary btn-lg">Daftarkan toko</a>
+        <a href="/stores" class="btn btn-secondary btn-lg">Lihat toko lain dulu</a>
+    </div>
+</section>
 
 @code {
     private List<Category> _categories = new();
+    private Dictionary<Guid, int> _categoryCounts = new();
     private List<Product> _featured = new();
     private List<Product> _top = new();
     private List<Lapak.Models.Store> _topStores = new();
     private List<Voucher> _vouchers = new();
 
+    private int _productCount, _storeCount, _verifiedCount, _soldCount;
+
     protected override async Task OnInitializedAsync()
     {
-        _categories = Db.Categories.Where(c => c.ParentCategoryId == null && c.IsActive).Include(c => c.Products).ToList();
-        _featured = Db.Products.Where(p => p.IsActive && p.IsFeatured).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(8).ToList();
-        _top = Db.Products.Where(p => p.IsActive).Include(p => p.Category).Include(p => p.Store).OrderByDescending(p => p.SoldCount).Take(8).ToList();
-        _topStores = Db.Stores.Where(s => s.IsActive && s.IsVerified).OrderByDescending(s => s.AverageRating).Take(4).ToList();
-        _vouchers = Db.Vouchers.Where(v => v.IsActive && v.EndDate > DateTime.UtcNow).Take(4).ToList();
+        var now = DateTime.UtcNow;
+
+        _categories = await Db.Categories
+            .AsNoTracking()
+            .Where(c => c.ParentCategoryId == null && c.IsActive)
+            .OrderBy(c => c.SortOrder)
+            .ToListAsync();
+
+        // One grouped query instead of eagerly loading every product per category.
+        _categoryCounts = await Db.Products
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .GroupBy(p => p.Category.ParentCategoryId ?? p.CategoryId)
+            .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CategoryId, x => x.Count);
+
+        _featured = await Db.Products.AsNoTracking()
+            .Where(p => p.IsActive && p.IsFeatured)
+            .Include(p => p.Category).Include(p => p.Store)
+            .OrderByDescending(p => p.SoldCount).Take(8).ToListAsync();
+
+        _top = await Db.Products.AsNoTracking()
+            .Where(p => p.IsActive)
+            .Include(p => p.Category).Include(p => p.Store)
+            .OrderByDescending(p => p.SoldCount).Take(8).ToListAsync();
+
+        _topStores = await Db.Stores.AsNoTracking()
+            .Where(s => s.IsActive && s.IsVerified)
+            .OrderByDescending(s => s.AverageRating).Take(4).ToListAsync();
+
+        _vouchers = await Db.Vouchers.AsNoTracking()
+            .Where(v => v.IsActive && v.StartDate <= now && v.EndDate > now && v.CurrentUsage < v.MaxUsage)
+            .OrderBy(v => v.EndDate).Take(4).ToListAsync();
+
+        _productCount = await Db.Products.CountAsync(p => p.IsActive);
+        _storeCount = await Db.Stores.CountAsync(s => s.IsActive);
+        _verifiedCount = await Db.Stores.CountAsync(s => s.IsActive && s.IsVerified);
+        _soldCount = await Db.Products.Where(p => p.IsActive).SumAsync(p => (int?)p.SoldCount) ?? 0;
     }
 
     private void GoToProduct(string slug) => Nav.NavigateTo("/products/" + slug);
-    private string GetIcon(string n) => n.ToLower() switch { "elektronik" => "📱", "fashion" => "👕", "rumah & kehidupan" => "🏠", "makanan & minuman" => "🍔", "hobi & koleksi" => "🎮", "kecantikan" => "💄", "olahraga" => "⚽", "otomotif" => "🚗", _ => "📦" };
+
+
+
 }

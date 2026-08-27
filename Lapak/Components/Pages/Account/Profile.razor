@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Identity
 @using Lapak.Models
 @using Microsoft.AspNetCore.Components.Forms
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject UserManager<User> UserMgr
 @inject SignInManager<User> SignInMgr
 @inject NavigationManager Nav

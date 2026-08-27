@@ -15,6 +15,11 @@ using Lapak.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// CreateBuilder wires up the static web asset manifest only in Development, so a
+// non-published `dotnet run` in any other environment cannot resolve framework
+// assets such as blazor.web.js. Calling it explicitly is a no-op once published.
+builder.WebHost.UseStaticWebAssets();
+
 // ============================================
 // 🔹 DATABASE CONFIGURATION
 // ============================================
@@ -62,7 +67,17 @@ builder.Services.AddIdentity<User, IdentityRole<Guid>>(options =>
     options.SignIn.RequireConfirmedEmail = false;
 })
 .AddEntityFrameworkStores<LapakDbContext>()
+.AddClaimsPrincipalFactory<LapakClaimsPrincipalFactory>()
 .AddDefaultTokenProviders();
+
+// Page-level guards. UserType is emitted as a role claim by the factory above.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("SellerOnly", policy => policy.RequireRole("Seller", "Admin"));
+});
+
+builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -121,7 +136,12 @@ builder.Services.AddScoped<StorageServiceFactory>();
 
 // ============================================
 // 🔹 PAYMENT SERVICE
+// Providers are resolved as a collection: adding a gateway means adding one
+// IPaymentProvider registration here, nothing else.
 // ============================================
+builder.Services.AddScoped<IPaymentProvider, MidtransPaymentProvider>();
+builder.Services.AddScoped<IPaymentProvider, XenditPaymentProvider>();
+builder.Services.AddScoped<IPaymentProvider, StripePaymentProvider>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 // ============================================
@@ -179,10 +199,19 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
+
+// Files written at runtime (avatar and chat uploads under wwwroot/uploads) are not
+// in the build-time asset manifest, so they still need the classic middleware.
 app.UseStaticFiles();
+
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Serves the fingerprinted assets that @Assets[...] and <ImportMap> resolve to,
+// including _framework/blazor.web.js. Without this the app has no interactivity
+// outside Development — every button silently does nothing.
+app.MapStaticAssets();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");

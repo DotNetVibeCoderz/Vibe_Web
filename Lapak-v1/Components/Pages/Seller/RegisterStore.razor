@@ -1,0 +1,43 @@
+@page "/seller/register-store"
+@using Microsoft.AspNetCore.Identity
+@using Lapak.Models
+@inject Lapak.Data.LapakDbContext Db
+@inject UserManager<User> UserMgr
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<div class="auth-container" style="max-width:700px;">
+    <h2 class="auth-title">Daftarkan Toko Anda</h2>
+    <p class="auth-subtitle">Isi data toko untuk mulai berjualan di Lapak!</p>
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="toast success mb-2">@_msg</div> }
+    @if (!string.IsNullOrEmpty(_err)) { <div class="toast error mb-2">@_err</div> }
+    <div class="row"><div class="col-6"><label class="form-label">Nama Toko *</label><input class="form-input" @bind="_name" /></div><div class="col-6"><label class="form-label">Slug</label><input class="form-input" @bind="_slug" /></div></div>
+    <div class="mt-2"><label class="form-label">Deskripsi</label><textarea class="form-input" @bind="_desc" rows="3"></textarea></div>
+    <div class="row mt-2"><div class="col-6"><label class="form-label">Telepon</label><input class="form-input" @bind="_phone" /></div><div class="col-6"><label class="form-label">Email</label><input class="form-input" @bind="_email" /></div></div>
+    <div class="mt-2"><label class="form-label">Alamat</label><textarea class="form-input" @bind="_address" rows="2"></textarea></div>
+    <div class="row mt-2"><div class="col-4"><label class="form-label">Kota</label><input class="form-input" @bind="_city" /></div><div class="col-4"><label class="form-label">Provinsi</label><input class="form-input" @bind="_province" /></div></div>
+    <button class="btn btn-primary btn-lg btn-block mt-3" @onclick="DoRegisterStore" disabled="@_loading">@(_loading?"Mendaftarkan...":"Daftarkan Toko")</button>
+</div>
+
+@code {
+    private string _name="", _slug="", _desc="", _phone="", _email="", _address="", _city="", _province="", _msg="", _err=""; private bool _loading;
+    private async Task DoRegisterStore()
+    {
+        if (string.IsNullOrWhiteSpace(_name)) { _err="Nama toko harus diisi."; return; }
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var uid = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(uid)) { Nav.NavigateTo("/account/login"); return; }
+        _loading=true;
+        try
+        {
+            var slug = string.IsNullOrWhiteSpace(_slug) ? _name.ToLower().Replace(" ","-") : _slug.ToLower().Replace(" ","-");
+            if (Db.Stores.Any(s=>s.Slug==slug)) { _err="Slug sudah digunakan."; _loading=false; return; }
+            Db.Stores.Add(new Lapak.Models.Store { Name=_name, Slug=slug, Description=_desc, PhoneNumber=_phone, Email=_email, Address=_address, City=_city, Province=_province, UserId=Guid.Parse(uid), IsActive=true, VerificationStatus="Pending" });
+            var user = await UserMgr.FindByIdAsync(uid);
+            if (user != null) { user.UserType="Seller"; await UserMgr.UpdateAsync(user); }
+            Db.SaveChanges(); _msg="Toko berhasil didaftarkan!"; Nav.NavigateTo("/seller/manage-store");
+        }
+        catch (Exception ex) { _err=ex.Message; }
+        _loading=false;
+    }
+}

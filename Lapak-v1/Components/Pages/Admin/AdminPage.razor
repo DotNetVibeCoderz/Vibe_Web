@@ -1,0 +1,67 @@
+@page "/admin"
+@page "/admin/{Section}"
+@using Lapak.Models
+@using Microsoft.EntityFrameworkCore
+@inject Lapak.Data.LapakDbContext Db
+@inject NavigationManager Nav
+
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+    <a href="/admin" class="btn @(_sec==""?"btn-primary":"btn-secondary") btn-sm">Dashboard</a>
+    <a href="/admin/categories" class="btn @(_sec=="categories"?"btn-primary":"btn-secondary") btn-sm">Kategori</a>
+    <a href="/admin/vouchers" class="btn @(_sec=="vouchers"?"btn-primary":"btn-secondary") btn-sm">Voucher</a>
+    <a href="/admin/stores" class="btn @(_sec=="stores"?"btn-primary":"btn-secondary") btn-sm">Verifikasi Toko</a>
+</div>
+
+@switch (_sec)
+{
+    case "categories":
+        <div class="page-header flex justify-between"><h1>Manajemen Kategori</h1><button class="btn btn-primary" @onclick="ShowCatForm">Tambah</button></div>
+        @if(_showCat){<div class="card mb-3"><div class="card-body"><div class="row"><div class="col-6"><label>Nama</label><input class="form-input" @bind="_cn"/></div><div class="col-6"><label>Induk</label><select class="form-input" @bind="_cp"><option value="">Utama</option>@foreach(var c in _cats.Where(x=>x.ParentCategoryId==null)){<option value="@c.Id">@c.Name</option>}</select></div></div><div class="row mt-2"><div class="col-4"><label>Slug</label><input class="form-input" @bind="_cs"/></div><div class="col-4"><label>Urutan</label><input class="form-input" type="number" @bind="_co"/></div></div><button class="btn btn-primary mt-2" @onclick="SaveCat">Simpan</button><button class="btn btn-secondary mt-2 ml-2" @onclick="()=>_showCat=false">Batal</button></div></div>}
+        @foreach(var cat in _cats.Where(c=>c.ParentCategoryId==null)){<div class="card mb-2"><div class="card-header"><strong>@cat.Name</strong></div><div class="card-body">@foreach(var sub in cat.SubCategories){<div>@sub.Name</div>}</div></div>}
+        break;
+
+    case "vouchers":
+        <div class="page-header flex justify-between"><h1>Manajemen Voucher</h1><button class="btn btn-primary" @onclick="ShowVForm">Tambah</button></div>
+        @if(_showV){<div class="card mb-3"><div class="card-body"><div class="row"><div class="col-4"><label>Kode</label><input class="form-input" @bind="_vc"/></div><div class="col-4"><label>Nama</label><input class="form-input" @bind="_vn"/></div><div class="col-4"><label>Tipe</label><select class="form-input" @bind="_vt"><option value="Percentage">Persentase</option><option value="Fixed">Nominal</option><option value="Shipping">Gratis Ongkir</option></select></div></div><div class="row mt-2"><div class="col-3"><label>Nilai</label><input class="form-input" type="number" @bind="_vv"/></div><div class="col-3"><label>Max Diskon</label><input class="form-input" type="number" @bind="_vmd"/></div><div class="col-3"><label>Min Belanja</label><input class="form-input" type="number" @bind="_vmp"/></div><div class="col-3"><label>Max Pakai</label><input class="form-input" type="number" @bind="_vmu"/></div></div><div class="row mt-2"><div class="col-4"><label>Mulai</label><input class="form-input" type="date" @bind="_vstart"/></div><div class="col-4"><label>Berakhir</label><input class="form-input" type="date" @bind="_vend"/></div></div><button class="btn btn-primary mt-2" @onclick="SaveV">Simpan</button></div></div>}
+        <div class="card"><table style="width:100%;"><thead><tr style="background:var(--bg-tertiary)"><th style="padding:8px;">Kode</th><th>Nama</th><th>Tipe</th><th>Pakai</th><th>Akhir</th></tr></thead><tbody>@foreach(var v in _vouchers){<tr><td>@v.Code</td><td>@v.Name</td><td>@v.Type @v.Value</td><td>@v.CurrentUsage/@v.MaxUsage</td><td>@v.EndDate.ToString("dd/MM")</td></tr>}</tbody></table></div>
+        break;
+
+    case "stores":
+        <div class="page-header"><h1>Verifikasi Toko</h1></div>
+        <div class="card"><table style="width:100%;"><thead><tr style="background:var(--bg-tertiary)"><th style="padding:8px;">Nama</th><th>Pemilik</th><th>Kota</th><th>Status</th><th>Aksi</th></tr></thead><tbody>@foreach(var s in _pending){<tr><td>@s.Name</td><td>@s.User?.FullName</td><td>@s.City</td><td>@s.VerificationStatus</td><td><button class="btn btn-sm btn-success" @onclick="()=>Verify(s,true)">✅</button><button class="btn btn-sm btn-danger" @onclick="()=>Verify(s,false)">❌</button></td></tr>}</tbody></table></div>
+        break;
+
+    default:
+        <div class="page-header"><h1>Admin Dashboard</h1></div>
+        <div class="row mb-3"><div class="col-3"><div class="stat-card"><div class="stat-icon purple">📦</div><div><div class="stat-value">@_totalProd</div><div class="stat-label">Produk</div></div></div></div><div class="col-3"><div class="stat-card"><div class="stat-icon green">🏪</div><div><div class="stat-value">@_totalSt</div><div class="stat-label">Toko</div></div></div></div><div class="col-3"><div class="stat-card"><div class="stat-icon blue">👥</div><div><div class="stat-value">@_totalUsr</div><div class="stat-label">User</div></div></div></div><div class="col-3"><div class="stat-card"><div class="stat-icon orange">⏳</div><div><div class="stat-value">@_pending.Count</div><div class="stat-label">Pending</div></div></div></div></div>
+        break;
+}
+
+@code {
+    [Parameter] public string? Section { get; set; }
+    private string _sec => Section ?? "";
+    private int _totalProd,_totalSt,_totalUsr;
+    private List<Lapak.Models.Store> _pending=new();
+
+    // Categories
+    private List<Category> _cats=new(); private bool _showCat;
+    private string _cn="",_cs="",_cp=""; private int _co;
+
+    // Vouchers
+    private List<Voucher> _vouchers=new(); private bool _showV;
+    private string _vc="",_vn="",_vt="Percentage"; private decimal _vv,_vmd,_vmp; private int _vmu=100;
+    private DateTime _vstart=DateTime.UtcNow,_vend=DateTime.UtcNow.AddMonths(1);
+
+    protected override async Task OnInitializedAsync(){
+        _totalProd=Db.Products.Count();_totalSt=Db.Stores.Count();_totalUsr=Db.Users.Count();
+        _pending=Db.Stores.Where(s=>s.VerificationStatus=="Pending").Include(s=>s.User).ToList();
+        _cats=Db.Categories.Include(c=>c.SubCategories).Where(c=>c.ParentCategoryId==null).ToList();
+        _vouchers=Db.Vouchers.OrderByDescending(v=>v.CreatedAt).Take(20).ToList();
+    }
+
+    private void ShowCatForm(){_showCat=true;_cn="";_cs="";_cp="";}
+    private async Task SaveCat(){var cat=new Category{Name=_cn,Slug=string.IsNullOrWhiteSpace(_cs)?_cn.ToLower().Replace(" ","-"):_cs,SortOrder=_co,ParentCategoryId=Guid.TryParse(_cp,out var pid)?pid:null};Db.Categories.Add(cat);Db.SaveChanges();_showCat=false;_cats=Db.Categories.Include(c=>c.SubCategories).Where(c=>c.ParentCategoryId==null).ToList();}
+    private void ShowVForm(){_showV=true;_vc="";_vn="";_vv=0;_vmd=0;_vmp=0;_vmu=100;_vstart=DateTime.UtcNow;_vend=DateTime.UtcNow.AddMonths(1);}
+    private async Task SaveV(){Db.Vouchers.Add(new Voucher{Code=_vc,Name=_vn,Type=_vt,Value=_vv,MaxDiscount=_vmd>0?_vmd:null,MinPurchase=_vmp>0?_vmp:null,MaxUsage=_vmu,StartDate=_vstart,EndDate=_vend});Db.SaveChanges();_showV=false;_vouchers=Db.Vouchers.OrderByDescending(v=>v.CreatedAt).Take(20).ToList();}
+    private async Task Verify(Lapak.Models.Store s,bool approve){s.VerificationStatus=approve?"Verified":"Rejected";s.IsVerified=approve;if(approve)s.VerifiedAt=DateTime.UtcNow;Db.SaveChanges();_pending.Remove(s);}
+}
