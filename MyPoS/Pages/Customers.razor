@@ -1,191 +1,259 @@
+@page "/pelanggan"
 @page "/customers"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
-@inject IJSRuntime JSRuntime
-@inject MyPoS.Services.ExportService ExportService
+@inject IJSRuntime JS
+@inject ExportService ExportService
+@inject MoneyFormatter Money
+@inject SettingsService SettingsService
+@inject MyPoS.Services.Import.CustomerImporter Importer
 @attribute [Authorize(Roles = "Admin,Manager")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Customers Management</MudText>
+<PageTitle>Pelanggan — @_settings.StoreName</PageTitle>
 
-<MudCard Class="glass-container pa-4">
-    <MudTable Items="@CustomersList" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
-              Filter="new Func<Customer,bool>(FilterFunc1)"
-              Style="background: transparent;">
-        <ToolBarContent>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewDialog">Add</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
-            <MudSpacer />
-            <MudTextField @bind-Value="searchString1" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<Customer, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Customer, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Customer, object>(x=>x.Phone)">Phone</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Customer, object>(x=>x.Email)">Email</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Customer, object>(x=>x.LoyaltyPoints)">Points</MudTableSortLabel></MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="ID">@context.Id</MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Phone">@context.Phone</MudTd>
-            <MudTd DataLabel="Email">@context.Email</MudTd>
-            <MudTd DataLabel="Points">@context.LoyaltyPoints</MudTd>
-            <MudTd DataLabel="Actions">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => OpenEditDialog(context)" />
-                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteCustomer(context)" />
-            </MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
-    </MudTable>
-</MudCard>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Data master</div>
+        <h1 class="page-title mt-1">Pelanggan</h1>
+        <p class="page-subtitle">
+            @if (_settings.LoyaltyEnabled)
+            {
+                <text>Setiap belanja @Money.Format(_settings.LoyaltyAmountPerPoint) memberi 1 poin.</text>
+            }
+            else
+            {
+                <text>Program loyalitas sedang nonaktif.</text>
+            }
+        </p>
+    </div>
 
-@if (isDialogOpen)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" AutoClose="false">
-        <MudCard Class="glass-container pa-6" Style="width:400px; max-width:90vw;">
-            <MudText Typo="Typo.h6" Class="mb-4">@(isEdit ? "Edit Customer" : "New Customer")</MudText>
-            
-            <MudTextField @bind-Value="editingCustomer.Name" Label="Name" Required="true" Class="mb-2" />
-            <MudTextField @bind-Value="editingCustomer.Phone" Label="Phone" Class="mb-2" />
-            <MudTextField @bind-Value="editingCustomer.Email" Label="Email" Class="mb-2" />
-            <MudNumericField @bind-Value="editingCustomer.LoyaltyPoints" Label="Loyalty Points" Class="mb-4" />
-            
-            <div class="d-flex justify-end">
-                <MudButton OnClick="CloseDialog" Class="mr-2">Cancel</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveCustomer">Save</MudButton>
-            </div>
-        </MudCard>
-    </MudOverlay>
-}
+    <div class="d-flex" style="gap:.5rem;">
+        <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.UploadFile" OnClick="() => _importDialog?.Open()">
+            Impor Excel
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenNew">Tambah pelanggan</MudButton>
+    </div>
+</div>
+
+<ImportDialog @ref="_importDialog" Importer="Importer" OnImported="LoadAsync" />
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Cari nama, telepon, email…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Clearable="true" Style="min-width:260px;" Class="flex-grow-1" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+    </div>
+
+    @if (Filtered.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" />
+            <div>Belum ada pelanggan.</div>
+        </div>
+    }
+    else
+    {
+        <MudTable Items="Filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" Dense="true" RowsPerPage="15">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<Row, object>(x => x.Customer.Name)">Nama</MudTableSortLabel></MudTh>
+                <MudTh>Telepon</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Row, object>(x => x.TotalSpent)">Total belanja</MudTableSortLabel></MudTh>
+                <MudTh Class="cell-num">Transaksi</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Row, object>(x => x.Customer.LoyaltyPoints)">Poin</MudTableSortLabel></MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nama" Style="font-weight:600;">@context.Customer.Name</MudTd>
+                <MudTd DataLabel="Telepon"><span class="num" style="font-size:.8rem;">@context.Customer.Phone</span></MudTd>
+                <MudTd DataLabel="Email">@context.Customer.Email</MudTd>
+                <MudTd DataLabel="Total belanja" Class="cell-num"><span class="num">@Money.Format(context.TotalSpent)</span></MudTd>
+                <MudTd DataLabel="Transaksi" Class="cell-num"><span class="num">@context.OrderCount</span></MudTd>
+                <MudTd DataLabel="Poin" Class="cell-num">
+                    <span class="badge badge--leaf"><span class="num">@context.Customer.LoyaltyPoints</span></span>
+                </MudTd>
+                <MudTd>
+                    <div class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => OpenEdit(context)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="() => Delete(context)" />
+                    </div>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="Baris per halaman" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+            </PagerContent>
+        </MudTable>
+    }
+</div>
+
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEdit ? "Ubah pelanggan" : "Pelanggan baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_editing.Name" Label="Nama" Variant="Variant.Outlined" Required="true" Class="mb-3" />
+        <MudTextField @bind-Value="_editing.Phone" Label="Telepon" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_editing.Email" Label="Email" Variant="Variant.Outlined" Class="mb-3"
+                      HelperText="Dipakai penyedia pembayaran untuk mengirim tautan tagihan." />
+        <MudNumericField @bind-Value="_editing.LoyaltyPoints" Label="Poin loyalitas" Variant="Variant.Outlined" Min="0" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _dialogOpen = false">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
-    List<Customer> CustomersList = new();
-    string searchString1 = "";
+    public record Row(Customer Customer, decimal TotalSpent, int OrderCount);
 
-    bool isDialogOpen = false;
-    bool isEdit = false;
-    Customer editingCustomer = new Customer();
+    private PosSettings _settings = new();
+    private List<Row> _rows = new();
+    private string _search = "";
+
+    private Customer _editing = new();
+    private bool _dialogOpen;
+    private bool _isEdit;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+    private ImportDialog? _importDialog;
+
+    private List<Row> Filtered => _rows
+        .Where(r => string.IsNullOrWhiteSpace(_search)
+                    || r.Customer.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || (r.Customer.Phone?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (r.Customer.Email?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _settings = await SettingsService.GetAsync();
+        await LoadAsync();
     }
 
-    async Task LoadData()
+    private async Task LoadAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        CustomersList = await db.Customers.ToListAsync();
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        // Riwayat belanja diringkas di sisi database supaya halaman tidak perlu
+        // menarik seluruh transaksi hanya untuk menghitung dua angka.
+        var totals = await db.Transactions
+            .Where(t => t.Status == TransactionStatus.Paid && t.CustomerId != null)
+            .GroupBy(t => t.CustomerId!.Value)
+            .Select(g => new { CustomerId = g.Key, Total = g.Sum(t => t.TotalAmount), Count = g.Count() })
+            .ToDictionaryAsync(x => x.CustomerId);
+
+        var customers = await db.Customers.OrderBy(c => c.Name).AsNoTracking().ToListAsync();
+
+        _rows = customers
+            .Select(c => totals.TryGetValue(c.Id, out var t)
+                ? new Row(c, t.Total, t.Count)
+                : new Row(c, 0m, 0))
+            .ToList();
     }
 
-    private bool FilterFunc1(Customer element) => FilterFunc(element, searchString1);
-
-    private bool FilterFunc(Customer element, string searchString)
+    private void OpenNew()
     {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-        if (element.Name != null && element.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.Phone != null && element.Phone.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.Email != null && element.Email.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
+        _editing = new Customer();
+        _isEdit = false;
+        _dialogOpen = true;
     }
 
-    async Task ExportExcel()
+    private void OpenEdit(Row row)
     {
-        var data = CustomersList.Select(x => new { x.Id, x.Name, x.Phone, x.Email, x.LoyaltyPoints }).ToList();
-        var bytes = ExportService.ExportToExcel(data, "Customers");
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Customers.xlsx", streamRef);
-    }
-
-    async Task ExportCsv()
-    {
-        var data = CustomersList.Select(x => new { x.Id, x.Name, x.Phone, x.Email, x.LoyaltyPoints }).ToList();
-        var bytes = ExportService.ExportToCsv(data);
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Customers.csv", streamRef);
-    }
-
-    void OpenNewDialog()
-    {
-        editingCustomer = new Customer();
-        isEdit = false;
-        isDialogOpen = true;
-    }
-
-    void OpenEditDialog(Customer c)
-    {
-        editingCustomer = new Customer
+        _editing = new Customer
         {
-            Id = c.Id,
-            Name = c.Name,
-            Phone = c.Phone,
-            Email = c.Email,
-            LoyaltyPoints = c.LoyaltyPoints
+            Id = row.Customer.Id,
+            Name = row.Customer.Name,
+            Phone = row.Customer.Phone,
+            Email = row.Customer.Email,
+            LoyaltyPoints = row.Customer.LoyaltyPoints
         };
-        isEdit = true;
-        isDialogOpen = true;
+        _isEdit = true;
+        _dialogOpen = true;
     }
 
-    void CloseDialog()
+    private async Task Save()
     {
-        isDialogOpen = false;
-    }
-
-    async Task SaveCustomer()
-    {
-        if (string.IsNullOrWhiteSpace(editingCustomer.Name))
+        if (string.IsNullOrWhiteSpace(_editing.Name))
         {
-            Snackbar.Add("Name is required", Severity.Warning);
+            Snackbar.Add("Nama pelanggan wajib diisi.", Severity.Warning);
             return;
         }
 
-        using var db = DbFactory.CreateDbContext();
-        if (isEdit)
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        if (_isEdit)
         {
-            var item = await db.Customers.FindAsync(editingCustomer.Id);
-            if (item != null)
-            {
-                item.Name = editingCustomer.Name;
-                item.Phone = editingCustomer.Phone;
-                item.Email = editingCustomer.Email;
-                item.LoyaltyPoints = editingCustomer.LoyaltyPoints;
-                db.Customers.Update(item);
-            }
+            var entity = await db.Customers.FindAsync(_editing.Id);
+            if (entity is null) return;
+
+            entity.Name = _editing.Name.Trim();
+            entity.Phone = _editing.Phone?.Trim();
+            entity.Email = _editing.Email?.Trim();
+            entity.LoyaltyPoints = _editing.LoyaltyPoints;
         }
         else
         {
-            db.Customers.Add(editingCustomer);
+            _editing.Name = _editing.Name.Trim();
+            db.Customers.Add(_editing);
         }
 
         await db.SaveChangesAsync();
-        Snackbar.Add("Customer saved", Severity.Success);
-        isDialogOpen = false;
-        await LoadData();
+        Snackbar.Add("Pelanggan tersimpan.", Severity.Success);
+        _dialogOpen = false;
+        await LoadAsync();
     }
 
-    async Task DeleteCustomer(Customer c)
+    private async Task Delete(Row row)
     {
-        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this customer?");
-        if (confirmed)
-        {
-            using var db = DbFactory.CreateDbContext();
-            var item = await db.Customers.FindAsync(c.Id);
-            if (item != null)
-            {
-                db.Customers.Remove(item);
-                await db.SaveChangesAsync();
-                Snackbar.Add("Customer deleted", Severity.Info);
-                await LoadData();
-            }
-        }
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            row.OrderCount > 0
+                ? $"\"{row.Customer.Name}\" punya {row.OrderCount} transaksi. Transaksi tetap tersimpan tanpa nama pelanggan. Lanjutkan?"
+                : $"Hapus pelanggan \"{row.Customer.Name}\"?");
+
+        if (!confirmed) return;
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.Customers.FindAsync(row.Customer.Id);
+        if (entity is null) return;
+
+        // Relasi transaksi memakai DeleteBehavior.SetNull, jadi riwayatnya tetap ada.
+        db.Customers.Remove(entity);
+        await db.SaveChangesAsync();
+        Snackbar.Add("Pelanggan dihapus.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private IEnumerable<object> ExportRows() => Filtered.Select(r => new
+    {
+        r.Customer.Id,
+        Nama = r.Customer.Name,
+        Telepon = r.Customer.Phone ?? "",
+        Email = r.Customer.Email ?? "",
+        TotalBelanja = r.TotalSpent,
+        JumlahTransaksi = r.OrderCount,
+        Poin = r.Customer.LoyaltyPoints
+    });
+
+    private async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Pelanggan");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Pelanggan.xlsx", new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Pelanggan.csv", new DotNetStreamReference(stream));
     }
 }

@@ -1,0 +1,685 @@
+@page "/pengaturan"
+@page "/settings"
+@using MyPoS.Services.Payments
+@inject SettingsService SettingsService
+@inject MoneyFormatter Money
+@inject ISnackbar Snackbar
+@inject IStorageService Storage
+@inject PaymentGatewayResolver Gateways
+@inject ApiKeyService ApiKeys
+@inject IJSRuntime JS
+@inject NavigationManager NavManager
+@attribute [Authorize(Roles = "Admin")]
+
+<PageTitle>Pengaturan — @_form.StoreName</PageTitle>
+
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Konfigurasi</div>
+        <h1 class="page-title mt-1">Pengaturan</h1>
+        <p class="page-subtitle">
+            Nilai di halaman ini dipakai langsung oleh kasir, struk, dan laporan.
+            Tidak ada yang ditanam di dalam kode.
+        </p>
+    </div>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+               StartIcon="@Icons.Material.Filled.Save" Disabled="_busy" OnClick="Save">
+        @(_busy ? "Menyimpan…" : "Simpan perubahan")
+    </MudButton>
+</div>
+
+<div class="panel panel--flush">
+    <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" PanelClass="pa-5" Border="false">
+
+        <!-- ============================ Toko ============================ -->
+        <MudTabPanel Text="Toko" Icon="@Icons.Material.Filled.Storefront">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.StoreName" Label="Nama toko" Variant="Variant.Outlined" Class="mb-3" />
+                    <MudTextField @bind-Value="_form.StoreTagline" Label="Slogan" Variant="Variant.Outlined" Class="mb-3"
+                                  HelperText="Tampil di bawah nama toko pada menu samping." />
+                    <MudTextField @bind-Value="_form.StorePhone" Label="Telepon" Variant="Variant.Outlined" Class="mb-3" />
+                    <MudTextField @bind-Value="_form.StoreTaxId" Label="NPWP" Variant="Variant.Outlined" Class="mb-3"
+                                  HelperText="Dikosongkan bila tidak perlu dicetak di struk." />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.StoreAddress" Label="Alamat" Variant="Variant.Outlined"
+                                  Lines="3" Class="mb-3" />
+
+                    <div class="eyebrow mb-2">Logo</div>
+                    <div class="d-flex align-center mb-3" style="gap:1rem;">
+                        @if (!string.IsNullOrWhiteSpace(_form.StoreLogoUrl))
+                        {
+                            <img src="@_form.StoreLogoUrl" alt="Logo toko"
+                                 style="height:56px; border-radius:8px; border:1px solid var(--line);" />
+                        }
+                        <InputFile id="logoInput" OnChange="UploadLogo" hidden />
+                        <MudButton HtmlTag="label" for="logoInput" Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.CloudUpload" Disabled="_uploading">
+                            @(_uploading ? "Mengunggah…" : "Unggah logo")
+                        </MudButton>
+                        @if (!string.IsNullOrWhiteSpace(_form.StoreLogoUrl))
+                        {
+                            <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="ClearLogo">Hapus</MudButton>
+                        }
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============================ Mata uang ============================ -->
+        <MudTabPanel Text="Mata Uang" Icon="@Icons.Material.Filled.Payments">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="7">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_form.CurrencyCode" Label="Kode mata uang" Variant="Variant.Outlined"
+                                          HelperText="IDR, USD, SGD…" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_form.CurrencySymbol" Label="Simbol" Variant="Variant.Outlined"
+                                          HelperText="Rp, $, S$…" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_form.CurrencyCulture" Label="Culture" Variant="Variant.Outlined"
+                                          HelperText="id-ID memakai titik sebagai pemisah ribuan." />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudNumericField @bind-Value="_form.CurrencyDecimals" Label="Angka desimal" Variant="Variant.Outlined"
+                                             Min="0" Max="4" HelperText="Rupiah lazimnya 0." />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSelect T="string" @bind-Value="_form.CurrencySymbolPosition" Label="Posisi simbol" Variant="Variant.Outlined">
+                                <MudSelectItem Value="@("prefix")">Di depan angka — Rp 15.000</MudSelectItem>
+                                <MudSelectItem Value="@("suffix")">Di belakang angka — 15.000 Rp</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+
+                <MudItem xs="12" md="5">
+                    <div class="panel panel--pad" style="background:var(--card-sunken);">
+                        <div class="eyebrow mb-3">Pratinjau</div>
+                        @foreach (var sample in new[] { 1500m, 78000m, 1250000m, 45678900m })
+                        {
+                            <div class="leader">
+                                <span class="leader__label num">@sample.ToString("#,##0")</span>
+                                <span class="leader__fill"></span>
+                                <span class="leader__value num">@MoneyFormatter.Format(sample, _form)</span>
+                            </div>
+                        }
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============================ Pajak ============================ -->
+        <MudTabPanel Text="Pajak &amp; Biaya" Icon="@Icons.Material.Filled.Percent">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="7">
+                    <MudSwitch T="bool" @bind-Value="_form.TaxEnabled" Color="Color.Primary" Class="mb-2">
+                        Kenakan pajak pada transaksi
+                    </MudSwitch>
+
+                    <MudGrid Spacing="2" Class="mb-3">
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_form.TaxName" Label="Nama pajak" Variant="Variant.Outlined"
+                                          Disabled="!_form.TaxEnabled" HelperText="Tercetak di struk, mis. PPN." />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudNumericField @bind-Value="_form.TaxRatePercent" Label="Tarif (%)" Variant="Variant.Outlined"
+                                             Min="0" Max="100" Step="0.5M" Disabled="!_form.TaxEnabled" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudSwitch T="bool" @bind-Value="_form.TaxInclusive" Color="Color.Primary" Disabled="!_form.TaxEnabled">
+                        Harga jual sudah termasuk pajak
+                    </MudSwitch>
+                    <div class="page-subtitle mb-3" style="margin-top:0;">
+                        Bila aktif, pajak diurai dari harga yang tertera, bukan ditambahkan di atasnya.
+                    </div>
+
+                    <MudSwitch T="bool" @bind-Value="_form.TaxAppliedAfterDiscount" Color="Color.Primary" Disabled="!_form.TaxEnabled">
+                        Hitung pajak setelah diskon
+                    </MudSwitch>
+                    <div class="page-subtitle mb-4" style="margin-top:0;">
+                        Sesuai praktik umum: Dasar Pengenaan Pajak adalah nilai setelah potongan.
+                    </div>
+
+                    <MudDivider Class="my-4" />
+
+                    <MudSwitch T="bool" @bind-Value="_form.ServiceChargeEnabled" Color="Color.Primary">
+                        Tambahkan biaya layanan
+                    </MudSwitch>
+                    <MudGrid Spacing="2" Class="mt-1 mb-3">
+                        <MudItem xs="6">
+                            <MudNumericField @bind-Value="_form.ServiceChargePercent" Label="Biaya layanan (%)"
+                                             Variant="Variant.Outlined" Min="0" Max="100" Step="0.5M"
+                                             Disabled="!_form.ServiceChargeEnabled" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" @bind-Value="_form.RoundingMode" Label="Pembulatan total" Variant="Variant.Outlined">
+                                <MudSelectItem Value="@("None")">Tanpa pembulatan</MudSelectItem>
+                                <MudSelectItem Value="@("Nearest100")">Ke kelipatan 100</MudSelectItem>
+                                <MudSelectItem Value="@("Nearest500")">Ke kelipatan 500</MudSelectItem>
+                                <MudSelectItem Value="@("Nearest1000")">Ke kelipatan 1.000</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                    <MudSwitch T="bool" @bind-Value="_form.ServiceChargeTaxable" Color="Color.Primary"
+                               Disabled="!_form.ServiceChargeEnabled">
+                        Biaya layanan ikut dikenai pajak
+                    </MudSwitch>
+                </MudItem>
+
+                <!-- Contoh perhitungan langsung memakai TaxCalculator yang sama dengan
+                     yang dipakai kasir, jadi apa yang terlihat di sini persis dengan
+                     yang akan tercetak di struk. -->
+                <MudItem xs="12" md="5">
+                    <div class="panel panel--pad" style="background:var(--card-sunken);">
+                        <div class="eyebrow mb-1">Simulasi</div>
+                        <div class="page-subtitle mb-3" style="margin-top:0;">
+                            2 barang @MoneyFormatter.Format(50000m, _form) dan 1 barang @MoneyFormatter.Format(30000m, _form), diskon 10%.
+                        </div>
+
+                        <div class="leader">
+                            <span class="leader__label">Subtotal</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">@MoneyFormatter.Format(_preview.LineSubTotal, _form)</span>
+                        </div>
+                        <div class="leader leader--credit">
+                            <span class="leader__label">Diskon 10%</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">-@MoneyFormatter.Format(_preview.OrderDiscount, _form)</span>
+                        </div>
+                        @if (_preview.ServiceCharge > 0)
+                        {
+                            <div class="leader">
+                                <span class="leader__label">Layanan</span>
+                                <span class="leader__fill"></span>
+                                <span class="leader__value num">@MoneyFormatter.Format(_preview.ServiceCharge, _form)</span>
+                            </div>
+                        }
+                        <div class="leader leader--muted">
+                            <span class="leader__label">Dasar pengenaan pajak</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">@MoneyFormatter.Format(_preview.TaxableAmount, _form)</span>
+                        </div>
+                        <div class="leader">
+                            <span class="leader__label">@_form.TaxName @_form.TaxRatePercent.ToString("0.##")%</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">@MoneyFormatter.Format(_preview.TaxAmount, _form)</span>
+                        </div>
+                        @if (_preview.Rounding != 0)
+                        {
+                            <div class="leader leader--muted">
+                                <span class="leader__label">Pembulatan</span>
+                                <span class="leader__fill"></span>
+                                <span class="leader__value num">@MoneyFormatter.Format(_preview.Rounding, _form)</span>
+                            </div>
+                        }
+                        <div class="leader leader--total">
+                            <span class="leader__label">Total</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">@MoneyFormatter.Format(_preview.Total, _form)</span>
+                        </div>
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============================ Struk ============================ -->
+        <MudTabPanel Text="Struk" Icon="@Icons.Material.Filled.ReceiptLong">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.InvoicePrefix" Label="Awalan nomor invoice" Variant="Variant.Outlined"
+                                  Class="mb-3" HelperText="@($"Contoh: {_form.InvoicePrefix}-{DateTime.Today:yyyyMMdd}-0001")" />
+                    <MudTextField @bind-Value="_form.ReceiptFooter" Label="Catatan kaki struk" Variant="Variant.Outlined"
+                                  Lines="2" Class="mb-3" />
+                    <MudSelect T="int" @bind-Value="_form.ReceiptPaperWidthMm" Label="Lebar kertas" Variant="Variant.Outlined" Class="mb-3">
+                        <MudSelectItem Value="58">58 mm (32 karakter)</MudSelectItem>
+                        <MudSelectItem Value="80">80 mm (48 karakter)</MudSelectItem>
+                    </MudSelect>
+                    <MudSwitch T="bool" @bind-Value="_form.ReceiptShowLogo" Color="Color.Primary">Cetak logo di struk</MudSwitch>
+                    <MudSwitch T="bool" @bind-Value="_form.ReceiptShowCashier" Color="Color.Primary">Cetak nama kasir</MudSwitch>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============================ Stok ============================ -->
+        <MudTabPanel Text="Stok &amp; Loyalitas" Icon="@Icons.Material.Filled.Inventory">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudNumericField @bind-Value="_form.LowStockThreshold" Label="Ambang stok menipis" Variant="Variant.Outlined"
+                                     Min="0" Class="mb-3"
+                                     HelperText="Dipakai bila produk tidak punya ambang sendiri." />
+                    <MudSwitch T="bool" @bind-Value="_form.BlockSaleWhenOutOfStock" Color="Color.Primary" Class="mb-4">
+                        Tolak penjualan bila stok tidak mencukupi
+                    </MudSwitch>
+
+                    <MudDivider Class="my-4" />
+
+                    <MudSwitch T="bool" @bind-Value="_form.LoyaltyEnabled" Color="Color.Primary">
+                        Aktifkan poin loyalitas
+                    </MudSwitch>
+                    <MudNumericField @bind-Value="_form.LoyaltyAmountPerPoint" Label="Nominal belanja per 1 poin"
+                                     Variant="Variant.Outlined" Min="0" Class="mt-3"
+                                     Disabled="!_form.LoyaltyEnabled"
+                                     HelperText="@($"Belanja {MoneyFormatter.Format(_form.LoyaltyAmountPerPoint, _form)} menghasilkan 1 poin.")" />
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <!-- ============================ Pembayaran ============================ -->
+        <MudTabPanel Text="Pembayaran" Icon="@Icons.Material.Filled.CreditCard">
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                Kunci rahasia disimpan di database aplikasi. Gunakan kunci uji coba selama
+                pengembangan, dan pastikan hanya Admin yang bisa membuka halaman ini.
+            </MudAlert>
+
+            <MudTextField @bind-Value="_form.PublicBaseUrl" Label="Base URL publik" Variant="Variant.Outlined" Class="mb-2"
+                          Placeholder="https://toko.example.com"
+                          HelperText="Dipakai untuk URL kembali dan webhook. Kosongkan untuk memakai alamat saat ini." />
+
+            <div class="panel panel--pad mb-5" style="background:var(--card-sunken);">
+                <div class="eyebrow mb-2">Alamat webhook</div>
+                @foreach (var name in new[] { "xendit", "midtrans", "stripe" })
+                {
+                    <div class="leader leader--muted">
+                        <span class="leader__label" style="text-transform:capitalize;">@name</span>
+                        <span class="leader__fill"></span>
+                        <span class="leader__value num" style="font-size:.72rem;">@WebhookUrl(name)</span>
+                    </div>
+                }
+            </div>
+
+            <MudSwitch T="bool" @bind-Value="_form.PaymentCashEnabled" Color="Color.Primary" Class="mb-4">
+                Terima pembayaran tunai
+            </MudSwitch>
+
+            <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                <MudExpansionPanel Text="Xendit" Icon="@Icons.Material.Filled.QrCode2">
+                    <MudSwitch T="bool" @bind-Value="_form.XenditEnabled" Color="Color.Primary" Class="mb-3">
+                        Aktifkan Xendit
+                    </MudSwitch>
+                    <MudTextField @bind-Value="_form.XenditSecretKey" Label="Secret Key" Variant="Variant.Outlined"
+                                  InputType="InputType.Password" Class="mb-3" Disabled="!_form.XenditEnabled"
+                                  Placeholder="xnd_development_…" />
+                    <MudTextField @bind-Value="_form.XenditWebhookToken" Label="Callback Verification Token"
+                                  Variant="Variant.Outlined" InputType="InputType.Password" Disabled="!_form.XenditEnabled"
+                                  HelperText="Dicocokkan dengan header x-callback-token pada notifikasi." />
+                </MudExpansionPanel>
+
+                <MudExpansionPanel Text="Midtrans" Icon="@Icons.Material.Filled.AccountBalanceWallet">
+                    <MudSwitch T="bool" @bind-Value="_form.MidtransEnabled" Color="Color.Primary" Class="mb-3">
+                        Aktifkan Midtrans
+                    </MudSwitch>
+                    <MudTextField @bind-Value="_form.MidtransServerKey" Label="Server Key" Variant="Variant.Outlined"
+                                  InputType="InputType.Password" Class="mb-3" Disabled="!_form.MidtransEnabled" />
+                    <MudTextField @bind-Value="_form.MidtransClientKey" Label="Client Key" Variant="Variant.Outlined"
+                                  Class="mb-3" Disabled="!_form.MidtransEnabled" />
+                    <MudSwitch T="bool" @bind-Value="_form.MidtransIsProduction" Color="Color.Primary"
+                               Disabled="!_form.MidtransEnabled">
+                        Mode produksi (nonaktif = sandbox)
+                    </MudSwitch>
+                </MudExpansionPanel>
+
+                <MudExpansionPanel Text="Stripe" Icon="@Icons.Material.Filled.CreditCard">
+                    <MudSwitch T="bool" @bind-Value="_form.StripeEnabled" Color="Color.Primary" Class="mb-3">
+                        Aktifkan Stripe
+                    </MudSwitch>
+                    <MudTextField @bind-Value="_form.StripeSecretKey" Label="Secret Key" Variant="Variant.Outlined"
+                                  InputType="InputType.Password" Class="mb-3" Disabled="!_form.StripeEnabled"
+                                  Placeholder="sk_test_…" />
+                    <MudTextField @bind-Value="_form.StripeCurrency" Label="Mata uang Stripe" Variant="Variant.Outlined"
+                                  Disabled="!_form.StripeEnabled"
+                                  HelperText="Huruf kecil. IDR dikirim dalam satuan sen, jadi nominal dikali 100." />
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            <div class="mt-5">
+                <div class="eyebrow mb-2">Status saat ini</div>
+                <div class="d-flex flex-wrap" style="gap:.4rem;">
+                    @foreach (var gateway in Gateways.All)
+                    {
+                        var ready = gateway.IsConfigured(_form);
+                        <span class="badge @(ready ? "badge--leaf" : "badge--muted")">
+                            @gateway.DisplayName — @(ready ? "siap" : "belum aktif")
+                        </span>
+                    }
+                </div>
+            </div>
+        </MudTabPanel>
+
+
+        <!-- ============================ API ============================ -->
+        <MudTabPanel Text="API" Icon="@Icons.Material.Filled.Api">
+            <div class="d-flex flex-wrap align-start justify-space-between mb-4" style="gap:1rem;">
+                <div style="max-width:640px;">
+                    <div class="eyebrow mb-1">Integrasi</div>
+                    <p class="page-subtitle" style="margin-top:0;">
+                        Aplikasi luar mengakses data lewat REST API dengan menyertakan kunci pada
+                        header <code>X-Api-Key</code>. Kunci penuh hanya diperlihatkan satu kali
+                        saat dibuat &mdash; yang tersimpan hanyalah hash-nya.
+                    </p>
+                </div>
+
+                <div class="d-flex" style="gap:.5rem;">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.MenuBook"
+                               Href="/swagger" Target="_blank">Buka Swagger</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewKey">Buat kunci</MudButton>
+                </div>
+            </div>
+
+            @if (_apiKeys.Count == 0)
+            {
+                <div class="empty">
+                    <MudIcon Icon="@Icons.Material.Filled.VpnKey" Size="Size.Large" />
+                    <div>Belum ada kunci API.</div>
+                    <div style="font-size:.8rem;">Buat satu kunci untuk mulai mengintegrasikan aplikasi luar.</div>
+                </div>
+            }
+            else
+            {
+                <MudTable Items="_apiKeys" Hover="true" Elevation="0" Dense="true" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Nama</MudTh>
+                        <MudTh>Kunci</MudTh>
+                        <MudTh>Izin</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Dibuat</MudTh>
+                        <MudTh>Terakhir dipakai</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Nama" Style="font-weight:600;">@context.Name</MudTd>
+                        <MudTd DataLabel="Kunci"><span class="num" style="font-size:.78rem;">@context.Prefix…</span></MudTd>
+                        <MudTd DataLabel="Izin">
+                            <span class="badge @(context.CanWrite ? "badge--brand" : "badge--muted")">
+                                @(context.CanWrite ? "Baca & tulis" : "Baca saja")
+                            </span>
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <span class="badge @(IsUsable(context) ? "badge--leaf" : "badge--muted")">@KeyStatus(context)</span>
+                        </MudTd>
+                        <MudTd DataLabel="Dibuat"><span class="num" style="font-size:.78rem;">@context.CreatedAt.ToString("dd/MM/yyyy")</span></MudTd>
+                        <MudTd DataLabel="Terakhir dipakai">
+                            <span class="num" style="font-size:.78rem;">
+                                @(context.LastUsedAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                            </span>
+                        </MudTd>
+                        <MudTd>
+                            <div class="d-flex justify-end">
+                                <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                                    <MudIconButton Size="Size.Small"
+                                                   Icon="@(context.IsActive ? Icons.Material.Filled.PauseCircle : Icons.Material.Filled.PlayCircle)"
+                                                   OnClick="() => ToggleKey(context)" />
+                                </MudTooltip>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               OnClick="() => DeleteKey(context)" />
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <div class="panel panel--pad mt-5" style="background:var(--card-sunken);">
+                <div class="eyebrow mb-2">Contoh pemakaian</div>
+                <pre class="num" style="font-size:.75rem; margin:0; white-space:pre-wrap; color:var(--ink-700);">curl -H "X-Api-Key: mps_xxxxxxxxxxxx" @(_baseUrl)/api/v1/products?activeOnly=true
+curl -H "X-Api-Key: mps_xxxxxxxxxxxx" @(_baseUrl)/api/v1/reports/summary?from=2026-08-01&amp;to=2026-08-31</pre>
+            </div>
+        </MudTabPanel>
+
+        <!-- ============================ Tampilan ============================ -->
+        <MudTabPanel Text="Tampilan &amp; Sesi" Icon="@Icons.Material.Filled.Palette">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudSwitch T="bool" @bind-Value="_form.DefaultDarkMode" Color="Color.Primary" Class="mb-4">
+                        Gunakan mode gelap sebagai bawaan
+                    </MudSwitch>
+
+                    <MudTextField @bind-Value="_form.AccentColor" Label="Warna aksen" Variant="Variant.Outlined" Class="mb-2"
+                                  HelperText="Kode heksadesimal, mis. #B3382B." />
+                    <div class="d-flex align-center mb-4" style="gap:.5rem;">
+                        <span style="@($"display:inline-block;width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:{_form.AccentColor};")"></span>
+                        <span class="page-subtitle" style="margin:0;">Pratinjau warna aksen</span>
+                    </div>
+
+                    <MudNumericField @bind-Value="_form.SessionTimeoutHours" Label="Durasi sesi (jam)"
+                                     Variant="Variant.Outlined" Min="1" Max="720"
+                                     HelperText="Kasir diminta masuk ulang setelah rentang ini." />
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+    </MudTabs>
+</div>
+
+<MudDialog @bind-Visible="_keyDialogOpen" Options="_keyDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Kunci API baru</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_issuedKey is null)
+        {
+            <MudTextField @bind-Value="_newKeyName" Label="Nama kunci" Variant="Variant.Outlined" Class="mb-3"
+                          HelperText="Sebutkan aplikasi yang akan memakainya, mis. Integrasi akuntansi." />
+
+            <MudSelect T="bool" @bind-Value="_newKeyCanWrite" Label="Izin" Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem T="bool" Value="false">Baca saja — aman untuk pelaporan</MudSelectItem>
+                <MudSelectItem T="bool" Value="true">Baca &amp; tulis — dapat mengubah data dan membuat transaksi</MudSelectItem>
+            </MudSelect>
+
+            <MudDatePicker @bind-Date="_newKeyExpiry" Label="Berlaku sampai (opsional)" Variant="Variant.Outlined"
+                           Clearable="true" MinDate="DateTime.Today.AddDays(1)" />
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                Salin kunci ini sekarang. Setelah dialog ditutup, kunci tidak dapat ditampilkan lagi.
+            </MudAlert>
+            <div class="panel panel--pad" style="background:var(--card-sunken); word-break:break-all;">
+                <span class="num" style="font-size:.85rem;">@_issuedKey</span>
+            </div>
+            <MudButton Class="mt-3" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ContentCopy"
+                       OnClick="CopyIssuedKey">Salin kunci</MudButton>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_issuedKey is null)
+        {
+            <MudButton OnClick="() => _keyDialogOpen = false">Batal</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="CreateKey" Disabled="_busy">Buat</MudButton>
+        }
+        else
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="CloseKeyDialog">Selesai</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private PosSettings _form = new();
+    private OrderTotals _preview = OrderTotals.Empty;
+    private bool _busy;
+    private bool _uploading;
+
+    /// <summary>Contoh keranjang tetap untuk simulasi pajak di halaman ini.</summary>
+    private sealed record SampleLine(int Quantity, decimal UnitPrice, decimal DiscountAmount) : ICartLine;
+
+    private static readonly ICartLine[] SampleCart =
+    {
+        new SampleLine(2, 50000m, 0m),
+        new SampleLine(1, 30000m, 0m)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var current = await SettingsService.GetAsync();
+        _form = current.Clone();
+        _baseUrl = NavManager.BaseUri.TrimEnd('/');
+        RecomputePreview();
+        await LoadApiKeysAsync();
+    }
+
+    // Simulasi ikut berubah setiap kali salah satu kolom disunting.
+    protected override void OnAfterRender(bool firstRender) => RecomputePreview();
+
+    private void RecomputePreview()
+    {
+        var next = TaxCalculator.Compute(SampleCart, _form, orderDiscountPercent: 10m);
+        if (next != _preview)
+        {
+            _preview = next;
+            StateHasChanged();
+        }
+    }
+
+    private string WebhookUrl(string provider)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(_form.PublicBaseUrl)
+            ? NavManager.BaseUri.TrimEnd('/')
+            : _form.PublicBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/api/payments/{provider}/callback";
+    }
+
+
+    // ---------------------------------------------------------------- kunci API
+
+    private List<Models.ApiKey> _apiKeys = new();
+    private bool _keyDialogOpen;
+    private string _newKeyName = "";
+    private bool _newKeyCanWrite;
+    private DateTime? _newKeyExpiry;
+    private string? _issuedKey;
+    private string _baseUrl = "";
+
+    private readonly DialogOptions _keyDialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+
+    private static bool IsUsable(Models.ApiKey key)
+        => key.IsActive && (key.ExpiresAt is null || key.ExpiresAt > DateTime.Now);
+
+    private static string KeyStatus(Models.ApiKey key)
+    {
+        if (!key.IsActive) return "Nonaktif";
+        if (key.ExpiresAt is DateTime expiry && expiry <= DateTime.Now) return "Kedaluwarsa";
+        return "Aktif";
+    }
+
+    private async Task LoadApiKeysAsync() => _apiKeys = await ApiKeys.ListAsync();
+
+    private void OpenNewKey()
+    {
+        _newKeyName = "";
+        _newKeyCanWrite = false;
+        _newKeyExpiry = null;
+        _issuedKey = null;
+        _keyDialogOpen = true;
+    }
+
+    private async Task CreateKey()
+    {
+        if (string.IsNullOrWhiteSpace(_newKeyName))
+        {
+            Snackbar.Add("Nama kunci wajib diisi.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // Nilai kunci penuh hanya ada di memori halaman ini sampai dialog ditutup.
+            var issued = await ApiKeys.CreateAsync(_newKeyName, _newKeyCanWrite, _newKeyExpiry);
+            _issuedKey = issued.PlainKey;
+            await LoadApiKeysAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyIssuedKey()
+    {
+        if (_issuedKey is null) return;
+        var ok = await JS.InvokeAsync<bool>("copyToClipboard", _issuedKey);
+        Snackbar.Add(ok ? "Kunci disalin." : "Peramban menolak akses papan klip.",
+            ok ? Severity.Success : Severity.Warning);
+    }
+
+    private void CloseKeyDialog()
+    {
+        _keyDialogOpen = false;
+        _issuedKey = null;
+    }
+
+    private async Task ToggleKey(Models.ApiKey key)
+    {
+        await ApiKeys.SetActiveAsync(key.Id, !key.IsActive);
+        await LoadApiKeysAsync();
+    }
+
+    private async Task DeleteKey(Models.ApiKey key)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"Hapus kunci {key.Name}? Aplikasi yang memakainya akan langsung kehilangan akses.");
+        if (!confirmed) return;
+
+        await ApiKeys.DeleteAsync(key.Id);
+        await LoadApiKeysAsync();
+        Snackbar.Add("Kunci dihapus.", Severity.Info);
+    }
+
+    private void ClearLogo() => _form.StoreLogoUrl = "";
+
+    private async Task UploadLogo(InputFileChangeEventArgs e)
+    {
+        _uploading = true;
+        try
+        {
+            _form.StoreLogoUrl = await Storage.UploadFileAsync(e.File, e.File.Name);
+            Snackbar.Add("Logo diunggah. Jangan lupa simpan perubahan.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal mengunggah logo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        if (_busy) return;
+
+        if (_form.TaxRatePercent is < 0 or > 100)
+        {
+            Snackbar.Add("Tarif pajak harus antara 0 dan 100.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_form.StoreName))
+        {
+            Snackbar.Add("Nama toko wajib diisi.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await SettingsService.SaveAsync(_form);
+            Snackbar.Add("Pengaturan tersimpan.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal menyimpan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

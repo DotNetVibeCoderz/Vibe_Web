@@ -1,0 +1,81 @@
+@inherits LayoutComponentBase
+@inject NavigationManager NavManager
+@inject AuthService AuthService
+@inject IJSRuntime JSRuntime
+
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="MyCustomTheme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Typo="Typo.h5" Class="ml-3">MyPoS Dashboard</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Brightness4" Color="Color.Inherit" OnClick="ToggleTheme" />
+        <AuthorizeView>
+            <Authorized>
+                <MudButton Color="Color.Inherit" OnClick="Logout">Logout (@context.User.Identity.Name)</MudButton>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Color="Color.Inherit" Href="/login">Login</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6">MyPoS</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+    <MudMainContent Class="pt-16 px-16 pb-16">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    bool _drawerOpen = true;
+    bool _isDarkMode = false;
+
+    void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    async Task ToggleTheme()
+    {
+        _isDarkMode = !_isDarkMode;
+        await JSRuntime.InvokeVoidAsync("setBodyClass", _isDarkMode ? "mud-theme-dark" : "mud-theme-light");
+    }
+
+    void Logout()
+    {
+        AuthService.Logout();
+        NavManager.NavigateTo("/login");
+    }
+
+    private MudTheme MyCustomTheme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = Colors.Blue.Default,
+            AppbarBackground = "#ffffff33",
+            Background = "#00000000",
+            Surface = "#ffffff66",
+            DrawerBackground = "#ffffff99",
+            TextPrimary = Colors.Gray.Darken4
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = Colors.Blue.Lighten1,
+            AppbarBackground = "#00000066",
+            Background = "#00000000",
+            Surface = "#00000099",
+            DrawerBackground = "#000000b3",
+            TextPrimary = Colors.Shades.White
+        }
+    };
+}

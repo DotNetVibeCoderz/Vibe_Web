@@ -1,0 +1,171 @@
+@inject MoneyFormatter Money
+
+@*
+    Penjualan harian: satu deret, satu warna. Hari adalah keranjang diskret, jadi
+    bentuknya batang, bukan garis. Hanya batang tertinggi yang diberi label langsung -
+    memberi angka pada setiap batang justru menutupi polanya - sisanya muncul saat
+    kursor menyentuh batang. Ada juga tampilan tabel di bawah untuk pembacaan dengan
+    pembaca layar dan untuk angka yang persis.
+
+    Catatan teknis: elemen <text> SVG ditulis lewat helper MarkupString karena Razor
+    memesan nama tag "text" untuk keperluannya sendiri.
+*@
+
+<div class="chart">
+    @if (Points.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.ShowChart" Size="Size.Large" />
+            <div>Belum ada penjualan pada rentang ini.</div>
+        </div>
+    }
+    else
+    {
+        <div class="chart__canvas">
+            <svg viewBox="@($"0 0 {Width} {Height}")" role="img" width="100%" preserveAspectRatio="xMidYMid meet"
+                 aria-label="@($"Penjualan harian {Points.Count} hari terakhir")">
+
+                @* Garis bantu dibuat samar: tugasnya menakar, bukan menarik perhatian. *@
+                @foreach (var fraction in new[] { 0m, 0.5m, 1m })
+                {
+                    var y = PlotTop + PlotHeight * (double)(1 - fraction);
+                    <line x1="@PadLeft" x2="@(Width - PadRight)" y1="@F(y)" y2="@F(y)"
+                          stroke="var(--chart-grid)" stroke-width="1" />
+                    @SvgText(PadLeft - 8, y + 4, "end", 10, false, "var(--ink-300)", AxisLabel(_max * fraction), true)
+                }
+
+                @for (var i = 0; i < Points.Count; i++)
+                {
+                    var index = i;
+                    var point = Points[i];
+                    var x = PadLeft + i * _slot + (_slot - _barWidth) / 2;
+                    var barHeight = _max <= 0 ? 0 : PlotHeight * (double)(point.Amount / _max);
+                    var y = PlotTop + PlotHeight - barHeight;
+                    var isHovered = _hoveredIndex == i;
+
+                    @* Batang setinggi nol tetap disisakan 2px agar hari tanpa penjualan
+                       terlihat sebagai data kosong, bukan sebagai celah yang hilang. *@
+                    <rect x="@F(x)" y="@F(barHeight < 2 ? PlotTop + PlotHeight - 2 : y)"
+                          width="@F(_barWidth)" height="@F(Math.Max(2, barHeight))"
+                          rx="4"
+                          fill="var(--chart-1)"
+                          opacity="@(_hoveredIndex is null || isHovered ? "1" : "0.45")" />
+
+                    @* Sasaran kursor selebar slot penuh, jauh lebih besar daripada
+                       batangnya sendiri, supaya mudah dibidik. *@
+                    <rect x="@F(PadLeft + index * _slot)" y="@PlotTop" width="@F(_slot)" height="@PlotHeight"
+                          fill="transparent" style="cursor:pointer;"
+                          @onmouseover="() => _hoveredIndex = index"
+                          @onmouseout="() => _hoveredIndex = null" />
+
+                    @if (i == _maxIndex && point.Amount > 0)
+                    {
+                        @SvgText(x + _barWidth / 2, y - 7, "middle", 11, true, "var(--ink-700)", Money.FormatCompact(point.Amount), true)
+                    }
+
+                    @if (i % _labelEvery == 0 || i == Points.Count - 1)
+                    {
+                        @SvgText(x + _barWidth / 2, Height - 8, "middle", 10, false, "var(--ink-300)", point.Date.ToString("d/M"), false)
+                    }
+                }
+            </svg>
+
+            @if (_hoveredIndex is int hovered && hovered < Points.Count)
+            {
+                <div class="chart__tip" style="@TipStyle(hovered)">
+                    <div class="chart__tip-date">@Points[hovered].Date.ToString("dddd, d MMM")</div>
+                    <div class="num chart__tip-value">@Money.Format(Points[hovered].Amount)</div>
+                    <div class="chart__tip-meta">@Points[hovered].Count transaksi</div>
+                </div>
+            }
+        </div>
+
+        <details class="chart__table">
+            <summary>Lihat sebagai tabel</summary>
+            <table>
+                <thead>
+                    <tr><th>Tanggal</th><th class="cell-num">Transaksi</th><th class="cell-num">Penjualan</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var point in Points)
+                    {
+                        <tr>
+                            <td>@point.Date.ToString("dd/MM/yyyy")</td>
+                            <td class="cell-num num">@point.Count</td>
+                            <td class="cell-num num">@Money.Format(point.Amount)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+</div>
+
+@code {
+    public record DailyPoint(DateTime Date, decimal Amount, int Count);
+
+    [Parameter, EditorRequired] public IReadOnlyList<DailyPoint> Points { get; set; } = Array.Empty<DailyPoint>();
+
+    private const int Width = 720;
+    private const int Height = 220;
+    private const int PadLeft = 58;
+    private const int PadRight = 12;
+    private const int PlotTop = 18;
+    private const int PlotHeight = 170;
+
+    private int? _hoveredIndex;
+    private decimal _max;
+    private int _maxIndex = -1;
+    private double _slot;
+    private double _barWidth;
+    private int _labelEvery = 1;
+
+    protected override void OnParametersSet()
+    {
+        if (Points.Count == 0) return;
+
+        _max = Points.Max(p => p.Amount);
+        _maxIndex = _max <= 0 ? -1 : Points.ToList().FindIndex(p => p.Amount == _max);
+
+        _slot = (double)(Width - PadLeft - PadRight) / Points.Count;
+
+        // Sisakan celah minimal 4px antar batang supaya keduanya tidak menyatu.
+        _barWidth = Math.Max(3, Math.Min(_slot - 4, _slot * 0.68));
+
+        _labelEvery = Points.Count <= 10 ? 1 : (int)Math.Ceiling(Points.Count / 8.0);
+    }
+
+    private static MarkupString SvgText(double x, double y, string anchor, int size, bool bold, string fill, string content, bool tabular)
+    {
+        var cls = tabular ? " class=\"num\"" : "";
+        var weight = bold ? " font-weight=\"700\"" : "";
+        return new MarkupString(
+            $"<text x=\"{F(x)}\" y=\"{F(y)}\" text-anchor=\"{anchor}\" font-size=\"{size}\"{weight} fill=\"{fill}\"{cls}>" +
+            System.Net.WebUtility.HtmlEncode(content) +
+            "</text>");
+    }
+
+    private string TipStyle(int index)
+    {
+        var centre = (PadLeft + index * _slot + _slot / 2) / Width * 100;
+        var clamped = Math.Clamp(centre, 12, 88);
+        return $"left:{F(clamped)}%;";
+    }
+
+    /// <summary>
+    /// Label sumbu dibuat sesingkat mungkin dan tanpa simbol mata uang: satuannya sudah
+    /// jelas dari judul panel, dan label panjang seperti "Rp 1.079,3 rb" akan terpotong
+    /// oleh tepi kiri grafik.
+    /// </summary>
+    private static string AxisLabel(decimal amount) => Math.Abs(amount) switch
+    {
+        0 => "0",
+        >= 1_000_000_000m => $"{amount / 1_000_000_000m:0.#} M",
+        >= 1_000_000m => $"{amount / 1_000_000m:0.#} jt",
+        >= 1_000m => $"{amount / 1_000m:0} rb",
+        _ => $"{amount:0}"
+    };
+
+    private static string F(double value)
+        => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

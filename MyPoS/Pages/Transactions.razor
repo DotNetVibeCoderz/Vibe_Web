@@ -1,0 +1,389 @@
+@page "/transaksi"
+@page "/transactions"
+@using Microsoft.EntityFrameworkCore
+@using MyPoS.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject MoneyFormatter Money
+@inject SettingsService SettingsService
+@inject CheckoutService Checkout
+@inject ReceiptService Receipts
+@inject ExportService ExportService
+@inject PdfReportService Pdf
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@attribute [Authorize(Roles = "Admin,Manager,Operator")]
+
+<PageTitle>Transaksi — @_settings.StoreName</PageTitle>
+
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Riwayat</div>
+        <h1 class="page-title mt-1">Transaksi</h1>
+        <p class="page-subtitle">Cetak ulang struk, periksa status pembayaran, atau batalkan transaksi.</p>
+    </div>
+</div>
+
+<MudGrid Spacing="3" Class="mb-4">
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--leaf">
+            <span class="stat__label">Total lunas</span>
+            <span class="stat__value num num--lg">@Money.FormatCompact(_summaryPaid)</span>
+            <span class="stat__meta">@_transactions.Count(t => t.Status == TransactionStatus.Paid) transaksi</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--turmeric">
+            <span class="stat__label">Menunggu pembayaran</span>
+            <span class="stat__value num num--lg">@_transactions.Count(t => t.Status == TransactionStatus.Pending)</span>
+            <span class="stat__meta">Perlu dicek statusnya</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--brand">
+            <span class="stat__label">Dibatalkan</span>
+            <span class="stat__value num num--lg">@_transactions.Count(t => t.Status is TransactionStatus.Voided or TransactionStatus.Refunded)</span>
+            <span class="stat__meta">Stok sudah dikembalikan</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat">
+            <span class="stat__label">Pajak terkumpul</span>
+            <span class="stat__value num num--lg">@Money.FormatCompact(_summaryTax)</span>
+            <span class="stat__meta">Dari transaksi lunas</span>
+        </div>
+    </MudItem>
+</MudGrid>
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudDateRangePicker @bind-DateRange="_range" Label="Rentang tanggal" Variant="Variant.Outlined"
+                            Margin="Margin.Dense" Style="max-width:280px;" />
+
+        <MudSelect T="TransactionStatus?" @bind-Value="_statusFilter" Label="Status" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Clearable="true" Style="max-width:180px;">
+            @foreach (var status in Enum.GetValues<TransactionStatus>())
+            {
+                <MudSelectItem T="TransactionStatus?" Value="@status">@ReceiptService.StatusLabel(status)</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_search" Placeholder="Cari invoice / kasir…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Style="max-width:240px;" />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync"
+                   StartIcon="@Icons.Material.Filled.FilterAlt">Terapkan</MudButton>
+
+        <MudSpacer />
+
+        <AuthorizeView Roles="Admin,Manager">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="ExportPdf">PDF</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+        </AuthorizeView>
+    </div>
+
+    @if (_filtered.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" />
+            <div>Tidak ada transaksi pada rentang ini.</div>
+        </div>
+    }
+    else
+    {
+        <MudTable Items="_filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Dense="true"
+                  RowsPerPage="15">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<Transaction, object>(x => x.Date)">Waktu</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Transaction, object>(x => x.InvoiceNumber)">Invoice</MudTableSortLabel></MudTh>
+                <MudTh>Kasir</MudTh>
+                <MudTh>Pelanggan</MudTh>
+                <MudTh>Pembayaran</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Transaction, object>(x => x.TotalAmount)">Total</MudTableSortLabel></MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Waktu"><span class="num">@context.Date.ToString("dd/MM/yy HH:mm")</span></MudTd>
+                <MudTd DataLabel="Invoice"><span class="num">@context.InvoiceNumber</span></MudTd>
+                <MudTd DataLabel="Kasir">@context.CashierName</MudTd>
+                <MudTd DataLabel="Pelanggan">@(context.Customer?.Name ?? "—")</MudTd>
+                <MudTd DataLabel="Pembayaran">@context.PaymentMethod</MudTd>
+                <MudTd DataLabel="Status">
+                    <span class="badge @StatusBadge(context.Status)">@ReceiptService.StatusLabel(context.Status)</span>
+                </MudTd>
+                <MudTd DataLabel="Total" Class="cell-num"><span class="num">@Money.Format(context.TotalAmount)</span></MudTd>
+                <MudTd>
+                    <div class="d-flex justify-end">
+                        <MudTooltip Text="Lihat struk">
+                            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                           OnClick="() => OpenReceipt(context.Id)" />
+                        </MudTooltip>
+                        @if (context.Status == TransactionStatus.Pending)
+                        {
+                            <MudTooltip Text="Cek status ke penyedia">
+                                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small" Color="Color.Info"
+                                               OnClick="() => RefreshStatus(context.Id)" />
+                            </MudTooltip>
+                        }
+                        <AuthorizeView Roles="Admin,Manager" Context="voidAuth">
+                            @if (context.Status is TransactionStatus.Paid or TransactionStatus.Pending)
+                            {
+                                <MudTooltip Text="Batalkan transaksi">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Block" Size="Size.Small" Color="Color.Error"
+                                                   OnClick="() => AskVoid(context)" />
+                                </MudTooltip>
+                            }
+                        </AuthorizeView>
+                    </div>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="Baris per halaman" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+            </PagerContent>
+        </MudTable>
+    }
+</div>
+
+<!-- ============================ Struk ============================ -->
+<MudDialog @bind-Visible="_receiptOpen" Options="_dialogOptions">
+    <DialogContent>
+        @if (_selected is not null)
+        {
+            <div id="print-area">
+                <ReceiptPanel Transaction="_selected" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _receiptOpen = false" Class="no-print">Tutup</MudButton>
+        @if (_selected is not null)
+        {
+            <MudButton Class="no-print" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyReceiptText">Salin teks</MudButton>
+        }
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Print"
+                   Class="no-print" OnClick="Print">Cetak</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- ============================ Konfirmasi batal ============================ -->
+<MudDialog @bind-Visible="_voidOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Batalkan @_voidTarget?.InvoiceNumber</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            Stok barang akan dikembalikan dan poin loyalitas yang sudah diberikan ditarik kembali.
+            Tindakan ini tidak dapat diurungkan.
+        </MudAlert>
+        <MudTextField @bind-Value="_voidReason" Label="Alasan pembatalan" Variant="Variant.Outlined" Lines="2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _voidOpen = false">Batal</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="ConfirmVoid" Disabled="_busy">
+            Ya, batalkan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private PosSettings _settings = new();
+    private List<Transaction> _transactions = new();
+    private DateRange _range = new(DateTime.Today.AddDays(-30), DateTime.Today);
+    private TransactionStatus? _statusFilter;
+    private string _search = "";
+
+    private Transaction? _selected;
+    private Transaction? _voidTarget;
+    private string _voidReason = "";
+    private bool _receiptOpen;
+    private bool _voidOpen;
+    private bool _busy;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+
+    private decimal _summaryPaid;
+    private decimal _summaryTax;
+
+    private List<Transaction> _filtered => _transactions
+        .Where(t => _statusFilter is null || t.Status == _statusFilter)
+        .Where(t => string.IsNullOrWhiteSpace(_search)
+                    || t.InvoiceNumber.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || t.CashierName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || (t.Customer?.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = await SettingsService.GetAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        var start = _range.Start?.Date ?? DateTime.Today.AddDays(-30);
+        var end = (_range.End?.Date ?? DateTime.Today).AddDays(1);
+
+        _transactions = await db.Transactions
+            .Include(t => t.Customer)
+            .Where(t => t.Date >= start && t.Date < end)
+            .OrderByDescending(t => t.Date)
+            .AsNoTracking()
+            .ToListAsync();
+
+        _summaryPaid = _transactions.Where(t => t.Status == TransactionStatus.Paid).Sum(t => t.TotalAmount);
+        _summaryTax = _transactions.Where(t => t.Status == TransactionStatus.Paid).Sum(t => t.TaxAmount);
+    }
+
+    private async Task OpenReceipt(int id)
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        _selected = await db.Transactions
+            .Include(t => t.Details)
+            .Include(t => t.Customer)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        _receiptOpen = _selected is not null;
+    }
+
+    private async Task RefreshStatus(int id)
+    {
+        var status = await Checkout.RefreshStatusAsync(id);
+        Snackbar.Add($"Status kini: {ReceiptService.StatusLabel(status)}",
+            status == TransactionStatus.Paid ? Severity.Success : Severity.Info);
+        await LoadAsync();
+    }
+
+    private void AskVoid(Transaction transaction)
+    {
+        _voidTarget = transaction;
+        _voidReason = "";
+        _voidOpen = true;
+    }
+
+    private async Task ConfirmVoid()
+    {
+        if (_voidTarget is null || _busy) return;
+
+        if (string.IsNullOrWhiteSpace(_voidReason))
+        {
+            Snackbar.Add("Alasan pembatalan wajib diisi.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var ok = await Checkout.VoidAsync(_voidTarget.Id, _voidReason.Trim());
+            Snackbar.Add(ok ? "Transaksi dibatalkan dan stok dikembalikan." : "Transaksi tidak dapat dibatalkan.",
+                ok ? Severity.Success : Severity.Warning);
+
+            _voidOpen = false;
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("printReceipt");
+
+    private async Task CopyReceiptText()
+    {
+        if (_selected is null) return;
+
+        // Teks yang disalin dibangun oleh ReceiptService yang sama dengan yang dipakai
+        // printer termal, jadi isinya identik dengan struk yang tercetak.
+        var receipt = Receipts.BuildText(_selected);
+        var ok = await JS.InvokeAsync<bool>("copyToClipboard", receipt);
+        Snackbar.Add(ok ? "Teks struk disalin." : "Peramban menolak akses papan klip.",
+            ok ? Severity.Success : Severity.Warning);
+    }
+
+    private IEnumerable<object> ExportRows() => _filtered.Select(t => new
+    {
+        Invoice = t.InvoiceNumber,
+        Tanggal = t.Date.ToString("yyyy-MM-dd HH:mm"),
+        Kasir = t.CashierName,
+        Pelanggan = t.Customer?.Name ?? "",
+        Metode = t.PaymentMethod,
+        Status = ReceiptService.StatusLabel(t.Status),
+        Subtotal = t.SubTotal,
+        Diskon = t.DiscountAmount,
+        DPP = t.TaxableAmount,
+        Pajak = t.TaxAmount,
+        Layanan = t.ServiceChargeAmount,
+        Pembulatan = t.RoundingAmount,
+        Total = t.TotalAmount
+    });
+
+    private async Task ExportPdf()
+    {
+        var paid = _filtered.Where(t => t.Status == TransactionStatus.Paid).ToList();
+
+        var bytes = Pdf.Build(
+            title: "Rekap Transaksi",
+            subtitle: "Riwayat penjualan",
+            rows: _filtered,
+            columns: new List<PdfColumn<Transaction>>
+            {
+                new("Waktu", 1.4f, false, t => t.Date.ToString("dd/MM/yy HH:mm")),
+                new("Invoice", 1.9f, false, t => t.InvoiceNumber),
+                new("Kasir", 1.2f, false, t => t.CashierName),
+                new("Pelanggan", 1.5f, false, t => t.Customer?.Name ?? "-"),
+                new("Metode", 1.1f, false, t => t.PaymentMethod),
+                new("Status", 1.3f, false, t => ReceiptService.StatusLabel(t.Status)),
+                new("Subtotal", 1.3f, true, t => Money.FormatNumber(t.SubTotal)),
+                new("Diskon", 1.1f, true, t => Money.FormatNumber(t.DiscountAmount)),
+                new(_settings.TaxName, 1.1f, true, t => Money.FormatNumber(t.TaxAmount)),
+                new("Total", 1.4f, true, t => Money.FormatNumber(t.TotalAmount))
+            },
+            summaries: new List<PdfSummary>
+            {
+                new("Total lunas", Money.Format(paid.Sum(t => t.TotalAmount))),
+                new("Transaksi lunas", paid.Count.ToString("N0")),
+                new($"{_settings.TaxName} terkumpul", Money.Format(paid.Sum(t => t.TaxAmount))),
+                new("Diskon diberikan", Money.Format(paid.Sum(t => t.DiscountAmount)))
+            },
+            filters: new List<string>
+            {
+                $"Periode {(_range.Start ?? DateTime.Today):dd/MM/yyyy} - {(_range.End ?? DateTime.Today):dd/MM/yyyy}",
+                _statusFilter is null ? "Semua status" : ReceiptService.StatusLabel(_statusFilter.Value),
+                string.IsNullOrWhiteSpace(_search) ? "Tanpa pencarian" : $"Pencarian \"{_search}\""
+            },
+            landscape: true);
+
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream",
+            $"Transaksi_{DateTime.Now:yyyyMMdd}.pdf", new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Transaksi");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", $"Transaksi_{DateTime.Now:yyyyMMdd}.xlsx",
+            new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", $"Transaksi_{DateTime.Now:yyyyMMdd}.csv",
+            new DotNetStreamReference(stream));
+    }
+
+    private static string StatusBadge(TransactionStatus status) => status switch
+    {
+        TransactionStatus.Paid => "badge--leaf",
+        TransactionStatus.Pending => "badge--turmeric",
+        _ => "badge--brand"
+    };
+}

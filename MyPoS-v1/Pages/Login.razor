@@ -1,0 +1,36 @@
+@page "/login"
+@layout LoginLayout
+@inject AuthService AuthService
+@inject NavigationManager NavManager
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="height: 100vh;">
+    <MudCard Class="pa-6 glass-container" Style="width: 400px; text-align: center;">
+        <MudText Typo="Typo.h4" Class="mb-4">MyPoS Login</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mb-4 text-muted">Sign in to start your session</MudText>
+
+        <MudTextField @bind-Value="Username" Label="Username" Variant="Variant.Outlined" FullWidth Class="mb-3" />
+        <MudTextField @bind-Value="Password" Label="Password" Variant="Variant.Outlined" FullWidth InputType="InputType.Password" Class="mb-4" />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth OnClick="DoLogin">Login</MudButton>
+        <MudText Typo="Typo.caption" Class="mt-4 d-block">Admin: admin/admin123 | Manager: manager/manager123 | Operator: operator/operator123</MudText>
+    </MudCard>
+</MudContainer>
+
+@code {
+    string Username { get; set; } = "admin";
+    string Password { get; set; } = "admin123";
+
+    async Task DoLogin()
+    {
+        bool success = await AuthService.LoginAsync(Username, Password);
+        if (success)
+        {
+            NavManager.NavigateTo("/");
+        }
+        else
+        {
+            Snackbar.Add("Invalid username or password", Severity.Error);
+        }
+    }
+}

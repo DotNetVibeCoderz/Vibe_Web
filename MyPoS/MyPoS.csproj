@@ -5,16 +5,37 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Komentar XML dipakai Swagger sebagai deskripsi endpoint; peringatan "anggota
+         tanpa komentar" tidak relevan untuk proyek aplikasi. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Penyimpanan berkas -->
     <PackageReference Include="AWSSDK.S3" Version="4.0.18.7" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
+
+    <!-- Ekspor -->
     <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="CsvHelper" Version="33.1.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.3" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.3" />
+    <PackageReference Include="QuestPDF" Version="2026.8.0" />
+
+    <!-- Basis data: satu paket per penyedia yang didukung -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.9" />
+
+    <!-- REST API -->
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+
+    <!-- Antarmuka -->
     <PackageReference Include="MudBlazor" Version="9.0.0" />
+
+    <!-- Dibawa secara transitif oleh penyedia SQLite pada versi yang terkena advisori
+         GHSA-2m69-gcr7-jv3q. Disematkan ke versi perbaikan agar NU1903 tidak muncul. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 
 </Project>

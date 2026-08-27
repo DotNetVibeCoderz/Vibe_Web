@@ -1,191 +1,317 @@
+@page "/laporan-penjualan"
 @page "/sales-report"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
-@using System.Globalization
-@using System.IO
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject IJSRuntime JSRuntime
-@inject MyPoS.Services.ExportService ExportService
+@inject ExportService ExportService
+@inject PdfReportService Pdf
+@inject MoneyFormatter Money
+@inject SettingsService SettingsService
+@inject IJSRuntime JS
 @attribute [Authorize(Roles = "Admin,Manager")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Sales Report</MudText>
+<PageTitle>Laporan Penjualan — @_settings.StoreName</PageTitle>
 
-<MudCard Class="glass-container pa-4 mb-4">
-    <div class="d-flex flex-wrap gap-4 align-center">
-        <MudSelect T="int" @bind-Value="SelectedYear" Label="Year" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 150px;">
-            <MudSelectItem Value="0">All Years</MudSelectItem>
-            @if(AvailableYears != null)
-            {
-                @foreach(var y in AvailableYears)
-                {
-                    <MudSelectItem Value="y">@y</MudSelectItem>
-                }
-            }
-        </MudSelect>
-        
-        <MudSelect T="int" @bind-Value="SelectedMonth" Label="Month" Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 150px;">
-            <MudSelectItem Value="0">All Months</MudSelectItem>
-            @for(int i=1; i<=12; i++)
-            {
-                int monthIndex = i; // local copy for lambda/blazor binding
-                <MudSelectItem Value="monthIndex">@CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(monthIndex)</MudSelectItem>
-            }
-        </MudSelect>
-
-        <MudTextField @bind-Value="SearchTerm" Placeholder="Search Product / Category / Cashier..." 
-                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" 
-                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" 
-                      Style="max-width: 300px; flex-grow: 1;">
-        </MudTextField>
-
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Filter Data</MudButton>
-        <MudSpacer />
-        <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv">CSV</MudButton>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Laporan</div>
+        <h1 class="page-title mt-1">Penjualan per barang</h1>
+        <p class="page-subtitle">Hanya transaksi lunas. Margin dihitung dari harga modal saat barang terjual.</p>
     </div>
-</MudCard>
+</div>
 
-<MudCard Class="glass-container pa-4">
-    <MudTable Items="@FilteredReportData" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
-              Filter="new Func<ReportItem,bool>(FilterFunc)"
-              Style="background: transparent;">
-        <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Date)">Date</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.TransactionId)">Inv #</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Cashier)">Cashier</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.ProductName)">Product</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.CategoryName)">Category</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.Quantity)">Qty</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.UnitPrice)">Price</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<ReportItem, object>(x=>x.SubTotal)">SubTotal</MudTableSortLabel></MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Date">@context.Date.ToString("yyyy-MM-dd HH:mm")</MudTd>
-            <MudTd DataLabel="Inv #">@context.TransactionId</MudTd>
-            <MudTd DataLabel="Cashier">@context.Cashier</MudTd>
-            <MudTd DataLabel="Product">@context.ProductName</MudTd>
-            <MudTd DataLabel="Category">@context.CategoryName</MudTd>
-            <MudTd DataLabel="Qty">@context.Quantity</MudTd>
-            <MudTd DataLabel="Price">@context.UnitPrice.ToString("C0")</MudTd>
-            <MudTd DataLabel="SubTotal">@context.SubTotal.ToString("C0")</MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
-    </MudTable>
-</MudCard>
+<MudGrid Spacing="3" Class="mb-4">
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--leaf">
+            <span class="stat__label">Omzet</span>
+            <span class="stat__value num num--lg">@Money.FormatCompact(_rows.Sum(r => r.SubTotal))</span>
+            <span class="stat__meta">@_rows.Sum(r => r.Quantity) barang terjual</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat">
+            <span class="stat__label">Harga pokok</span>
+            <span class="stat__value num num--lg">@Money.FormatCompact(_rows.Sum(r => r.TotalCost))</span>
+            <span class="stat__meta">Berdasarkan modal tercatat</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--brand">
+            <span class="stat__label">Laba kotor</span>
+            <span class="stat__value num num--lg">@Money.FormatCompact(_grossProfit)</span>
+            <span class="stat__meta">@MarginLabel</span>
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--turmeric">
+            <span class="stat__label">Jumlah struk</span>
+            <span class="stat__value num num--lg">@_rows.Select(r => r.TransactionId).Distinct().Count()</span>
+            <span class="stat__meta">Pada rentang terpilih</span>
+        </div>
+    </MudItem>
+</MudGrid>
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudDateRangePicker @bind-DateRange="_range" Label="Rentang tanggal" Variant="Variant.Outlined"
+                            Margin="Margin.Dense" Style="max-width:280px;" />
+
+        <MudSelect T="int" @bind-Value="_categoryId" Label="Kategori" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Style="max-width:180px;">
+            <MudSelectItem Value="0">Semua kategori</MudSelectItem>
+            @foreach (var category in _categories)
+            {
+                <MudSelectItem Value="@category.Id">@category.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="string" @bind-Value="_cashier" Label="Kasir" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Style="max-width:170px;">
+            <MudSelectItem Value="@("")">Semua kasir</MudSelectItem>
+            @foreach (var name in _cashiers)
+            {
+                <MudSelectItem Value="@name">@name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_search" Placeholder="Cari produk / invoice…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Style="max-width:220px;" />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt"
+                   OnClick="LoadAsync">Terapkan</MudButton>
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="ExportPdf">PDF</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+    </div>
+
+    @if (Filtered.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.QueryStats" Size="Size.Large" />
+            <div>Belum ada penjualan pada rentang ini.</div>
+        </div>
+    }
+    else
+    {
+        <MudTable Items="Filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Dense="true" RowsPerPage="20">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<ReportRow, object>(x => x.Date)">Waktu</MudTableSortLabel></MudTh>
+                <MudTh>Invoice</MudTh>
+                <MudTh>Kasir</MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<ReportRow, object>(x => x.ProductName)">Produk</MudTableSortLabel></MudTh>
+                <MudTh>Kategori</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<ReportRow, object>(x => x.Quantity)">Qty</MudTableSortLabel></MudTh>
+                <MudTh Class="cell-num">Harga</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<ReportRow, object>(x => x.SubTotal)">Subtotal</MudTableSortLabel></MudTh>
+                <MudTh Class="cell-num">Laba</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Waktu"><span class="num">@context.Date.ToString("dd/MM/yy HH:mm")</span></MudTd>
+                <MudTd DataLabel="Invoice"><span class="num" style="font-size:.78rem;">@context.InvoiceNumber</span></MudTd>
+                <MudTd DataLabel="Kasir">@context.Cashier</MudTd>
+                <MudTd DataLabel="Produk" Style="font-weight:600;">@context.ProductName</MudTd>
+                <MudTd DataLabel="Kategori">@context.CategoryName</MudTd>
+                <MudTd DataLabel="Qty" Class="cell-num"><span class="num">@context.Quantity</span></MudTd>
+                <MudTd DataLabel="Harga" Class="cell-num"><span class="num">@Money.Format(context.UnitPrice)</span></MudTd>
+                <MudTd DataLabel="Subtotal" Class="cell-num"><span class="num">@Money.Format(context.SubTotal)</span></MudTd>
+                <MudTd DataLabel="Laba" Class="cell-num">
+                    <span class="num" style="@(context.Profit < 0 ? "color:var(--brand);" : "color:var(--leaf);")">
+                        @(context.TotalCost > 0 ? Money.Format(context.Profit) : "—")
+                    </span>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="Baris per halaman" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+            </PagerContent>
+        </MudTable>
+    }
+</div>
 
 @code {
-    public class ReportItem 
+    public record ReportRow(
+        int TransactionId,
+        string InvoiceNumber,
+        DateTime Date,
+        string Cashier,
+        string ProductName,
+        string CategoryName,
+        int Quantity,
+        decimal UnitPrice,
+        decimal SubTotal,
+        decimal TotalCost)
     {
-        public int TransactionId { get; set; }
-        public DateTime Date { get; set; }
-        public string Cashier { get; set; }
-        public string ProductName { get; set; }
-        public string CategoryName { get; set; }
-        public int Quantity { get; set; }
-        public decimal UnitPrice { get; set; }
-        public decimal SubTotal { get; set; }
+        public decimal Profit => SubTotal - TotalCost;
     }
 
-    List<ReportItem> AllReportData = new();
-    List<int> AvailableYears = new();
-    
-    int SelectedYear = 0;
-    int SelectedMonth = 0;
-    string SearchTerm = "";
+    private PosSettings _settings = new();
+    private List<ReportRow> _rows = new();
+    private List<Category> _categories = new();
+    private List<string> _cashiers = new();
+
+    private DateRange _range = new(DateTime.Today.AddDays(-30), DateTime.Today);
+    private int _categoryId;
+    private string _cashier = "";
+    private string _search = "";
+
+    private decimal _grossProfit => _rows.Sum(r => r.Profit);
+
+    private string MarginLabel
+    {
+        get
+        {
+            var revenue = _rows.Sum(r => r.SubTotal);
+            return revenue <= 0 ? "Belum ada omzet" : $"Margin {_grossProfit / revenue * 100m:0.#}%";
+        }
+    }
+
+    private List<ReportRow> Filtered => _rows
+        .Where(r => string.IsNullOrWhiteSpace(_search)
+                    || r.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || r.InvoiceNumber.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || r.CategoryName.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        
-        // Find min and max dates
-        var hasTransactions = await db.Transactions.AnyAsync();
-        int startYear = DateTime.Now.Year;
-        int endYear = DateTime.Now.Year;
-        
-        if (hasTransactions)
-        {
-            var minDate = await db.Transactions.MinAsync(t => (DateTime?)t.Date);
-            var maxDate = await db.Transactions.MaxAsync(t => (DateTime?)t.Date);
-            startYear = minDate?.Year ?? DateTime.Now.Year;
-            endYear = maxDate?.Year ?? DateTime.Now.Year;
-        }
+        _settings = await SettingsService.GetAsync();
 
-        AvailableYears.Clear();
-        for (int y = startYear; y <= endYear; y++)
-        {
-            AvailableYears.Add(y);
-        }
+        using var db = await DbFactory.CreateDbContextAsync();
+        _categories = await db.Categories.OrderBy(c => c.Name).AsNoTracking().ToListAsync();
+        _cashiers = await db.Transactions.Select(t => t.CashierName).Distinct().OrderBy(n => n).ToListAsync();
 
-        SelectedYear = DateTime.Now.Year;
-        SelectedMonth = DateTime.Now.Month;
-
-        await LoadData();
+        await LoadAsync();
     }
 
-    async Task LoadData()
+    private async Task LoadAsync()
     {
-        using var db = DbFactory.CreateDbContext();
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        var start = _range.Start?.Date ?? DateTime.Today.AddDays(-30);
+        var end = (_range.End?.Date ?? DateTime.Today).AddDays(1);
+
         var query = db.TransactionDetails
             .Include(d => d.Transaction)
-            .Include(d => d.Product)
-            .ThenInclude(p => p.Category)
-            .AsQueryable();
+            .Include(d => d.Product)!.ThenInclude(p => p!.Category)
+            // Transaksi yang batal atau masih menunggu pembayaran bukan penjualan,
+            // jadi tidak boleh ikut menaikkan omzet maupun laba.
+            .Where(d => d.Transaction!.Status == TransactionStatus.Paid
+                        && d.Transaction.Date >= start
+                        && d.Transaction.Date < end);
 
-        if (SelectedYear > 0)
+        if (_categoryId != 0)
+            query = query.Where(d => d.Product!.CategoryId == _categoryId);
+
+        if (!string.IsNullOrWhiteSpace(_cashier))
+            query = query.Where(d => d.Transaction!.CashierName == _cashier);
+
+        var details = await query.AsNoTracking().ToListAsync();
+
+        _rows = details
+            .Select(d => new ReportRow(
+                d.TransactionId,
+                d.Transaction!.InvoiceNumber,
+                d.Transaction.Date,
+                d.Transaction.CashierName,
+                // Nama disalin saat transaksi dibuat, jadi laporan lama tetap benar
+                // meski produknya kemudian diubah atau dinonaktifkan.
+                string.IsNullOrWhiteSpace(d.ProductName) ? d.Product?.Name ?? "Produk dihapus" : d.ProductName,
+                d.Product?.Category?.Name ?? "Tanpa kategori",
+                d.Quantity,
+                d.UnitPrice,
+                d.SubTotal,
+                d.UnitCost * d.Quantity))
+            .OrderByDescending(r => r.Date)
+            .ToList();
+    }
+
+    private IEnumerable<object> ExportRows() => Filtered.Select(r => new
+    {
+        Invoice = r.InvoiceNumber,
+        Tanggal = r.Date.ToString("yyyy-MM-dd HH:mm"),
+        Kasir = r.Cashier,
+        Produk = r.ProductName,
+        Kategori = r.CategoryName,
+        Qty = r.Quantity,
+        Harga = r.UnitPrice,
+        Subtotal = r.SubTotal,
+        HargaPokok = r.TotalCost,
+        Laba = r.Profit
+    });
+
+    /// <summary>
+    /// PDF memakai kumpulan kolom, ringkasan, dan penyaring yang sama dengan yang terlihat
+    /// di layar, sehingga berkas yang dikirim ke pihak lain tidak pernah berbeda isinya
+    /// dengan yang dilihat penggunanya saat mencetak.
+    /// </summary>
+    private async Task ExportPdf()
+    {
+        var revenue = Filtered.Sum(r => r.SubTotal);
+        var cost = Filtered.Sum(r => r.TotalCost);
+
+        var bytes = Pdf.Build(
+            title: "Laporan Penjualan",
+            subtitle: "Penjualan per barang",
+            rows: Filtered,
+            columns: new List<PdfColumn<ReportRow>>
+            {
+                new("Waktu", 1.4f, false, r => r.Date.ToString("dd/MM/yy HH:mm")),
+                new("Invoice", 1.8f, false, r => r.InvoiceNumber),
+                new("Kasir", 1.1f, false, r => r.Cashier),
+                new("Produk", 2.6f, false, r => r.ProductName),
+                new("Kategori", 1.5f, false, r => r.CategoryName),
+                new("Qty", 0.6f, true, r => r.Quantity.ToString("N0")),
+                new("Harga", 1.2f, true, r => Money.FormatNumber(r.UnitPrice)),
+                new("Subtotal", 1.3f, true, r => Money.FormatNumber(r.SubTotal)),
+                new("Laba", 1.2f, true, r => r.TotalCost > 0 ? Money.FormatNumber(r.Profit) : "-")
+            },
+            summaries: new List<PdfSummary>
+            {
+                new("Omzet", Money.Format(revenue)),
+                new("Harga pokok", Money.Format(cost)),
+                new("Laba kotor", Money.Format(revenue - cost)),
+                new("Margin", revenue <= 0 ? "-" : $"{(revenue - cost) / revenue * 100m:0.#}%")
+            },
+            filters: BuildFilterLabels(),
+            landscape: true);
+
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream",
+            $"LaporanPenjualan_{DateTime.Now:yyyyMMdd}.pdf", new DotNetStreamReference(stream));
+    }
+
+    private List<string> BuildFilterLabels()
+    {
+        var labels = new List<string>
         {
-            var startDate = new DateTime(SelectedYear, SelectedMonth > 0 ? SelectedMonth : 1, 1);
-            var endDate = SelectedMonth > 0 
-                ? startDate.AddMonths(1).AddTicks(-1) 
-                : new DateTime(SelectedYear, 12, 31, 23, 59, 59);
+            $"Periode {(_range.Start ?? DateTime.Today):dd/MM/yyyy} - {(_range.End ?? DateTime.Today):dd/MM/yyyy}",
+            _categoryId == 0 ? "Semua kategori" : _categories.FirstOrDefault(c => c.Id == _categoryId)?.Name ?? "Kategori",
+            string.IsNullOrWhiteSpace(_cashier) ? "Semua kasir" : $"Kasir {_cashier}"
+        };
 
-            query = query.Where(d => d.Transaction.Date >= startDate && d.Transaction.Date <= endDate);
-        }
+        if (!string.IsNullOrWhiteSpace(_search))
+            labels.Add($"Pencarian \"{_search}\"");
 
-        var results = await query.ToListAsync();
-
-        AllReportData = results.Select(d => new ReportItem
-        {
-            TransactionId = d.TransactionId,
-            Date = d.Transaction.Date,
-            Cashier = d.Transaction.CashierName ?? "Unknown",
-            ProductName = d.Product?.Name ?? "Deleted Product",
-            CategoryName = d.Product?.Category?.Name ?? "Uncategorized",
-            Quantity = d.Quantity,
-            UnitPrice = d.UnitPrice,
-            SubTotal = d.SubTotal
-        }).OrderByDescending(r => r.Date).ToList();
+        return labels;
     }
 
-    IEnumerable<ReportItem> FilteredReportData => AllReportData.Where(FilterFunc);
-
-    private bool FilterFunc(ReportItem item)
+    private async Task ExportExcel()
     {
-        if (string.IsNullOrWhiteSpace(SearchTerm))
-            return true;
-        
-        if (item.ProductName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
-        if (item.CategoryName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
-        if (item.Cashier.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)) return true;
-        if (item.TransactionId.ToString().Contains(SearchTerm)) return true;
-        
-        return false;
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Laporan Penjualan");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream",
+            $"LaporanPenjualan_{DateTime.Now:yyyyMMdd}.xlsx", new DotNetStreamReference(stream));
     }
 
-    async Task ExportExcel()
+    private async Task ExportCsv()
     {
-        var data = FilteredReportData.ToList();
-        var bytes = ExportService.ExportToExcel(data, "Sales_Report");
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", $"SalesReport_{DateTime.Now:yyyyMMdd}.xlsx", streamRef);
-    }
-
-    async Task ExportCsv()
-    {
-        var data = FilteredReportData.ToList();
-        var bytes = ExportService.ExportToCsv(data);
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", $"SalesReport_{DateTime.Now:yyyyMMdd}.csv", streamRef);
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream",
+            $"LaporanPenjualan_{DateTime.Now:yyyyMMdd}.csv", new DotNetStreamReference(stream));
     }
 }

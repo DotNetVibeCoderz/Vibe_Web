@@ -28,7 +28,7 @@ namespace MyPoS.Services
 
             var blobClient = containerClient.GetBlobClient(uniqueFileName);
             
-            using var stream = file.OpenReadStream(10485760); // Max 10MB
+            using var stream = file.OpenReadStream(_config.MaxUploadBytes);
             await blobClient.UploadAsync(stream, new BlobHttpHeaders { ContentType = file.ContentType });
 
             return blobClient.Uri.ToString();

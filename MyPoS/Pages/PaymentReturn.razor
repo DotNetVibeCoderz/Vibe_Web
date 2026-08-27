@@ -1,0 +1,37 @@
+@page "/pembayaran/{Outcome}"
+@attribute [AllowAnonymous]
+@layout LoginLayout
+@inject NavigationManager NavManager
+
+@*
+    Halaman yang dituju pelanggan setelah kembali dari Xendit, Midtrans, atau Stripe.
+    Statusnya sengaja tidak dipercaya dari URL - hasil sebenarnya selalu ditanyakan
+    ulang ke penyedia lewat webhook atau tombol "Cek status" di halaman Transaksi.
+*@
+
+<PageTitle>Pembayaran</PageTitle>
+
+<div class="login-main" style="min-height:100vh;">
+    <div class="login-card text-center">
+        <MudIcon Icon="@(_ok ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                 Size="Size.Large"
+                 Style="@($"font-size:4rem; color:{(_ok ? "var(--leaf)" : "var(--brand)")};")" />
+
+        <h1 class="page-title mt-4">@(_ok ? "Terima kasih" : "Pembayaran belum selesai")</h1>
+        <p class="page-subtitle mb-6">
+            @(_ok
+                ? "Pembayaran Anda sedang kami konfirmasi ke penyedia. Struk dapat diambil di kasir."
+                : "Pembayaran dibatalkan atau gagal diproses. Silakan coba lagi di kasir.")
+        </p>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Href="/">
+            Kembali ke aplikasi
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Outcome { get; set; } = "";
+
+    private bool _ok => string.Equals(Outcome, "sukses", StringComparison.OrdinalIgnoreCase);
+}

@@ -1,0 +1,369 @@
+@using MyPoS.Services.Import
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+@*
+    Dialog impor yang dipakai bersama oleh Produk, Kategori, dan Pelanggan.
+
+    Alurnya sengaja dua langkah: berkas diperiksa lebih dulu dan hasilnya ditampilkan
+    baris per baris, barulah pengguna menekan simpan. Impor yang langsung menulis
+    membuat kesalahan ketik pada berkas berubah menjadi ratusan baris yang harus
+    dibereskan satu per satu.
+*@
+
+<MudDialog @bind-Visible="_open" Options="_options">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Impor @Importer.DisplayName</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_result is not null)
+        {
+            <!-- ============ Langkah 3: hasil ============ -->
+            <div class="text-center py-4">
+                <MudIcon Icon="@(_result.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                         Size="Size.Large"
+                         Style="@($"font-size:3.5rem; color:{(_result.Success ? "var(--leaf)" : "var(--brand)")};")" />
+
+                @if (_result.Success)
+                {
+                    <h2 class="page-title mt-3" style="font-size:1.3rem;">Impor selesai</h2>
+                    <div class="mt-4" style="max-width:320px; margin:0 auto; text-align:left;">
+                        <div class="leader leader--credit">
+                            <span class="leader__label">Ditambahkan</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num">@_result.Created</span>
+                        </div>
+                        @if (_result.Updated > 0)
+                        {
+                            <div class="leader">
+                                <span class="leader__label">Diperbarui</span>
+                                <span class="leader__fill"></span>
+                                <span class="leader__value num">@_result.Updated</span>
+                            </div>
+                        }
+                        @if (_result.Skipped > 0)
+                        {
+                            <div class="leader leader--muted">
+                                <span class="leader__label">Dilewati</span>
+                                <span class="leader__fill"></span>
+                                <span class="leader__value num">@_result.Skipped</span>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <h2 class="page-title mt-3" style="font-size:1.3rem;">Impor gagal</h2>
+                    <p class="page-subtitle">@_result.Error</p>
+                }
+            </div>
+        }
+        else if (_preview is null)
+        {
+            <!-- ============ Langkah 1: pilih berkas ============ -->
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                Unduh template lebih dulu bila ini impor pertama Anda. Template berisi judul
+                kolom yang benar, satu baris contoh, dan lembar petunjuk.
+            </MudAlert>
+
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.Download"
+                       Disabled="_busy" OnClick="DownloadTemplate" Class="mb-4">
+                Unduh template @Importer.DisplayName.ToLowerInvariant() (.xlsx)
+            </MudButton>
+
+            <div class="eyebrow mb-2">Berkas</div>
+            <InputFile id="@_inputId" OnChange="OnFileSelected" accept=".xlsx" hidden />
+            <MudButton HtmlTag="label" for="@_inputId" Variant="Variant.Filled" Color="Color.Primary"
+                       FullWidth="true" Size="Size.Large" StartIcon="@Icons.Material.Filled.UploadFile"
+                       Disabled="_busy">
+                @(_busy ? "Memeriksa…" : "Pilih berkas Excel")
+            </MudButton>
+
+            <MudDivider Class="my-4" />
+
+            <div class="eyebrow mb-2">Pilihan</div>
+            <MudSwitch T="bool" @bind-Value="_options_UpdateExisting" Color="Color.Primary">
+                Perbarui data yang sudah ada
+            </MudSwitch>
+            <div class="page-subtitle" style="margin-top:0; font-size:.78rem;">
+                Nonaktif = baris yang cocok dengan data lama dilewati, bukan ditimpa.
+            </div>
+
+            @if (Importer.SupportsCategoryCreation)
+            {
+                <MudSwitch T="bool" @bind-Value="_options_CreateCategories" Color="Color.Primary" Class="mt-2">
+                    Buat kategori yang belum ada
+                </MudSwitch>
+                <div class="page-subtitle" style="margin-top:0; font-size:.78rem;">
+                    Nonaktif = baris dengan kategori tak dikenal ditolak.
+                </div>
+            }
+        }
+        else
+        {
+            <!-- ============ Langkah 2: pratinjau ============ -->
+            @if (_preview.FileErrors.Count > 0)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">
+                    <ul style="margin:0; padding-left:1.1rem;">
+                        @foreach (var error in _preview.FileErrors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                </MudAlert>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap mb-3" style="gap:.5rem;">
+                    <span class="badge badge--leaf">@_preview.CreateCount akan ditambahkan</span>
+                    @if (_preview.UpdateCount > 0)
+                    {
+                        <span class="badge badge--turmeric">@_preview.UpdateCount akan diperbarui</span>
+                    }
+                    @if (_preview.SkipCount > 0)
+                    {
+                        <span class="badge badge--muted">@_preview.SkipCount dilewati</span>
+                    }
+                    @if (_preview.ErrorCount > 0)
+                    {
+                        <span class="badge badge--brand">@_preview.ErrorCount bermasalah</span>
+                    }
+                </div>
+
+                @if (_preview.ErrorCount > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                        Baris bermasalah tidak akan disimpan. Perbaiki berkasnya lalu unggah ulang
+                        bila baris tersebut memang diperlukan.
+                    </MudAlert>
+                }
+
+                <div class="panel panel--flush" style="max-height:340px; overflow-y:auto;">
+                    <table class="import-table">
+                        <thead>
+                            <tr>
+                                <th style="width:56px;">Baris</th>
+                                <th>Data</th>
+                                <th style="width:110px;">Tindakan</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _preview.Rows.Take(DisplayLimit))
+                            {
+                                <tr class="@(row.IsValid ? "" : "import-table__row--error")">
+                                    <td class="num">@row.RowNumber</td>
+                                    <td style="font-weight:600;">@row.Summary</td>
+                                    <td>
+                                        <span class="badge @ActionBadge(row)">@ActionLabel(row)</span>
+                                    </td>
+                                    <td style="font-size:.78rem;">
+                                        @foreach (var error in row.Errors)
+                                        {
+                                            <div style="color:var(--brand);">@error</div>
+                                        }
+                                        @foreach (var warning in row.Warnings)
+                                        {
+                                            <div style="color:var(--ink-500);">@warning</div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (_preview.Rows.Count > DisplayLimit)
+                {
+                    <div class="page-subtitle" style="font-size:.78rem;">
+                        Menampilkan @DisplayLimit dari @_preview.Rows.Count baris. Semuanya tetap ikut diproses.
+                    </div>
+                }
+            }
+        }
+    </DialogContent>
+
+    <DialogActions>
+        @if (_result is not null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Selesai</MudButton>
+        }
+        else if (_preview is null)
+        {
+            <MudButton OnClick="Close">Tutup</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Reset" Disabled="_busy">Pilih berkas lain</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="@(_busy || !_preview.CanCommit)" OnClick="Commit">
+                @if (_busy)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Menyimpan…</span>
+                }
+                else
+                {
+                    <span>Simpan @(_preview.CreateCount + _preview.UpdateCount) baris</span>
+                }
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>Importer untuk jenis data master yang sedang dibuka.</summary>
+    [Parameter, EditorRequired] public IMasterDataImporter Importer { get; set; } = default!;
+
+    /// <summary>Dipanggil setelah impor berhasil agar halaman pemanggil memuat ulang datanya.</summary>
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private const int DisplayLimit = 200;
+    private const long MaxFileBytes = 10 * 1024 * 1024;
+
+    private readonly DialogOptions _options = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseOnEscapeKey = true
+    };
+
+    private readonly string _inputId = $"import-{Guid.NewGuid():N}";
+
+    private bool _open;
+    private bool _busy;
+    private ImportPreview? _preview;
+    private ImportResult? _result;
+
+    private bool _options_UpdateExisting = true;
+    private bool _options_CreateCategories;
+
+    /// <summary>Dipanggil halaman pemanggil untuk membuka dialog dalam keadaan bersih.</summary>
+    public void Open()
+    {
+        Reset();
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void Reset()
+    {
+        _preview = null;
+        _result = null;
+        _busy = false;
+    }
+
+    private void Close()
+    {
+        _open = false;
+        Reset();
+    }
+
+    private ImportOptions CurrentOptions() => new()
+    {
+        UpdateExisting = _options_UpdateExisting,
+        CreateMissingCategories = _options_CreateCategories
+    };
+
+    private async Task DownloadTemplate()
+    {
+        _busy = true;
+        try
+        {
+            var bytes = await Importer.BuildTemplateAsync();
+            using var stream = new MemoryStream(bytes);
+            await JS.InvokeVoidAsync("downloadFileFromStream",
+                $"Template_{Importer.Key}.xlsx", new DotNetStreamReference(stream));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal membuat template: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _result = null;
+
+        try
+        {
+            // Isi berkas disalin ke memori karena aliran dari peramban hanya dapat dibaca
+            // sekali maju, sedangkan ClosedXML perlu mencari posisi di dalamnya.
+            using var buffer = new MemoryStream();
+            await e.File.OpenReadStream(MaxFileBytes).CopyToAsync(buffer);
+            buffer.Position = 0;
+
+            _preview = await Importer.ParseAsync(buffer, CurrentOptions());
+
+            if (_preview.FileErrors.Count == 0 && _preview.ErrorCount == 0)
+                Snackbar.Add($"{_preview.Rows.Count} baris terbaca tanpa masalah.", Severity.Success);
+        }
+        catch (IOException)
+        {
+            Snackbar.Add($"Ukuran berkas melebihi {MaxFileBytes / 1024 / 1024} MB.", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal membaca berkas: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Commit()
+    {
+        if (_preview is null || _busy) return;
+
+        _busy = true;
+        try
+        {
+            _result = await Importer.CommitAsync(_preview, CurrentOptions());
+
+            if (_result.Success)
+            {
+                Snackbar.Add($"{_result.Total} baris {Importer.DisplayName.ToLowerInvariant()} tersimpan.", Severity.Success);
+                await OnImported.InvokeAsync();
+            }
+            else
+            {
+                Snackbar.Add(_result.Error ?? "Impor gagal.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string ActionLabel(ImportRowResult row)
+    {
+        if (!row.IsValid) return "Bermasalah";
+        return row.Action switch
+        {
+            ImportAction.Create => "Tambah",
+            ImportAction.Update => "Perbarui",
+            _ => "Dilewati"
+        };
+    }
+
+    private static string ActionBadge(ImportRowResult row)
+    {
+        if (!row.IsValid) return "badge--brand";
+        return row.Action switch
+        {
+            ImportAction.Create => "badge--leaf",
+            ImportAction.Update => "badge--turmeric",
+            _ => "badge--muted"
+        };
+    }
+}

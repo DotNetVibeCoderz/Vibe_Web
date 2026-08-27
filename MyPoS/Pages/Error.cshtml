@@ -1,0 +1,38 @@
+@page "/kesalahan"
+@model MyPoS.Pages.ErrorModel
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terjadi kesalahan</title>
+    <link href="css/mypos.css" rel="stylesheet" />
+</head>
+<body class="mud-theme-light">
+    <main style="min-height:100vh; display:grid; place-items:center; padding:2rem;">
+        <div class="panel panel--pad" style="max-width:460px; text-align:center;">
+            <div class="eyebrow">Kesalahan</div>
+            <h1 class="page-title mt-2">Ada yang tidak beres</h1>
+            <p class="page-subtitle">
+                Permintaan Anda tidak dapat diselesaikan. Silakan coba lagi, dan hubungi
+                pengelola bila kesalahan terus berulang.
+            </p>
+
+            @if (Model.ShowRequestId)
+            {
+                <p class="page-subtitle">
+                    Kode permintaan: <code class="num">@Model.RequestId</code>
+                </p>
+            }
+
+            <p style="margin-top:1.5rem;">
+                <a href="/" style="color:var(--brand); font-weight:600;">Kembali ke beranda</a>
+            </p>
+        </div>
+    </main>
+</body>
+</html>

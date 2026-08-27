@@ -1,217 +1,317 @@
+@page "/pengguna"
 @page "/users"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
-@using System.Text
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
-@inject IJSRuntime JSRuntime
-@inject MyPoS.Services.ExportService ExportService
+@inject IJSRuntime JS
+@inject ExportService ExportService
+@inject SettingsService SettingsService
+@inject AuthenticationStateProvider AuthStateProvider
 @attribute [Authorize(Roles = "Admin")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Users Management</MudText>
+<PageTitle>Pengguna — @_settings.StoreName</PageTitle>
 
-<MudCard Class="glass-container pa-4">
-    <MudTable Items="@UsersList" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
-              Filter="new Func<AppUser,bool>(FilterFunc1)"
-              Style="background: transparent;">
-        <ToolBarContent>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewDialog">Add</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
-            <MudSpacer />
-            <MudTextField @bind-Value="searchString1" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-        </ToolBarContent>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Akses</div>
+        <h1 class="page-title mt-1">Pengguna</h1>
+        <p class="page-subtitle">Kata sandi disimpan sebagai hash PBKDF2, tidak dapat dibaca kembali.</p>
+    </div>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+               StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenNew">Tambah pengguna</MudButton>
+</div>
+
+<MudGrid Spacing="3" Class="mb-4">
+    @foreach (var role in RoleDescriptions)
+    {
+        <MudItem xs="12" md="4">
+            <div class="stat @role.Accent">
+                <span class="stat__label">@role.Name</span>
+                <span class="stat__value num num--lg">@_users.Count(u => u.Role == role.Name)</span>
+                <span class="stat__meta">@role.Description</span>
+            </div>
+        </MudItem>
+    }
+</MudGrid>
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Cari nama pengguna…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Clearable="true" Style="min-width:240px;" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+    </div>
+
+    <MudTable Items="Filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" Dense="true">
         <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Username)">Username</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x=>x.Role)">Role</MudTableSortLabel></MudTh>
-            <MudTh>Actions</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<AppUser, object>(x => x.Username)">Nama pengguna</MudTableSortLabel></MudTh>
+            <MudTh>Nama lengkap</MudTh>
+            <MudTh>Peran</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="ID">@context.Id</MudTd>
-            <MudTd DataLabel="Username">@context.Username</MudTd>
-            <MudTd DataLabel="Role">@context.Role</MudTd>
-            <MudTd DataLabel="Actions">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => OpenEditDialog(context)" />
-                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteUser(context)" />
+            <MudTd DataLabel="Nama pengguna">
+                <span class="num" style="font-weight:600;">@context.Username</span>
+                @if (context.Username == _currentUsername)
+                {
+                    <span class="badge badge--muted ml-2">Anda</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Nama lengkap">@context.FullName</MudTd>
+            <MudTd DataLabel="Peran"><span class="badge @RoleBadge(context.Role)">@context.Role</span></MudTd>
+            <MudTd DataLabel="Status">
+                <span class="badge @(context.IsActive ? "badge--leaf" : "badge--muted")">
+                    @(context.IsActive ? "Aktif" : "Nonaktif")
+                </span>
+            </MudTd>
+            <MudTd>
+                <div class="d-flex justify-end">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => OpenEdit(context)" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="() => Delete(context)" />
+                </div>
             </MudTd>
         </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
     </MudTable>
-</MudCard>
+</div>
 
-@if (isDialogOpen)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" AutoClose="false">
-        <MudCard Class="glass-container pa-6" Style="width:400px; max-width:90vw;">
-            <MudText Typo="Typo.h6" Class="mb-4">@(isEdit ? "Edit User" : "New User")</MudText>
-            
-            <MudTextField @bind-Value="editingUser.Username" Label="Username" Required="true" Class="mb-2" />
-            
-            @if(!isEdit)
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEdit ? "Ubah pengguna" : "Pengguna baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_editing.Username" Label="Nama pengguna" Variant="Variant.Outlined"
+                      Required="true" Class="mb-3" />
+        <MudTextField @bind-Value="_editing.FullName" Label="Nama lengkap" Variant="Variant.Outlined" Class="mb-3" />
+
+        <MudTextField @bind-Value="_password"
+                      Label="@(_isEdit ? "Kata sandi baru (kosongkan bila tidak diubah)" : "Kata sandi")"
+                      Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-3"
+                      HelperText="Minimal 6 karakter." />
+
+        <MudSelect T="string" @bind-Value="_editing.Role" Label="Peran" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var role in RoleDescriptions)
             {
-                <MudTextField @bind-Value="newPassword" Label="Password" InputType="InputType.Password" Required="true" Class="mb-2" />
+                <MudSelectItem Value="@role.Name">@role.Name — @role.Description</MudSelectItem>
             }
-            else
-            {
-                <MudTextField @bind-Value="newPassword" Label="New Password (Leave blank to keep current)" InputType="InputType.Password" Class="mb-2" />
-            }
-            
-            <MudSelect T="string" @bind-Value="editingUser.Role" Label="Role" Class="mb-4">
-                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
-                <MudSelectItem Value="@("Manager")">Manager</MudSelectItem>
-                <MudSelectItem Value="@("Operator")">Operator</MudSelectItem>
-            </MudSelect>
-            
-            <div class="d-flex justify-end">
-                <MudButton OnClick="CloseDialog" Class="mr-2">Cancel</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveUser">Save</MudButton>
-            </div>
-        </MudCard>
-    </MudOverlay>
-}
+        </MudSelect>
+
+        <MudSwitch T="bool" @bind-Value="_editing.IsActive" Color="Color.Primary">
+            Akun aktif dan boleh masuk
+        </MudSwitch>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _dialogOpen = false">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
-    List<AppUser> UsersList = new();
-    string searchString1 = "";
+    private record RoleInfo(string Name, string Description, string Accent);
 
-    bool isDialogOpen = false;
-    bool isEdit = false;
-    AppUser editingUser = new AppUser();
-    string newPassword = "";
+    private static readonly RoleInfo[] RoleDescriptions =
+    {
+        new("Admin", "Akses penuh termasuk pengaturan", "stat--brand"),
+        new("Manager", "Data master dan laporan", "stat--leaf"),
+        new("Operator", "Hanya halaman kasir", "stat--turmeric")
+    };
+
+    private PosSettings _settings = new();
+    private List<AppUser> _users = new();
+    private string _search = "";
+    private string _currentUsername = "";
+
+    private AppUser _editing = new();
+    private string _password = "";
+    private bool _dialogOpen;
+    private bool _isEdit;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+
+    private List<AppUser> Filtered => _users
+        .Where(u => string.IsNullOrWhiteSpace(_search)
+                    || u.Username.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || (u.FullName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || u.Role.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _settings = await SettingsService.GetAsync();
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUsername = authState.User.Identity?.Name ?? "";
+
+        await LoadAsync();
     }
 
-    async Task LoadData()
+    private async Task LoadAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        UsersList = await db.Users.ToListAsync();
+        using var db = await DbFactory.CreateDbContextAsync();
+        _users = await db.Users.OrderBy(u => u.Username).AsNoTracking().ToListAsync();
     }
 
-    private bool FilterFunc1(AppUser element) => FilterFunc(element, searchString1);
-
-    private bool FilterFunc(AppUser element, string searchString)
+    private static string RoleBadge(string role) => role switch
     {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-        if (element.Username != null && element.Username.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.Role != null && element.Role.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
+        "Admin" => "badge--brand",
+        "Manager" => "badge--leaf",
+        _ => "badge--turmeric"
+    };
+
+    private void OpenNew()
+    {
+        _editing = new AppUser { Role = "Operator", IsActive = true };
+        _password = "";
+        _isEdit = false;
+        _dialogOpen = true;
     }
 
-    async Task ExportExcel()
+    private void OpenEdit(AppUser user)
     {
-        var data = UsersList.Select(x => new { x.Id, x.Username, x.Role }).ToList();
-        var bytes = ExportService.ExportToExcel(data, "Users");
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Users.xlsx", streamRef);
-    }
-
-    async Task ExportCsv()
-    {
-        var data = UsersList.Select(x => new { x.Id, x.Username, x.Role }).ToList();
-        var bytes = ExportService.ExportToCsv(data);
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Users.csv", streamRef);
-    }
-
-    void OpenNewDialog()
-    {
-        editingUser = new AppUser { Role = "Operator" };
-        newPassword = "";
-        isEdit = false;
-        isDialogOpen = true;
-    }
-
-    void OpenEditDialog(AppUser u)
-    {
-        editingUser = new AppUser
+        _editing = new AppUser
         {
-            Id = u.Id,
-            Username = u.Username,
-            Role = u.Role,
-            PasswordHash = u.PasswordHash
+            Id = user.Id,
+            Username = user.Username,
+            FullName = user.FullName,
+            Role = user.Role,
+            IsActive = user.IsActive,
+            PasswordHash = user.PasswordHash
         };
-        newPassword = "";
-        isEdit = true;
-        isDialogOpen = true;
+        _password = "";
+        _isEdit = true;
+        _dialogOpen = true;
     }
 
-    void CloseDialog()
+    private async Task Save()
     {
-        isDialogOpen = false;
-    }
-
-    async Task SaveUser()
-    {
-        if (string.IsNullOrWhiteSpace(editingUser.Username))
+        if (string.IsNullOrWhiteSpace(_editing.Username))
         {
-            Snackbar.Add("Username is required", Severity.Warning);
-            return;
-        }
-        
-        if (!isEdit && string.IsNullOrWhiteSpace(newPassword))
-        {
-            Snackbar.Add("Password is required for new user", Severity.Warning);
+            Snackbar.Add("Nama pengguna wajib diisi.", Severity.Warning);
             return;
         }
 
-        using var db = DbFactory.CreateDbContext();
-        if (isEdit)
+        if (!_isEdit && string.IsNullOrWhiteSpace(_password))
         {
-            var item = await db.Users.FindAsync(editingUser.Id);
-            if (item != null)
+            Snackbar.Add("Kata sandi wajib diisi untuk pengguna baru.", Severity.Warning);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_password) && _password.Length < 6)
+        {
+            Snackbar.Add("Kata sandi minimal 6 karakter.", Severity.Warning);
+            return;
+        }
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        var username = _editing.Username.Trim();
+
+        if (await db.Users.AnyAsync(u => u.Username == username && u.Id != _editing.Id))
+        {
+            Snackbar.Add($"Nama pengguna \"{username}\" sudah dipakai.", Severity.Warning);
+            return;
+        }
+
+        if (_isEdit)
+        {
+            var entity = await db.Users.FindAsync(_editing.Id);
+            if (entity is null) return;
+
+            // Mencabut peran Admin atau menonaktifkan akun sendiri akan mengunci diri
+            // sendiri di luar halaman ini, jadi keduanya ditolak.
+            if (entity.Username == _currentUsername && (_editing.Role != "Admin" || !_editing.IsActive))
             {
-                item.Username = editingUser.Username;
-                item.Role = editingUser.Role;
-                
-                if (!string.IsNullOrWhiteSpace(newPassword))
-                {
-                    item.PasswordHash = Convert.ToBase64String(Encoding.UTF8.GetBytes(newPassword));
-                }
-                
-                db.Users.Update(item);
+                Snackbar.Add("Anda tidak dapat mencabut akses Admin milik akun yang sedang dipakai.", Severity.Warning);
+                return;
             }
+
+            if (entity.Role == "Admin" && _editing.Role != "Admin" && await IsLastActiveAdminAsync(db, entity.Id))
+            {
+                Snackbar.Add("Harus tersisa minimal satu Admin yang aktif.", Severity.Warning);
+                return;
+            }
+
+            entity.Username = username;
+            entity.FullName = _editing.FullName?.Trim();
+            entity.Role = _editing.Role;
+            entity.IsActive = _editing.IsActive;
+
+            if (!string.IsNullOrWhiteSpace(_password))
+                entity.PasswordHash = PasswordHasher.Hash(_password);
         }
         else
         {
-            editingUser.PasswordHash = Convert.ToBase64String(Encoding.UTF8.GetBytes(newPassword));
-            db.Users.Add(editingUser);
+            db.Users.Add(new AppUser
+            {
+                Username = username,
+                FullName = _editing.FullName?.Trim(),
+                Role = _editing.Role,
+                IsActive = _editing.IsActive,
+                PasswordHash = PasswordHasher.Hash(_password)
+            });
         }
 
         await db.SaveChangesAsync();
-        Snackbar.Add("User saved", Severity.Success);
-        isDialogOpen = false;
-        await LoadData();
+        Snackbar.Add("Pengguna tersimpan.", Severity.Success);
+        _dialogOpen = false;
+        await LoadAsync();
     }
 
-    async Task DeleteUser(AppUser u)
+    private async Task Delete(AppUser user)
     {
-        if(u.Username.ToLower() == "admin")
+        if (user.Username == _currentUsername)
         {
-            Snackbar.Add("Cannot delete default admin user", Severity.Error);
+            Snackbar.Add("Anda tidak dapat menghapus akun yang sedang dipakai.", Severity.Error);
             return;
         }
 
-        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this user?");
-        if (confirmed)
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        if (user.Role == "Admin" && await IsLastActiveAdminAsync(db, user.Id))
         {
-            using var db = DbFactory.CreateDbContext();
-            var item = await db.Users.FindAsync(u.Id);
-            if (item != null)
-            {
-                db.Users.Remove(item);
-                await db.SaveChangesAsync();
-                Snackbar.Add("User deleted", Severity.Info);
-                await LoadData();
-            }
+            Snackbar.Add("Harus tersisa minimal satu Admin yang aktif.", Severity.Error);
+            return;
         }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Hapus pengguna \"{user.Username}\"?");
+        if (!confirmed) return;
+
+        var entity = await db.Users.FindAsync(user.Id);
+        if (entity is null) return;
+
+        db.Users.Remove(entity);
+        await db.SaveChangesAsync();
+        Snackbar.Add("Pengguna dihapus.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private static async Task<bool> IsLastActiveAdminAsync(AppDbContext db, int excludingId)
+        => !await db.Users.AnyAsync(u => u.Role == "Admin" && u.IsActive && u.Id != excludingId);
+
+    private IEnumerable<object> ExportRows() => Filtered.Select(u => new
+    {
+        u.Id,
+        NamaPengguna = u.Username,
+        NamaLengkap = u.FullName ?? "",
+        Peran = u.Role,
+        Status = u.IsActive ? "Aktif" : "Nonaktif"
+    });
+
+    private async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Pengguna");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Pengguna.xlsx", new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Pengguna.csv", new DotNetStreamReference(stream));
     }
 }

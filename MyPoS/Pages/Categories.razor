@@ -1,172 +1,211 @@
+@page "/kategori"
 @page "/categories"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
-@inject IJSRuntime JSRuntime
-@inject MyPoS.Services.ExportService ExportService
+@inject IJSRuntime JS
+@inject ExportService ExportService
+@inject SettingsService SettingsService
+@inject MyPoS.Services.Import.CategoryImporter Importer
 @attribute [Authorize(Roles = "Admin,Manager")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Categories Management</MudText>
+<PageTitle>Kategori — @_settings.StoreName</PageTitle>
 
-<MudCard Class="glass-container pa-4">
-    <MudTable Items="@CategoriesList" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
-              Filter="new Func<Category,bool>(FilterFunc1)"
-              Style="background: transparent;">
-        <ToolBarContent>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewDialog">Add</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
-            <MudSpacer />
-            <MudTextField @bind-Value="searchString1" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<Category, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Category, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="ID">@context.Id</MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Actions">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => OpenEditDialog(context)" />
-                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteCategory(context)" />
-            </MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
-    </MudTable>
-</MudCard>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Data master</div>
+        <h1 class="page-title mt-1">Kategori</h1>
+        <p class="page-subtitle">Kategori menjadi tab penyaring di halaman kasir.</p>
+    </div>
 
-@if (isDialogOpen)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" AutoClose="false">
-        <MudCard Class="glass-container pa-6" Style="width:400px; max-width:90vw;">
-            <MudText Typo="Typo.h6" Class="mb-4">@(isEdit ? "Edit Category" : "New Category")</MudText>
-            
-            <MudTextField @bind-Value="editingCategory.Name" Label="Name" Required="true" Class="mb-4" />
-            
-            <div class="d-flex justify-end">
-                <MudButton OnClick="CloseDialog" Class="mr-2">Cancel</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveCategory">Save</MudButton>
-            </div>
-        </MudCard>
-    </MudOverlay>
-}
+    <div class="d-flex" style="gap:.5rem;">
+        <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.UploadFile" OnClick="() => _importDialog?.Open()">
+            Impor Excel
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNew">Tambah kategori</MudButton>
+    </div>
+</div>
+
+<ImportDialog @ref="_importDialog" Importer="Importer" OnImported="LoadAsync" />
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Cari kategori…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Clearable="true" Style="min-width:240px;" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+    </div>
+
+    @if (Filtered.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.Category" Size="Size.Large" />
+            <div>Belum ada kategori.</div>
+        </div>
+    }
+    else
+    {
+        <MudTable Items="Filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" Dense="true">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<Row, object>(x => x.Name)">Nama</MudTableSortLabel></MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Row, object>(x => x.ProductCount)">Jumlah produk</MudTableSortLabel></MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nama" Style="font-weight:600;">@context.Name</MudTd>
+                <MudTd DataLabel="Jumlah produk" Class="cell-num"><span class="num">@context.ProductCount</span></MudTd>
+                <MudTd>
+                    <div class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => OpenEdit(context)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="() => Delete(context)" />
+                    </div>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</div>
+
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEdit ? "Ubah kategori" : "Kategori baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_name" Label="Nama kategori" Variant="Variant.Outlined" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _dialogOpen = false">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Simpan</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
-    List<Category> CategoriesList = new();
-    string searchString1 = "";
+    public record Row(int Id, string Name, int ProductCount);
 
-    bool isDialogOpen = false;
-    bool isEdit = false;
-    Category editingCategory = new Category();
+    private PosSettings _settings = new();
+    private List<Row> _rows = new();
+    private string _search = "";
+
+    private int _editingId;
+    private string _name = "";
+    private bool _dialogOpen;
+    private bool _isEdit;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+    private ImportDialog? _importDialog;
+
+    private List<Row> Filtered => _rows
+        .Where(r => string.IsNullOrWhiteSpace(_search) || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _settings = await SettingsService.GetAsync();
+        await LoadAsync();
     }
 
-    async Task LoadData()
+    private async Task LoadAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        CategoriesList = await db.Categories.ToListAsync();
+        using var db = await DbFactory.CreateDbContextAsync();
+        var rows = await db.Categories
+            .OrderBy(c => c.Name)
+            .Select(c => new { c.Id, c.Name, ProductCount = c.Products.Count })
+            .ToListAsync();
+
+        _rows = rows.Select(c => new Row(c.Id, c.Name, c.ProductCount)).ToList();
     }
 
-    private bool FilterFunc1(Category element) => FilterFunc(element, searchString1);
-
-    private bool FilterFunc(Category element, string searchString)
+    private void OpenNew()
     {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-        if (element.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
+        _editingId = 0;
+        _name = "";
+        _isEdit = false;
+        _dialogOpen = true;
     }
 
-    async Task ExportExcel()
+    private void OpenEdit(Row row)
     {
-        var data = CategoriesList.Select(x => new { x.Id, x.Name }).ToList();
-        var bytes = ExportService.ExportToExcel(data, "Categories");
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Categories.xlsx", streamRef);
+        _editingId = row.Id;
+        _name = row.Name;
+        _isEdit = true;
+        _dialogOpen = true;
     }
 
-    async Task ExportCsv()
+    private async Task Save()
     {
-        var data = CategoriesList.Select(x => new { x.Id, x.Name }).ToList();
-        var bytes = ExportService.ExportToCsv(data);
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Categories.csv", streamRef);
-    }
-
-    void OpenNewDialog()
-    {
-        editingCategory = new Category();
-        isEdit = false;
-        isDialogOpen = true;
-    }
-
-    void OpenEditDialog(Category c)
-    {
-        editingCategory = new Category
+        if (string.IsNullOrWhiteSpace(_name))
         {
-            Id = c.Id,
-            Name = c.Name
-        };
-        isEdit = true;
-        isDialogOpen = true;
-    }
-
-    void CloseDialog()
-    {
-        isDialogOpen = false;
-    }
-
-    async Task SaveCategory()
-    {
-        if (string.IsNullOrWhiteSpace(editingCategory.Name))
-        {
-            Snackbar.Add("Name is required", Severity.Warning);
+            Snackbar.Add("Nama kategori wajib diisi.", Severity.Warning);
             return;
         }
 
-        using var db = DbFactory.CreateDbContext();
-        if (isEdit)
+        using var db = await DbFactory.CreateDbContextAsync();
+        var name = _name.Trim();
+
+        if (await db.Categories.AnyAsync(c => c.Name == name && c.Id != _editingId))
         {
-            var item = await db.Categories.FindAsync(editingCategory.Id);
-            if (item != null)
-            {
-                item.Name = editingCategory.Name;
-                db.Categories.Update(item);
-            }
+            Snackbar.Add($"Kategori \"{name}\" sudah ada.", Severity.Warning);
+            return;
+        }
+
+        if (_isEdit)
+        {
+            var entity = await db.Categories.FindAsync(_editingId);
+            if (entity is null) return;
+            entity.Name = name;
         }
         else
         {
-            db.Categories.Add(editingCategory);
+            db.Categories.Add(new Category { Name = name });
         }
 
         await db.SaveChangesAsync();
-        Snackbar.Add("Category saved", Severity.Success);
-        isDialogOpen = false;
-        await LoadData();
+        Snackbar.Add("Kategori tersimpan.", Severity.Success);
+        _dialogOpen = false;
+        await LoadAsync();
     }
 
-    async Task DeleteCategory(Category c)
+    private async Task Delete(Row row)
     {
-        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this category?");
-        if (confirmed)
+        // Relasi produk-kategori memakai DeleteBehavior.Restrict, jadi penghapusan dicegah
+        // di sini dengan pesan yang jelas alih-alih dibiarkan gagal di tingkat database.
+        if (row.ProductCount > 0)
         {
-            using var db = DbFactory.CreateDbContext();
-            var item = await db.Categories.FindAsync(c.Id);
-            if (item != null)
-            {
-                db.Categories.Remove(item);
-                await db.SaveChangesAsync();
-                Snackbar.Add("Category deleted", Severity.Info);
-                await LoadData();
-            }
+            Snackbar.Add($"Kategori \"{row.Name}\" masih dipakai {row.ProductCount} produk.", Severity.Warning);
+            return;
         }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Hapus kategori \"{row.Name}\"?");
+        if (!confirmed) return;
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.Categories.FindAsync(row.Id);
+        if (entity is null) return;
+
+        db.Categories.Remove(entity);
+        await db.SaveChangesAsync();
+        Snackbar.Add("Kategori dihapus.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private IEnumerable<object> ExportRows() => Filtered.Select(r => new { r.Id, Nama = r.Name, JumlahProduk = r.ProductCount });
+
+    private async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Kategori");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Kategori.xlsx", new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Kategori.csv", new DotNetStreamReference(stream));
     }
 }

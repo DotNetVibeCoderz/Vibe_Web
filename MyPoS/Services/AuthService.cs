@@ -1,13 +1,13 @@
 using System;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using MyPoS.Data;
-using Microsoft.AspNetCore.Components.Authorization;
 
 namespace MyPoS.Services
 {
+    public record LoginResult(bool Success, string? Error = null);
+
     public class AuthService
     {
         private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
@@ -19,28 +19,34 @@ namespace MyPoS.Services
             _authStateProvider = authStateProvider;
         }
 
-        public async Task<bool> LoginAsync(string username, string password)
+        public async Task<LoginResult> LoginAsync(string username, string password)
         {
-            using var context = _dbContextFactory.CreateDbContext();
-            
-            // Simple Base64 for demo purposes
-            var encodedPassword = Convert.ToBase64String(Encoding.UTF8.GetBytes(password));
-            
-            var user = await context.Users.FirstOrDefaultAsync(u => u.Username == username && u.PasswordHash == encodedPassword);
-            
-            if (user != null)
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+                return new LoginResult(false, "Nama pengguna dan kata sandi wajib diisi.");
+
+            using var db = await _dbContextFactory.CreateDbContextAsync();
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username.Trim());
+
+            // Pesan yang sama untuk pengguna tidak ada maupun sandi salah, supaya nama
+            // pengguna yang valid tidak bisa ditebak dari perbedaan pesan.
+            if (user is null || !PasswordHasher.Verify(password, user.PasswordHash))
+                return new LoginResult(false, "Nama pengguna atau kata sandi salah.");
+
+            if (!user.IsActive)
+                return new LoginResult(false, "Akun ini sedang dinonaktifkan.");
+
+            // Baris yang masih memakai penyandian Base64 lama ditulis ulang saat login berhasil.
+            if (PasswordHasher.NeedsUpgrade(user.PasswordHash))
             {
-                var customProvider = (CustomAuthStateProvider)_authStateProvider;
-                customProvider.MarkUserAsAuthenticated(user.Username, user.Role);
-                return true;
+                user.PasswordHash = PasswordHasher.Hash(password);
+                await db.SaveChangesAsync();
             }
-            return false;
+
+            await ((CustomAuthStateProvider)_authStateProvider).SignInAsync(user.Username, user.Role, user.FullName);
+            return new LoginResult(true);
         }
 
-        public void Logout()
-        {
-            var customProvider = (CustomAuthStateProvider)_authStateProvider;
-            customProvider.MarkUserAsLoggedOut();
-        }
+        public Task LogoutAsync()
+            => ((CustomAuthStateProvider)_authStateProvider).SignOutAsync();
     }
 }

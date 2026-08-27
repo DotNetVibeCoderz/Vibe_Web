@@ -1,0 +1,184 @@
+@inject MoneyFormatter Money
+@inject SettingsService SettingsService
+
+@*
+    Tampilan struk yang dipakai bersama oleh halaman Kasir (setelah pembayaran) dan
+    halaman Transaksi (cetak ulang). Lebarnya mengikuti pengaturan lebar kertas supaya
+    yang terlihat di layar sama dengan yang keluar dari printer.
+*@
+
+<div class="struk-print" style="@($"max-width:{(_settings.ReceiptPaperWidthMm <= 58 ? 280 : 360)}px; margin:0 auto;")">
+    <div class="text-center mb-3">
+        @if (_settings.ReceiptShowLogo && !string.IsNullOrWhiteSpace(_settings.StoreLogoUrl))
+        {
+            <img src="@_settings.StoreLogoUrl" alt="" style="max-height:52px; margin:0 auto .5rem; display:block;" />
+        }
+        <div style="font-weight:800; letter-spacing:.08em; text-transform:uppercase;">@_settings.StoreName</div>
+        @if (!string.IsNullOrWhiteSpace(_settings.StoreAddress))
+        {
+            <div style="font-size:.72rem; color:var(--ink-500);">@_settings.StoreAddress</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_settings.StorePhone))
+        {
+            <div style="font-size:.72rem; color:var(--ink-500);">Telp. @_settings.StorePhone</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_settings.StoreTaxId))
+        {
+            <div style="font-size:.72rem; color:var(--ink-500);">NPWP @_settings.StoreTaxId</div>
+        }
+    </div>
+
+    <div style="border-top:1px dashed var(--line-strong); border-bottom:1px dashed var(--line-strong); padding:.5rem 0; margin-bottom:.5rem;">
+        <div class="leader leader--muted">
+            <span class="leader__label">No.</span>
+            <span class="leader__fill"></span>
+            <span class="leader__value num">@Transaction.InvoiceNumber</span>
+        </div>
+        <div class="leader leader--muted">
+            <span class="leader__label">Tanggal</span>
+            <span class="leader__fill"></span>
+            <span class="leader__value num">@Transaction.Date.ToString("dd/MM/yyyy HH:mm")</span>
+        </div>
+        @if (_settings.ReceiptShowCashier)
+        {
+            <div class="leader leader--muted">
+                <span class="leader__label">Kasir</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value">@Transaction.CashierName</span>
+            </div>
+        }
+        @if (Transaction.Customer is not null)
+        {
+            <div class="leader leader--muted">
+                <span class="leader__label">Pelanggan</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value">@Transaction.Customer.Name</span>
+            </div>
+        }
+    </div>
+
+    @foreach (var line in Transaction.Details)
+    {
+        <div class="mb-1">
+            <div style="font-size:.82rem; font-weight:600;">@line.ProductName</div>
+            <div class="leader">
+                <span class="leader__label num" style="color:var(--ink-500);">@line.Quantity × @Money.FormatNumber(line.UnitPrice)</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(line.SubTotal)</span>
+            </div>
+            @if (line.DiscountAmount > 0)
+            {
+                <div class="leader leader--muted leader--credit">
+                    <span class="leader__label">Diskon item</span>
+                    <span class="leader__fill"></span>
+                    <span class="leader__value num">-@Money.FormatNumber(line.DiscountAmount)</span>
+                </div>
+            }
+        </div>
+    }
+
+    <div style="border-top:1px dashed var(--line-strong); margin-top:.6rem; padding-top:.5rem;">
+        <div class="leader">
+            <span class="leader__label">Subtotal</span>
+            <span class="leader__fill"></span>
+            <span class="leader__value num">@Money.FormatNumber(Transaction.SubTotal)</span>
+        </div>
+
+        @if (Transaction.DiscountAmount > 0)
+        {
+            <div class="leader leader--credit">
+                <span class="leader__label">Diskon</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">-@Money.FormatNumber(Transaction.DiscountAmount)</span>
+            </div>
+        }
+
+        @if (Transaction.ServiceChargeAmount > 0)
+        {
+            <div class="leader">
+                <span class="leader__label">Biaya layanan</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(Transaction.ServiceChargeAmount)</span>
+            </div>
+        }
+
+        @if (Transaction.TaxAmount > 0)
+        {
+            <div class="leader">
+                <span class="leader__label">
+                    @_settings.TaxName @Transaction.TaxRate.ToString("0.##")%@(Transaction.TaxInclusive ? " (termasuk)" : "")
+                </span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(Transaction.TaxAmount)</span>
+            </div>
+        }
+
+        @if (Transaction.RoundingAmount != 0)
+        {
+            <div class="leader leader--muted">
+                <span class="leader__label">Pembulatan</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(Transaction.RoundingAmount)</span>
+            </div>
+        }
+
+        <div class="leader leader--total">
+            <span class="leader__label">Total</span>
+            <span class="leader__fill"></span>
+            <span class="leader__value num">@Money.Format(Transaction.TotalAmount)</span>
+        </div>
+
+        @* Baris "dibayar" hanya muncul bila uangnya memang sudah diterima; untuk invoice
+           yang masih menunggu gateway, angka nol justru menyesatkan. *@
+        @if (Transaction.Status == TransactionStatus.Paid)
+        {
+            <div class="leader">
+                <span class="leader__label">@Transaction.PaymentMethod</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(Transaction.PaidAmount)</span>
+            </div>
+        }
+        else
+        {
+            <div class="leader leader--muted">
+                <span class="leader__label">Metode</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value">@Transaction.PaymentMethod</span>
+            </div>
+        }
+
+        @if (Transaction.ChangeAmount > 0)
+        {
+            <div class="leader">
+                <span class="leader__label">Kembali</span>
+                <span class="leader__fill"></span>
+                <span class="leader__value num">@Money.FormatNumber(Transaction.ChangeAmount)</span>
+            </div>
+        }
+    </div>
+
+    <div class="text-center mt-4">
+        <span class="stamp @StampClass">@ReceiptService.StatusLabel(Transaction.Status)</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_settings.ReceiptFooter))
+    {
+        <div class="text-center mt-3" style="font-size:.75rem; color:var(--ink-500);">@_settings.ReceiptFooter</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Transaction Transaction { get; set; } = default!;
+
+    private PosSettings _settings = new();
+
+    private string StampClass => Transaction.Status switch
+    {
+        TransactionStatus.Paid => "",
+        TransactionStatus.Pending => "stamp--pending",
+        _ => "stamp--void"
+    };
+
+    protected override async Task OnInitializedAsync()
+        => _settings = await SettingsService.GetAsync();
+}

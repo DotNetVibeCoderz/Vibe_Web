@@ -30,7 +30,7 @@ namespace MyPoS.Services
 
             using (var fileStream = new FileStream(filePath, FileMode.Create))
             {
-                await file.OpenReadStream(10485760).CopyToAsync(fileStream); // max 10MB
+                await file.OpenReadStream(_config.MaxUploadBytes).CopyToAsync(fileStream);
             }
 
             return _config.BaseUrl + uniqueFileName;

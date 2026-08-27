@@ -1,36 +1,181 @@
 @page "/login"
 @layout LoginLayout
+@attribute [AllowAnonymous]
 @inject AuthService AuthService
 @inject NavigationManager NavManager
-@inject ISnackbar Snackbar
+@inject SettingsService SettingsService
 
-<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="height: 100vh;">
-    <MudCard Class="pa-6 glass-container" Style="width: 400px; text-align: center;">
-        <MudText Typo="Typo.h4" Class="mb-4">MyPoS Login</MudText>
-        <MudText Typo="Typo.subtitle1" Class="mb-4 text-muted">Sign in to start your session</MudText>
+<PageTitle>Masuk — @_settings.StoreName</PageTitle>
 
-        <MudTextField @bind-Value="Username" Label="Username" Variant="Variant.Outlined" FullWidth Class="mb-3" />
-        <MudTextField @bind-Value="Password" Label="Password" Variant="Variant.Outlined" FullWidth InputType="InputType.Password" Class="mb-4" />
+<div class="login-shell">
+    @* Sisi kiri membuka dengan benda paling khas dari dunia kasir: struk itu sendiri.
+       Ia sekaligus memperlihatkan cara aplikasi ini menyusun angka - berkolom, monospace,
+       dengan titik penuntun - sebelum pengguna menekan satu tombol pun. *@
+    <aside class="login-side">
+        <div>
+            <div class="signboard__tagline" style="opacity:.75;">@_settings.StoreTagline</div>
+            <h1 style="font-size:2.6rem; font-weight:800; letter-spacing:-.035em; line-height:1.05; margin:.4rem 0 0;">
+                @_settings.StoreName
+            </h1>
+        </div>
 
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth OnClick="DoLogin">Login</MudButton>
-        <MudText Typo="Typo.caption" Class="mt-4 d-block">Admin: admin/admin123 | Manager: manager/manager123 | Operator: operator/operator123</MudText>
-    </MudCard>
-</MudContainer>
+        <div class="login-side__figure" aria-hidden="true">@_receiptArt</div>
+
+        <div style="font-size:.78rem; opacity:.75;">
+            Kasir, stok, pajak, dan pembayaran digital dalam satu layar.
+        </div>
+    </aside>
+
+    <main class="login-main">
+        <div class="login-card">
+            <div class="eyebrow">Masuk</div>
+            <h2 class="page-title mt-1">Selamat datang kembali</h2>
+            <p class="page-subtitle mb-6">Masukkan akun Anda untuk membuka sesi kasir.</p>
+
+            <EditForm Model="_model" OnValidSubmit="DoLogin">
+                <DataAnnotationsValidator />
+
+                <MudTextField @bind-Value="_model.Username"
+                              Label="Nama pengguna"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Person"
+                              Disabled="_busy"
+                              Class="mb-3" />
+
+                <MudTextField @bind-Value="_model.Password"
+                              Label="Kata sandi"
+                              Variant="Variant.Outlined"
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="() => _showPassword = !_showPassword"
+                              AdornmentAriaLabel="Tampilkan kata sandi"
+                              Disabled="_busy"
+                              Class="mb-2" />
+
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+                }
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           FullWidth="true"
+                           Disabled="_busy"
+                           Class="mt-2">
+                    @if (_busy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Memeriksa…</span>
+                    }
+                    else
+                    {
+                        <span>Masuk</span>
+                    }
+                </MudButton>
+            </EditForm>
+
+            <MudDivider Class="my-6" />
+
+            <div class="eyebrow mb-2">Akun contoh</div>
+            <div class="d-flex flex-wrap" style="gap:.4rem;">
+                @foreach (var demo in DemoAccounts)
+                {
+                    <MudButton Size="Size.Small"
+                               Variant="Variant.Outlined"
+                               Disabled="_busy"
+                               OnClick="() => UseDemo(demo)">
+                        @demo.Label
+                    </MudButton>
+                }
+            </div>
+            <p class="page-subtitle mt-3" style="font-size:.78rem;">
+                Klik salah satu untuk mengisi formulir, lalu tekan Masuk.
+            </p>
+        </div>
+    </main>
+</div>
 
 @code {
-    string Username { get; set; } = "admin";
-    string Password { get; set; } = "admin123";
+    private record DemoAccount(string Label, string Username, string Password);
 
-    async Task DoLogin()
+    private static readonly DemoAccount[] DemoAccounts =
     {
-        bool success = await AuthService.LoginAsync(Username, Password);
-        if (success)
+        new("Admin", "admin", "admin123"),
+        new("Manajer", "manager", "manager123"),
+        new("Kasir", "operator", "operator123")
+    };
+
+    private sealed class LoginModel
+    {
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private readonly LoginModel _model = new();
+    private PosSettings _settings = new();
+    private bool _busy;
+    private bool _showPassword;
+    private string? _error;
+
+    private string _receiptArt = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = await SettingsService.GetAsync();
+        _receiptArt = BuildReceiptArt(_settings);
+    }
+
+    private void UseDemo(DemoAccount account)
+    {
+        _model.Username = account.Username;
+        _model.Password = account.Password;
+        _error = null;
+    }
+
+    private async Task DoLogin()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _error = null;
+
+        try
         {
-            NavManager.NavigateTo("/");
+            var result = await AuthService.LoginAsync(_model.Username, _model.Password);
+            if (result.Success)
+                NavManager.NavigateTo("/", forceLoad: false);
+            else
+                _error = result.Error;
         }
-        else
+        finally
         {
-            Snackbar.Add("Invalid username or password", Severity.Error);
+            _busy = false;
         }
+    }
+
+    private static string BuildReceiptArt(PosSettings s)
+    {
+        var name = s.StoreName.ToUpperInvariant();
+        var pad = new string(' ', Math.Max(0, (34 - name.Length) / 2));
+        var rate = s.TaxRatePercent.ToString("0.##");
+
+        return $"""
+        {pad}{name}
+        ==================================
+        2 x Kopi Bubuk 200g        48.000
+        1 x Beras 5kg              78.000
+        3 x Indomie Goreng         10.500
+        ----------------------------------
+        Subtotal ................ 136.500
+        {s.TaxName} {rate}% .................. 15.015
+        ==================================
+        TOTAL ................... 151.515
+        Tunai ................... 200.000
+        Kembali .................  48.485
+        """;
     }
 }

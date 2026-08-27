@@ -1,81 +1,167 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject NavigationManager NavManager
 @inject AuthService AuthService
+@inject SettingsService SettingsService
 @inject IJSRuntime JSRuntime
 
-<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="MyCustomTheme" />
+<MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-        <MudText Typo="Typo.h5" Class="ml-3">MyPoS Dashboard</MudText>
+    <MudAppBar Elevation="0" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       aria-label="Buka menu" OnClick="ToggleDrawer" />
+
+        <div class="d-flex align-center ml-2" style="gap:.6rem; min-width:0;">
+            <span class="eyebrow d-none d-sm-flex">@_settings.StoreName</span>
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700; letter-spacing:-.01em;">@_pageTitle</MudText>
+        </div>
+
         <MudSpacer />
-        <MudIconButton Icon="@Icons.Material.Filled.Brightness4" Color="Color.Inherit" OnClick="ToggleTheme" />
-        <AuthorizeView>
+
+        <MudTooltip Text="@(_isDarkMode ? "Mode terang" : "Mode gelap")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit" aria-label="Ganti tema" OnClick="ToggleTheme" />
+        </MudTooltip>
+
+        <AuthorizeView Context="auth">
             <Authorized>
-                <MudButton Color="Color.Inherit" OnClick="Logout">Logout (@context.User.Identity.Name)</MudButton>
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+                    <ActivatorContent>
+                        <MudButton Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle" Class="ml-1">
+                            <span class="d-none d-sm-inline">@auth.User.Identity?.Name</span>
+                        </MudButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem Disabled="true">
+                            <div>
+                                <div style="font-weight:700;">@auth.User.Identity?.Name</div>
+                                <div class="eyebrow">@RoleOf(auth)</div>
+                            </div>
+                        </MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="Logout">Keluar</MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
             </Authorized>
             <NotAuthorized>
-                <MudButton Color="Color.Inherit" Href="/login">Login</MudButton>
+                <MudButton Color="Color.Inherit" Href="/login">Masuk</MudButton>
             </NotAuthorized>
         </AuthorizeView>
     </MudAppBar>
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="2">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6">MyPoS</MudText>
-        </MudDrawerHeader>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="0" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive">
+        <div class="signboard">
+            <div class="signboard__name">@_settings.StoreName</div>
+            <div class="signboard__tagline">@_settings.StoreTagline</div>
+        </div>
         <NavMenu />
     </MudDrawer>
-    <MudMainContent Class="pt-16 px-16 pb-16">
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6">
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6 px-4 px-sm-6">
             @Body
         </MudContainer>
     </MudMainContent>
 </MudLayout>
 
 @code {
-    bool _drawerOpen = true;
-    bool _isDarkMode = false;
+    private bool _drawerOpen = true;
+    private bool _isDarkMode;
+    private PosSettings _settings = new();
+    private MudTheme _theme = AppTheme.Build();
+    private string _pageTitle = "";
 
-    void DrawerToggle()
+    protected override async Task OnInitializedAsync()
     {
-        _drawerOpen = !_drawerOpen;
+        _settings = await SettingsService.GetAsync();
+        _isDarkMode = _settings.DefaultDarkMode;
+        _theme = AppTheme.Build(_settings.AccentColor);
+
+        SettingsService.Changed += OnSettingsChanged;
+        NavManager.LocationChanged += OnLocationChanged;
+        _pageTitle = TitleFor(NavManager.Uri);
     }
 
-    async Task ToggleTheme()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Pilihan tema disimpan per peramban supaya kasir yang bekerja di bawah lampu
+        // terang tidak perlu menyetel ulang setiap kali masuk.
+        var stored = await JSRuntime.InvokeAsync<string?>("localPref.get", "mypos.theme");
+        if (stored is "dark" or "light")
+        {
+            _isDarkMode = stored == "dark";
+            StateHasChanged();
+        }
+
+        await SyncBodyClassAsync();
+    }
+
+    private async Task ToggleTheme()
     {
         _isDarkMode = !_isDarkMode;
-        await JSRuntime.InvokeVoidAsync("setBodyClass", _isDarkMode ? "mud-theme-dark" : "mud-theme-light");
+        await JSRuntime.InvokeVoidAsync("localPref.set", "mypos.theme", _isDarkMode ? "dark" : "light");
+        await SyncBodyClassAsync();
     }
 
-    void Logout()
+    /// <summary>
+    /// Token warna di mypos.css bergantung pada kelas body, sementara komponen MudBlazor
+    /// bergantung pada MudThemeProvider. Keduanya harus digeser bersamaan, kalau tidak
+    /// setengah halaman akan tertinggal di tema sebelumnya.
+    /// </summary>
+    private async Task SyncBodyClassAsync()
+        => await JSRuntime.InvokeVoidAsync("setBodyClass", _isDarkMode ? "mud-theme-dark" : "mud-theme-light");
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private async Task Logout()
     {
-        AuthService.Logout();
-        NavManager.NavigateTo("/login");
+        await AuthService.LogoutAsync();
+        NavManager.NavigateTo("/login", forceLoad: false);
     }
 
-    private MudTheme MyCustomTheme = new MudTheme()
+    private void OnSettingsChanged(PosSettings settings)
     {
-        PaletteLight = new PaletteLight()
+        _settings = settings;
+        _theme = AppTheme.Build(settings.AccentColor);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _pageTitle = TitleFor(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string RoleOf(AuthenticationState state)
+        => state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+
+    private string TitleFor(string uri)
+    {
+        var path = NavManager.ToBaseRelativePath(uri).Split('?')[0].Trim('/').ToLowerInvariant();
+        return path switch
         {
-            Primary = Colors.Blue.Default,
-            AppbarBackground = "#ffffff33",
-            Background = "#00000000",
-            Surface = "#ffffff66",
-            DrawerBackground = "#ffffff99",
-            TextPrimary = Colors.Gray.Darken4
-        },
-        PaletteDark = new PaletteDark()
-        {
-            Primary = Colors.Blue.Lighten1,
-            AppbarBackground = "#00000066",
-            Background = "#00000000",
-            Surface = "#00000099",
-            DrawerBackground = "#000000b3",
-            TextPrimary = Colors.Shades.White
-        }
-    };
+            "" => "Dasbor",
+            "pos" => "Kasir",
+            "produk" => "Produk",
+            "kategori" => "Kategori",
+            "pelanggan" => "Pelanggan",
+            "pengguna" => "Pengguna",
+            "transaksi" => "Transaksi",
+            "laporan-penjualan" => "Laporan Penjualan",
+            "pengaturan" => "Pengaturan",
+            _ => "MyPoS"
+        };
+    }
+
+    public void Dispose()
+    {
+        SettingsService.Changed -= OnSettingsChanged;
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
 }

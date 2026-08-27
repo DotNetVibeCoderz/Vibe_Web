@@ -2,42 +2,53 @@
 @using Microsoft.AspNetCore.Components.Web
 @namespace MyPoS.Pages
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@inject MyPoS.Services.SettingsService SettingsService
+@{
+    var settings = SettingsService.Current;
+    var bodyClass = settings.DefaultDarkMode ? "mud-theme-dark" : "mud-theme-light";
+}
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MyPoS - Modern Point of Sales</title>
+    <title>@settings.StoreName — Kasir</title>
     <base href="~/" />
-    <link href="css/site.css" rel="stylesheet" />
-    <link href="MyPoS.styles.css" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+
+    @* Plus Jakarta Sans dirancang untuk identitas kota Jakarta, sepasang dengan JetBrains Mono
+       yang dipakai khusus untuk nominal agar digitnya berlebar sama. Keduanya punya rantai
+       cadangan sistem, jadi tampilan tetap wajar bila mesin kasir sedang tanpa internet. *@
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
-    <link href="css/glass.css" rel="stylesheet" />
-    <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
+    <link href="app.css" rel="stylesheet" />
+    <link href="css/mypos.css" rel="stylesheet" />
+    <link href="MyPoS.styles.css" rel="stylesheet" />
+
+    <component type="typeof(HeadOutlet)" render-mode="Server" />
 </head>
-<body class="mud-theme-light">
-    <component type="typeof(App)" render-mode="ServerPrerendered" />
+<body class="@bodyClass">
+    @* Tanpa prerender: identitas kasir dibaca dari penyimpanan browser terenkripsi, yang
+       hanya bisa diakses setelah circuit hidup. Prerender akan selalu menghasilkan tampilan
+       "belum masuk" lebih dulu lalu berkedip berganti. *@
+    <component type="typeof(App)" render-mode="Server" />
 
     <div id="blazor-error-ui">
         <environment include="Staging,Production">
-            An error has occurred. This application may no longer respond until reloaded.
+            Terjadi kesalahan. Aplikasi mungkin tidak merespons sampai halaman dimuat ulang.
         </environment>
         <environment include="Development">
-            An unhandled exception has occurred. See browser dev tools for details.
+            Terjadi kesalahan yang tidak tertangani. Lihat konsol peramban untuk detailnya.
         </environment>
-        <a href="" class="reload">Reload</a>
+        <a href="" class="reload">Muat ulang</a>
         <a class="dismiss">🗙</a>
     </div>
 
     <script src="_framework/blazor.server.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="js/site.js"></script>
-    <script>
-        window.setBodyClass = (className) => {
-            document.body.className = className;
-        };
-    </script>
 </body>
 </html>

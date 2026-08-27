@@ -2,122 +2,285 @@
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject SettingsService SettingsService
+@inject MoneyFormatter Money
+@attribute [Authorize]
 
-<MudText Typo="Typo.h4" Class="mb-6">Dashboard</MudText>
+<PageTitle>Dasbor — @_settings.StoreName</PageTitle>
 
-<MudGrid>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Class="glass-container text-center">
-            <MudCardContent>
-                <MudText Typo="Typo.h6">Total Sales Today</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Primary">@TotalSales.ToString("C0")</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Class="glass-container text-center">
-            <MudCardContent>
-                <MudText Typo="Typo.h6">Transactions Today</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Secondary">@TransactionsCount</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Class="glass-container text-center">
-            <MudCardContent>
-                <MudText Typo="Typo.h6">Low Stock Items</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Error">@LowStockCount</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-    <MudItem xs="12" sm="6" md="3">
-        <MudCard Class="glass-container text-center">
-            <MudCardContent>
-                <MudText Typo="Typo.h6">Total Products</MudText>
-                <MudText Typo="Typo.h4" Color="Color.Info">@TotalProducts</MudText>
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-</MudGrid>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">@DateTime.Now.ToString("dddd, d MMMM yyyy")</div>
+        <h1 class="page-title mt-1">Ringkasan @_settings.StoreName</h1>
+        <p class="page-subtitle">Angka hari ini dibandingkan dengan hari yang sama pekan lalu.</p>
+    </div>
 
-<MudGrid Class="mt-6">
-    <MudItem xs="12" md="8">
-        <MudCard Class="glass-container" Style="height:400px;">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Recent Transactions</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudTable Items="@RecentTransactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Style="background: transparent;">
+    <AuthorizeView Roles="Admin,Operator">
+        <MudButton Href="/pos" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PointOfSale" Size="Size.Large">
+            Buka Kasir
+        </MudButton>
+    </AuthorizeView>
+</div>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--leaf">
+            <span class="stat__label">Penjualan hari ini</span>
+            <span class="stat__value num num--xl">@Money.FormatCompact(_salesToday)</span>
+            <span class="stat__meta">@TrendLabel(_salesToday, _salesLastWeek)</span>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--brand">
+            <span class="stat__label">Transaksi hari ini</span>
+            <span class="stat__value num num--xl">@_transactionsToday</span>
+            <span class="stat__meta">
+                Rata-rata @Money.Format(_transactionsToday == 0 ? 0 : _salesToday / _transactionsToday) per struk
+            </span>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat stat--turmeric">
+            <span class="stat__label">Stok menipis</span>
+            <span class="stat__value num num--xl">@_lowStock.Count</span>
+            <span class="stat__meta">@_outOfStockCount produk sudah habis</span>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" lg="3">
+        <div class="stat">
+            <span class="stat__label">Nilai persediaan</span>
+            <span class="stat__value num num--xl">@Money.FormatCompact(_inventoryValue)</span>
+            <span class="stat__meta">@_activeProducts produk aktif</span>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" lg="8">
+        <div class="panel panel--flush">
+            <div class="panel__head">
+                <div>
+                    <div class="panel__title">Penjualan 14 hari terakhir</div>
+                    <div class="page-subtitle" style="margin-top:.1rem;">Hanya transaksi berstatus lunas.</div>
+                </div>
+                <span class="badge badge--muted">Total @Money.Format(_trend.Sum(p => p.Amount))</span>
+            </div>
+            <div class="pa-4">
+                <SalesTrendChart Points="_trend" />
+            </div>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" lg="4">
+        <div class="panel panel--flush" style="height:100%;">
+            <div class="panel__head">
+                <div class="panel__title">Produk terlaris</div>
+                <span class="eyebrow">30 hari</span>
+            </div>
+            <div class="pa-4">
+                @if (_topProducts.Count == 0)
+                {
+                    <div class="empty">
+                        <MudIcon Icon="@Icons.Material.Filled.Inventory" Size="Size.Large" />
+                        <div>Belum ada penjualan.</div>
+                    </div>
+                }
+                else
+                {
+                    var maxQty = _topProducts.Max(p => p.Quantity);
+                    <div class="rankbar">
+                        @foreach (var item in _topProducts)
+                        {
+                            <div class="rankbar__row">
+                                <span class="rankbar__name">@item.Name</span>
+                                <span class="rankbar__value num">@item.Quantity</span>
+                                <div class="rankbar__track">
+                                    <div class="rankbar__fill" style="width:@(maxQty == 0 ? 0 : item.Quantity * 100 / maxQty)%;"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" lg="7">
+        <div class="panel panel--flush">
+            <div class="panel__head">
+                <div class="panel__title">Transaksi terakhir</div>
+                <MudButton Href="/transaksi" Size="Size.Small" Variant="Variant.Text"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">Lihat semua</MudButton>
+            </div>
+
+            @if (_recent.Count == 0)
+            {
+                <div class="empty">
+                    <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" />
+                    <div>Belum ada transaksi.</div>
+                </div>
+            }
+            else
+            {
+                <MudTable Items="_recent" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
                     <HeaderContent>
-                        <MudTh>ID</MudTh>
-                        <MudTh>Date</MudTh>
-                        <MudTh>Cashier</MudTh>
-                        <MudTh>Total</MudTh>
+                        <MudTh>Invoice</MudTh>
+                        <MudTh>Waktu</MudTh>
+                        <MudTh>Kasir</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh Class="cell-num">Total</MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd DataLabel="ID">@context.Id</MudTd>
-                        <MudTd DataLabel="Date">@context.Date.ToString("g")</MudTd>
-                        <MudTd DataLabel="Cashier">@context.CashierName</MudTd>
-                        <MudTd DataLabel="Total">@context.TotalAmount.ToString("C0")</MudTd>
+                        <MudTd DataLabel="Invoice"><span class="num">@context.InvoiceNumber</span></MudTd>
+                        <MudTd DataLabel="Waktu"><span class="num">@context.Date.ToString("dd/MM HH:mm")</span></MudTd>
+                        <MudTd DataLabel="Kasir">@context.CashierName</MudTd>
+                        <MudTd DataLabel="Status">
+                            <span class="badge @StatusBadge(context.Status)">@ReceiptService.StatusLabel(context.Status)</span>
+                        </MudTd>
+                        <MudTd DataLabel="Total" Class="cell-num"><span class="num">@Money.Format(context.TotalAmount)</span></MudTd>
                     </RowTemplate>
                 </MudTable>
-            </MudCardContent>
-        </MudCard>
+            }
+        </div>
     </MudItem>
-    <MudItem xs="12" md="4">
-        <MudCard Class="glass-container" Style="height:400px;">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Top Selling Products</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudList T="string">
-                    @foreach(var item in TopProducts)
+
+    <MudItem xs="12" lg="5">
+        <div class="panel panel--flush" style="height:100%;">
+            <div class="panel__head">
+                <div class="panel__title">Perlu segera diisi ulang</div>
+                <AuthorizeView Roles="Admin,Manager">
+                    <MudButton Href="/produk" Size="Size.Small" Variant="Variant.Text"
+                               EndIcon="@Icons.Material.Filled.ArrowForward">Kelola</MudButton>
+                </AuthorizeView>
+            </div>
+
+            @if (_lowStock.Count == 0)
+            {
+                <div class="empty">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" Style="color:var(--leaf);" />
+                    <div>Semua stok aman.</div>
+                </div>
+            }
+            else
+            {
+                <div class="pa-2">
+                    @foreach (var product in _lowStock.Take(6))
                     {
-                        <MudListItem>
-                            <div class="d-flex justify-space-between w-100">
-                                <MudText>@item.Name</MudText>
-                                <MudText Color="Color.Primary"><b>@item.Qty</b> sold</MudText>
+                        <div class="d-flex align-center justify-space-between px-3 py-2"
+                             style="border-bottom:1px solid var(--line);">
+                            <div style="min-width:0;">
+                                <div style="font-size:.85rem; font-weight:600;">@product.Name</div>
+                                <div class="page-subtitle" style="margin:0; font-size:.75rem;">@product.Category?.Name</div>
                             </div>
-                        </MudListItem>
+                            <span class="badge @(product.Stock <= 0 ? "badge--brand" : "badge--turmeric")">
+                                <span class="num">@product.Stock</span> tersisa
+                            </span>
+                        </div>
                     }
-                </MudList>
-            </MudCardContent>
-        </MudCard>
+                </div>
+            }
+        </div>
     </MudItem>
 </MudGrid>
 
 @code {
-    decimal TotalSales = 0;
-    int TransactionsCount = 0;
-    int LowStockCount = 0;
-    int TotalProducts = 0;
-    List<Transaction> RecentTransactions = new List<Transaction>();
-    List<dynamic> TopProducts = new List<dynamic>();
+    private record TopProduct(string Name, int Quantity);
+
+    private PosSettings _settings = new();
+
+    private decimal _salesToday;
+    private decimal _salesLastWeek;
+    private int _transactionsToday;
+    private int _activeProducts;
+    private int _outOfStockCount;
+    private decimal _inventoryValue;
+
+    private List<Product> _lowStock = new();
+    private List<Transaction> _recent = new();
+    private List<TopProduct> _topProducts = new();
+    private List<SalesTrendChart.DailyPoint> _trend = new();
 
     protected override async Task OnInitializedAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        
+        _settings = await SettingsService.GetAsync();
+
+        using var db = await DbFactory.CreateDbContextAsync();
+
         var today = DateTime.Today;
-        
-        TotalSales = await db.Transactions.Where(t => t.Date >= today).SumAsync(t => t.TotalAmount);
-        TransactionsCount = await db.Transactions.CountAsync(t => t.Date >= today);
-        LowStockCount = await db.Products.CountAsync(p => p.Stock <= 10);
-        TotalProducts = await db.Products.CountAsync();
+        var tomorrow = today.AddDays(1);
+        var lastWeekStart = today.AddDays(-7);
+        var trendStart = today.AddDays(-13);
+        var monthStart = today.AddDays(-29);
 
-        RecentTransactions = await db.Transactions.OrderByDescending(t => t.Date).Take(5).ToListAsync();
+        // Hanya transaksi lunas yang boleh masuk angka penjualan; yang masih menunggu
+        // pembayaran gateway atau sudah dibatalkan bukan pendapatan.
+        var paid = db.Transactions.Where(t => t.Status == TransactionStatus.Paid);
 
-        var topSold = await db.TransactionDetails
-            .GroupBy(d => d.Product.Name)
-            .Select(g => new { Name = g.Key, Qty = g.Sum(d => d.Quantity) })
-            .OrderByDescending(x => x.Qty)
-            .Take(5)
+        _salesToday = await paid.Where(t => t.Date >= today && t.Date < tomorrow).SumAsync(t => (decimal?)t.TotalAmount) ?? 0m;
+        _transactionsToday = await paid.CountAsync(t => t.Date >= today && t.Date < tomorrow);
+        _salesLastWeek = await paid.Where(t => t.Date >= lastWeekStart && t.Date < lastWeekStart.AddDays(1))
+                                   .SumAsync(t => (decimal?)t.TotalAmount) ?? 0m;
+
+        var products = await db.Products.Include(p => p.Category).Where(p => p.IsActive).ToListAsync();
+        _activeProducts = products.Count;
+        _outOfStockCount = products.Count(p => p.Stock <= 0);
+        _inventoryValue = products.Sum(p => p.Stock * (p.Cost > 0 ? p.Cost : p.Price));
+
+        _lowStock = products
+            .Where(p => p.Stock <= (p.MinStock > 0 ? p.MinStock : _settings.LowStockThreshold))
+            .OrderBy(p => p.Stock)
+            .ToList();
+
+        _recent = await db.Transactions
+            .OrderByDescending(t => t.Date)
+            .Take(6)
+            .AsNoTracking()
             .ToListAsync();
-            
-        TopProducts = topSold.Cast<dynamic>().ToList();
+
+        var daily = await paid
+            .Where(t => t.Date >= trendStart && t.Date < tomorrow)
+            .GroupBy(t => t.Date.Date)
+            .Select(g => new { Day = g.Key, Amount = g.Sum(t => t.TotalAmount), Count = g.Count() })
+            .ToListAsync();
+
+        // Hari tanpa penjualan tetap ditampilkan sebagai nol agar sumbu waktunya utuh.
+        _trend = Enumerable.Range(0, 14)
+            .Select(offset =>
+            {
+                var day = trendStart.AddDays(offset);
+                var match = daily.FirstOrDefault(d => d.Day == day);
+                return new SalesTrendChart.DailyPoint(day, match?.Amount ?? 0m, match?.Count ?? 0);
+            })
+            .ToList();
+
+        // Diproyeksikan ke tipe anonim lebih dulu: EF tidak dapat menerjemahkan konstruktor
+        // record positional di dalam hasil GroupBy.
+        var topSelling = await db.TransactionDetails
+            .Where(d => d.Transaction!.Status == TransactionStatus.Paid && d.Transaction.Date >= monthStart)
+            .GroupBy(d => d.ProductName)
+            .Select(g => new { Name = g.Key, Quantity = g.Sum(d => d.Quantity) })
+            .OrderByDescending(p => p.Quantity)
+            .Take(6)
+            .ToListAsync();
+
+        _topProducts = topSelling.Select(t => new TopProduct(t.Name, t.Quantity)).ToList();
     }
+
+    private string TrendLabel(decimal current, decimal previous)
+    {
+        if (previous <= 0) return current > 0 ? "Belum ada pembanding" : "Belum ada penjualan";
+
+        var change = (current - previous) / previous * 100m;
+        var arrow = change >= 0 ? "▲" : "▼";
+        return $"{arrow} {Math.Abs(change):0.#}% vs pekan lalu";
+    }
+
+    private static string StatusBadge(TransactionStatus status) => status switch
+    {
+        TransactionStatus.Paid => "badge--leaf",
+        TransactionStatus.Pending => "badge--turmeric",
+        _ => "badge--brand"
+    };
 }

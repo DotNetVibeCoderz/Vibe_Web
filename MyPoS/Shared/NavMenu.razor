@@ -1,13 +1,30 @@
-<MudNavMenu>
-    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
-    <MudNavLink Href="/pos" Icon="@Icons.Material.Filled.PointOfSale">Cashier (POS)</MudNavLink>
-    <MudNavGroup Title="Master Data" Icon="@Icons.Material.Filled.Storage" Expanded="false">
-        <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory">Products</MudNavLink>
-        <MudNavLink Href="/categories" Icon="@Icons.Material.Filled.Category">Categories</MudNavLink>
-        <MudNavLink Href="/customers" Icon="@Icons.Material.Filled.People">Customers</MudNavLink>
-        <MudNavLink Href="/users" Icon="@Icons.Material.Filled.ManageAccounts">Users</MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Reports" Icon="@Icons.Material.Filled.Assessment" Expanded="true">
-        <MudNavLink Href="/sales-report" Icon="@Icons.Material.Filled.ReceiptLong">Sales Report</MudNavLink>
-    </MudNavGroup>
+<MudNavMenu Class="pb-4">
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard">Dasbor</MudNavLink>
+
+    <AuthorizeView Roles="Admin,Operator">
+        <MudNavLink Href="/pos" Icon="@Icons.Material.Filled.PointOfSale">Kasir</MudNavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="Admin,Manager">
+        <MudNavGroup Title="Data Master" Icon="@Icons.Material.Filled.Inventory2" Expanded="true">
+            <MudNavLink Href="/produk" Icon="@Icons.Material.Filled.Sell">Produk</MudNavLink>
+            <MudNavLink Href="/kategori" Icon="@Icons.Material.Filled.Category">Kategori</MudNavLink>
+            <MudNavLink Href="/pelanggan" Icon="@Icons.Material.Filled.People">Pelanggan</MudNavLink>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="Admin,Manager,Operator">
+        <MudNavGroup Title="Laporan" Icon="@Icons.Material.Filled.Assessment" Expanded="true">
+            <MudNavLink Href="/transaksi" Icon="@Icons.Material.Filled.ReceiptLong">Transaksi</MudNavLink>
+            <AuthorizeView Roles="Admin,Manager" Context="reports">
+                <MudNavLink Href="/laporan-penjualan" Icon="@Icons.Material.Filled.QueryStats">Laporan Penjualan</MudNavLink>
+            </AuthorizeView>
+        </MudNavGroup>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="Admin">
+        <MudDivider Class="my-2" />
+        <MudNavLink Href="/pengguna" Icon="@Icons.Material.Filled.ManageAccounts">Pengguna</MudNavLink>
+        <MudNavLink Href="/pengaturan" Icon="@Icons.Material.Filled.Tune">Pengaturan</MudNavLink>
+    </AuthorizeView>
 </MudNavMenu>

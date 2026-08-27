@@ -1,266 +1,688 @@
 @page "/pos"
+@page "/kasir"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
+@using MyPoS.Services.Payments
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthStateProvider
+@inject SettingsService SettingsService
+@inject MoneyFormatter Money
+@inject CheckoutService Checkout
+@inject PaymentGatewayResolver Gateways
+@inject IJSRuntime JS
+@inject NavigationManager NavManager
 @attribute [Authorize(Roles = "Admin,Operator")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Point of Sales</MudText>
+<PageTitle>Kasir — @_settings.StoreName</PageTitle>
 
-<MudGrid>
-    <!-- Left side: Products catalog -->
-    <MudItem xs="12" md="7">
-        <MudCard Class="glass-container pa-4 d-flex flex-column" >
-            <MudTextField @bind-Value="SearchTerm" Placeholder="Search Product / Barcode..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" @onkeyup="OnSearchKeyPress" Immediate="true" />
-            
-            <div class="mt-4" style="flex: 0 0 auto; overflow-x: auto; white-space: nowrap;">
-                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Color="Color.Primary" Outlined="true" Style="min-width: min-content;">
-                    <MudTabPanel Text="All" OnClick="() => SelectCategory(0)" />
-                    @foreach (var cat in Categories)
-                    {
-                        <MudTabPanel Text="@cat.Name" OnClick="() => SelectCategory(cat.Id)" />
-                    }
-                </MudTabs>
+<MudGrid Spacing="4">
+    <!-- ============================ Katalog ============================ -->
+    <MudItem xs="12" md="7" lg="8">
+        <div class="panel panel--flush d-flex flex-column" style="height: calc(100vh - 148px);">
+            <div class="toolbar">
+                <MudTextField @ref="_searchField"
+                              @bind-Value="_searchTerm"
+                              Placeholder="Pindai barcode atau ketik nama produk…"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.QrCodeScanner"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Immediate="true"
+                              OnKeyUp="OnSearchKeyUp"
+                              Clearable="true"
+                              Class="flex-grow-1"
+                              Style="min-width:220px;" />
+
+                <MudTooltip Text="Muat ulang stok">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Variant="Variant.Outlined" Size="Size.Medium" OnClick="LoadCatalogAsync" />
+                </MudTooltip>
             </div>
 
-            <div class="mt-4" style="flex: 1; overflow-y:auto; min-height: 0;">
-                <MudGrid>
-                    @foreach (var p in FilteredProducts)
+            <div class="px-3 py-2" style="border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap;">
+                <MudChipSet T="int" SelectedValue="_selectedCategoryId" SelectedValueChanged="SelectCategory" SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
+                    <MudChip T="int" Value="0" Variant="Variant.Text">Semua</MudChip>
+                    @foreach (var category in _categories)
                     {
-                        <MudItem xs="12" sm="6" md="4" lg="4">
-                            <MudCard Outlined="true" Class="product-card" @onclick="() => AddToCart(p)" Style="cursor:pointer; background: rgba(255,255,255,0.1); height: 100%;">
-                                @if (!string.IsNullOrEmpty(p.ImageUrl))
-                                {
-                                    <MudCardMedia Image="@p.ImageUrl" Height="140" />
-                                }
-                                else
-                                {
-                                    <div class="d-flex justify-center align-center" style="height:140px; background: rgba(0,0,0,0.05);">
-                                        <MudIcon Icon="@Icons.Material.Filled.Fastfood" Size="Size.Large" Color="Color.Primary" />
+                        <MudChip T="int" Value="@category.Id" Variant="Variant.Text">@category.Name</MudChip>
+                    }
+                </MudChipSet>
+            </div>
+
+            <div class="scroll-y flex-grow-1 pa-3">
+                @if (_filteredProducts.Count == 0)
+                {
+                    <div class="empty">
+                        <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" />
+                        <div>Tidak ada produk yang cocok.</div>
+                    </div>
+                }
+                else
+                {
+                    <MudGrid Spacing="2">
+                        @foreach (var product in _filteredProducts)
+                        {
+                            var soldOut = product.Stock <= 0;
+                            <MudItem xs="6" sm="4" md="4" lg="3" xl="2">
+                                <button type="button"
+                                        class="tile"
+                                        disabled="@(soldOut && _settings.BlockSaleWhenOutOfStock)"
+                                        @onclick="() => AddToCart(product)">
+                                    <div class="tile__media">
+                                        @if (!string.IsNullOrEmpty(product.ImageUrl))
+                                        {
+                                            <img src="@product.ImageUrl" alt="" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Large" Style="color:var(--ink-300);" />
+                                        }
                                     </div>
-                                }
-                                <MudCardContent Class="text-center pa-2">
-                                    <MudText Typo="Typo.subtitle2" Style="font-weight:bold;">@p.Name</MudText>
-                                    <MudText Typo="Typo.body2" Color="Color.Success">@p.Price.ToString("C0")</MudText>
-                                    <MudText Typo="Typo.caption">Stock: @p.Stock</MudText>
-                                </MudCardContent>
-                            </MudCard>
-                        </MudItem>
-                    }
-                </MudGrid>
+                                    <div class="tile__body">
+                                        <span class="tile__name">@product.Name</span>
+                                        <span class="tile__stock @StockClass(product)">@StockLabel(product)</span>
+                                        <span class="tile__price num">@Money.Format(product.Price)</span>
+                                    </div>
+                                </button>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
             </div>
-        </MudCard>
+        </div>
     </MudItem>
 
-    <!-- Right side: Cart / Receipt -->
-    <MudItem xs="12" md="5">
-        <MudCard Class="glass-container pa-4 d-flex flex-column" Style="height:calc(100vh - 140px);">
-            <MudText Typo="Typo.h6" Class="mb-2" Style="flex: 0 0 auto;">Current Order</MudText>
-            
-            <div style="flex:1; overflow-y:auto; min-height: 0; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                <MudTable Items="@CartItems" Hover="true" Breakpoint="Breakpoint.None" Elevation="0" Style="background: transparent;" FixedHeader="true" Height="100%">
-                    <HeaderContent>
-                        <MudTh>Item</MudTh>
-                        <MudTh>Qty</MudTh>
-                        <MudTh>Price</MudTh>
-                        <MudTh></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Item">@context.Product.Name</MudTd>
-                        <MudTd DataLabel="Qty">
-                            <div class="d-flex align-center">
-                                <MudIconButton Icon="@Icons.Material.Filled.RemoveCircle" Size="Size.Small" OnClick="() => DecreaseQty(context)" />
-                                <MudText Class="mx-1">@context.Quantity</MudText>
-                                <MudIconButton Icon="@Icons.Material.Filled.AddCircle" Size="Size.Small" OnClick="() => IncreaseQty(context)" />
-                            </div>
-                        </MudTd>
-                        <MudTd DataLabel="Price">@context.SubTotal.ToString("C0")</MudTd>
-                        <MudTd>
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveItem(context)" />
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </div>
-
-            <div style="flex: 0 0 auto;">
-                <MudDivider Class="my-4" />
-                
-                <div class="d-flex justify-space-between mb-2">
-                    <MudText>Subtotal</MudText>
-                    <MudText>@SubTotal.ToString("C0")</MudText>
-                </div>
-                <div class="d-flex justify-space-between mb-2">
-                    <MudText>Tax (11%)</MudText>
-                    <MudText>@TaxAmount.ToString("C0")</MudText>
-                </div>
-                <div class="d-flex justify-space-between mb-4">
-                    <MudText Typo="Typo.h5" Style="font-weight:bold;">Total</MudText>
-                    <MudText Typo="Typo.h5" Color="Color.Primary" Style="font-weight:bold;">@TotalAmount.ToString("C0")</MudText>
+    <!-- ============================ Struk ============================ -->
+    <MudItem xs="12" md="5" lg="4">
+        <div class="struk" style="height: calc(100vh - 160px);">
+            <div class="struk__head">
+                <div class="d-flex align-center justify-space-between">
+                    <div>
+                        <div class="eyebrow">Pesanan berjalan</div>
+                        <div style="font-weight:700;">@_cart.Sum(l => l.Quantity) barang · @_cart.Count jenis</div>
+                    </div>
+                    @if (_cart.Count > 0)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="ClearCart">Kosongkan</MudButton>
+                    }
                 </div>
 
-                <MudSelect T="string" @bind-Value="PaymentMethod" Label="Payment Method" Variant="Variant.Outlined" Class="mb-4">
-                    <MudSelectItem Value="@("Cash")" />
-                    <MudSelectItem Value="@("Credit Card")" />
-                    <MudSelectItem Value="@("E-Wallet")" />
+                <MudSelect T="int?" Value="_customerId" ValueChanged="OnCustomerChanged" Label="Pelanggan (opsional)"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Class="mt-3" Dense="true">
+                    @foreach (var customer in _customers)
+                    {
+                        <MudSelectItem T="int?" Value="@customer.Id">@customer.Name</MudSelectItem>
+                    }
                 </MudSelect>
-
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth OnClick="ProcessPayment" Disabled="@(!CartItems.Any())">Pay Now</MudButton>
             </div>
-        </MudCard>
+
+            <div class="struk__body">
+                @if (_cart.Count == 0)
+                {
+                    <div class="empty">
+                        <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" />
+                        <div>Belum ada barang.</div>
+                        <div style="font-size:.8rem;">Pindai barcode atau pilih produk di sebelah kiri.</div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var line in _cart)
+                    {
+                        <div class="py-2" style="border-bottom:1px dotted var(--line);">
+                            <div class="d-flex align-start justify-space-between" style="gap:.5rem;">
+                                <div style="min-width:0;">
+                                    <div style="font-size:.85rem; font-weight:600; line-height:1.3;">@line.ProductName</div>
+                                    <div class="num" style="font-size:.75rem; color:var(--ink-500);">@Money.Format(line.UnitPrice) / pcs</div>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Default"
+                                               aria-label="Hapus baris" OnClick="() => RemoveLine(line)" />
+                            </div>
+
+                            <div class="d-flex align-center justify-space-between mt-1">
+                                <div class="d-flex align-center" style="gap:.15rem;">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Variant="Variant.Outlined"
+                                                   aria-label="Kurangi" OnClick="() => ChangeQty(line, -1)" />
+                                    <span class="num" style="min-width:2.2rem; text-align:center; font-weight:700;">@line.Quantity</span>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small" Variant="Variant.Outlined"
+                                                   aria-label="Tambah" OnClick="() => ChangeQty(line, 1)" />
+                                </div>
+                                <span class="num" style="font-weight:700;">@Money.Format(line.LineTotal)</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="struk__foot">
+                @if (_showDiscount)
+                {
+                    <div class="d-flex mb-2" style="gap:.5rem;">
+                        <MudNumericField T="decimal" Value="_discountPercent" ValueChanged="OnDiscountPercentChanged"
+                                         Label="Diskon %" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         Min="0" Max="100" HideSpinButtons="true" Immediate="true" />
+                        <MudNumericField T="decimal" Value="_discountAmount" ValueChanged="OnDiscountAmountChanged"
+                                         Label="Diskon nominal" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         Min="0" HideSpinButtons="true" Immediate="true" />
+                    </div>
+                }
+
+                <div class="leader">
+                    <span class="leader__label">Subtotal</span>
+                    <span class="leader__fill"></span>
+                    <span class="leader__value num">@Money.Format(_totals.LineSubTotal)</span>
+                </div>
+
+                @if (_totals.TotalDiscount > 0)
+                {
+                    <div class="leader leader--credit">
+                        <span class="leader__label">Diskon</span>
+                        <span class="leader__fill"></span>
+                        <span class="leader__value num">-@Money.Format(_totals.TotalDiscount)</span>
+                    </div>
+                }
+
+                @if (_totals.ServiceCharge > 0)
+                {
+                    <div class="leader">
+                        <span class="leader__label">Layanan @_settings.ServiceChargePercent.ToString("0.##")%</span>
+                        <span class="leader__fill"></span>
+                        <span class="leader__value num">@Money.Format(_totals.ServiceCharge)</span>
+                    </div>
+                }
+
+                @if (_totals.TaxAmount > 0)
+                {
+                    <div class="leader">
+                        <span class="leader__label">
+                            @_settings.TaxName @_settings.TaxRatePercent.ToString("0.##")%@(_settings.TaxInclusive ? " (termasuk)" : "")
+                        </span>
+                        <span class="leader__fill"></span>
+                        <span class="leader__value num">@Money.Format(_totals.TaxAmount)</span>
+                    </div>
+                }
+
+                @if (_totals.Rounding != 0)
+                {
+                    <div class="leader leader--muted">
+                        <span class="leader__label">Pembulatan</span>
+                        <span class="leader__fill"></span>
+                        <span class="leader__value num">@Money.Format(_totals.Rounding)</span>
+                    </div>
+                }
+
+                <div class="leader leader--total">
+                    <span class="leader__label">Total</span>
+                    <span class="leader__fill"></span>
+                    <span class="leader__value num">@Money.Format(_totals.Total)</span>
+                </div>
+
+                <div class="mt-2 mb-3">
+                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                               StartIcon="@(_showDiscount ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.LocalOffer)"
+                               OnClick="() => _showDiscount = !_showDiscount">
+                        @(_showDiscount ? "Tutup diskon" : "Diskon")
+                    </MudButton>
+                </div>
+
+                <div class="eyebrow mb-2">Metode pembayaran</div>
+                <div class="d-flex flex-wrap mb-3" style="gap:.4rem;">
+                    @foreach (var gateway in _enabledGateways)
+                    {
+                        <MudButton Size="Size.Small"
+                                   Variant="@(gateway.Name == _providerName ? Variant.Filled : Variant.Outlined)"
+                                   Color="@(gateway.Name == _providerName ? Color.Primary : Color.Default)"
+                                   StartIcon="@gateway.Icon"
+                                   OnClick="() => SelectGateway(gateway)">
+                            @gateway.DisplayName
+                        </MudButton>
+                    }
+                </div>
+
+                @if (_selectedGateway is not null && !_selectedGateway.RequiresRedirect)
+                {
+                    <MudNumericField T="decimal" Value="_paidAmount" ValueChanged="OnPaidChanged"
+                                     Label="Uang diterima" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Min="0" HideSpinButtons="true" Immediate="true" Class="mb-2" />
+
+                    <div class="d-flex flex-wrap mb-2" style="gap:.35rem;">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => SetPaid(_totals.Total)">Uang pas</MudButton>
+                        @foreach (var suggestion in CashSuggestions())
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => SetPaid(suggestion)">
+                                <span class="num">@Money.FormatNumber(suggestion)</span>
+                            </MudButton>
+                        }
+                    </div>
+
+                    @* Kembalian dan kekurangan uang adalah dua hal berbeda: kasir perlu tahu
+                       yang mana, bukan sekadar melihat angka nol. *@
+                    @if (_cart.Count > 0)
+                    {
+                        <div class="leader @(_change >= 0 ? "leader--credit" : "")" style="font-weight:700;">
+                            <span class="leader__label">@(_change >= 0 ? "Kembalian" : "Kurang bayar")</span>
+                            <span class="leader__fill"></span>
+                            <span class="leader__value num" style="@(_change < 0 ? "color:var(--brand);" : "")">
+                                @Money.Format(Math.Abs(_change))
+                            </span>
+                        </div>
+                    }
+                }
+                else if (_selectedGateway is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" Style="font-size:.78rem;">
+                        Pelanggan akan diarahkan ke halaman @_selectedGateway.DisplayName untuk menyelesaikan pembayaran.
+                    </MudAlert>
+                }
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true"
+                           Disabled="@(_cart.Count == 0 || _busy || _selectedGateway is null)"
+                           OnClick="ProcessPayment">
+                    @if (_busy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Memproses…</span>
+                    }
+                    else
+                    {
+                        <span>Bayar @Money.Format(_totals.Total)</span>
+                    }
+                </MudButton>
+            </div>
+        </div>
     </MudItem>
 </MudGrid>
 
-@code {
-    List<Product> Products = new();
-    List<Category> Categories = new();
-    List<Product> FilteredProducts = new();
-    List<TransactionDetail> CartItems = new();
-    
-    string SearchTerm = "";
-    int SelectedCategoryId = 0;
-    string PaymentMethod = "Cash";
+<!-- ============================ Struk hasil ============================ -->
+<MudDialog @bind-Visible="_receiptOpen" Options="_receiptOptions">
+    <DialogContent>
+        @if (_lastTransaction is not null)
+        {
+            <div id="print-area">
+                <ReceiptPanel Transaction="_lastTransaction" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseReceipt" Class="no-print">Tutup</MudButton>
+        @if (_lastTransaction?.Status == TransactionStatus.Pending && !string.IsNullOrEmpty(_lastTransaction.PaymentUrl))
+        {
+            <MudButton Color="Color.Secondary" StartIcon="@Icons.Material.Filled.OpenInNew" Class="no-print"
+                       OnClick="OpenPaymentPage">
+                Buka halaman bayar
+            </MudButton>
+            <MudButton Color="Color.Info" StartIcon="@Icons.Material.Filled.Sync" Class="no-print" OnClick="RefreshPaymentStatus">
+                Cek status
+            </MudButton>
+        }
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Print" Class="no-print"
+                   OnClick="PrintReceipt">
+            Cetak
+        </MudButton>
+    </DialogActions>
+</MudDialog>
 
-    decimal SubTotal => CartItems.Sum(c => c.SubTotal);
-    decimal TaxAmount => SubTotal * 0.11m;
-    decimal TotalAmount => SubTotal + TaxAmount;
+@code {
+    private readonly List<CartLine> _cart = new();
+    private List<Product> _products = new();
+    private List<Product> _filteredProducts = new();
+    private List<Category> _categories = new();
+    private List<Customer> _customers = new();
+    private IReadOnlyList<IPaymentGateway> _enabledGateways = Array.Empty<IPaymentGateway>();
+
+    private PosSettings _settings = new();
+    private OrderTotals _totals = OrderTotals.Empty;
+
+    private MudTextField<string>? _searchField;
+    private string _searchTerm = "";
+    private int _selectedCategoryId;
+    private int? _customerId;
+    private decimal _discountAmount;
+    private decimal _discountPercent;
+    private decimal _paidAmount;
+    private bool _showDiscount;
+    private bool _busy;
+
+    private string _providerName = "Cash";
+    private IPaymentGateway? _selectedGateway;
+
+    private Transaction? _lastTransaction;
+    private bool _receiptOpen;
+    private readonly DialogOptions _receiptOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+
+    private string _cashierName = "";
+    private decimal _change => _paidAmount - _totals.Total;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _settings = await SettingsService.GetAsync();
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _cashierName = authState.User.Identity?.Name ?? "Tidak dikenal";
+
+        _enabledGateways = Gateways.Enabled(_settings);
+        _selectedGateway = _enabledGateways.FirstOrDefault();
+        _providerName = _selectedGateway?.Name ?? "Cash";
+
+        await LoadCatalogAsync();
     }
 
-    async Task LoadData()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        using var db = DbFactory.CreateDbContext();
-        Products = await db.Products.Include(p => p.Category).Where(p => p.Stock > 0).ToListAsync();
-        Categories = await db.Categories.ToListAsync();
-        FilterProducts();
+        if (firstRender)
+            await FocusSearchAsync();
     }
 
-    void FilterProducts()
+    private async Task LoadCatalogAsync()
     {
-        FilteredProducts = Products.Where(p => 
-            (SelectedCategoryId == 0 || p.CategoryId == SelectedCategoryId) &&
-            (string.IsNullOrWhiteSpace(SearchTerm) || 
-             p.Name.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
-             p.Barcode == SearchTerm)).ToList();
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        _products = await db.Products
+            .Include(p => p.Category)
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+
+        _categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        _customers = await db.Customers.OrderBy(c => c.Name).ToListAsync();
+
+        ApplyFilter();
     }
 
-    void SelectCategory(int id)
-    {
-        SelectedCategoryId = id;
-        FilterProducts();
-    }
+    // ---------------------------------------------------------------- katalog
 
-    void OnSearchKeyPress(KeyboardEventArgs e)
+    private void ApplyFilter()
     {
-        if (e.Key == "Enter")
+        IEnumerable<Product> query = _products;
+
+        if (_selectedCategoryId != 0)
+            query = query.Where(p => p.CategoryId == _selectedCategoryId);
+
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
         {
-            var p = FilteredProducts.FirstOrDefault(x => x.Barcode == SearchTerm);
-            if (p != null)
-            {
-                AddToCart(p);
-                SearchTerm = "";
-                FilterProducts();
-            }
+            var term = _searchTerm.Trim();
+            query = query.Where(p =>
+                p.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (p.Barcode is not null && p.Barcode.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        _filteredProducts = query.ToList();
+    }
+
+    private void SelectCategory(int categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Pemindai barcode mengetik sangat cepat lalu menekan Enter. Kalau ada barcode yang
+    /// cocok persis, barangnya langsung masuk keranjang dan kolom dikosongkan supaya
+    /// pemindaian berikutnya bisa segera dilakukan tanpa menyentuh papan ketik.
+    /// </summary>
+    private async Task OnSearchKeyUp(KeyboardEventArgs args)
+    {
+        if (args.Key != "Enter")
+        {
+            ApplyFilter();
+            return;
+        }
+
+        var term = _searchTerm.Trim();
+        if (term.Length == 0) return;
+
+        var exact = _products.FirstOrDefault(p => string.Equals(p.Barcode, term, StringComparison.OrdinalIgnoreCase))
+                    ?? (_filteredProducts.Count == 1 ? _filteredProducts[0] : null);
+
+        if (exact is not null)
+        {
+            AddToCart(exact);
+            _searchTerm = "";
+            ApplyFilter();
+            await FocusSearchAsync();
         }
         else
         {
-            FilterProducts();
+            Snackbar.Add($"Produk dengan kode \"{term}\" tidak ditemukan.", Severity.Warning);
         }
     }
 
-    void AddToCart(Product p)
+    private async Task FocusSearchAsync()
     {
-        var existing = CartItems.FirstOrDefault(c => c.ProductId == p.Id);
-        if (existing != null)
+        try
         {
-            if (existing.Quantity < p.Stock)
+            await JS.InvokeVoidAsync("focusElement", ".mud-input-adorned-start input");
+        }
+        catch (JSException)
+        {
+            // Fokus bukan hal kritis; kegagalan interop tidak boleh menghentikan kasir.
+        }
+    }
+
+    private string StockLabel(Product product)
+    {
+        if (product.Stock <= 0) return "Stok habis";
+        var threshold = product.MinStock > 0 ? product.MinStock : _settings.LowStockThreshold;
+        return product.Stock <= threshold ? $"Sisa {product.Stock}" : $"Stok {product.Stock}";
+    }
+
+    private string StockClass(Product product)
+    {
+        if (product.Stock <= 0) return "tile__stock--out";
+        var threshold = product.MinStock > 0 ? product.MinStock : _settings.LowStockThreshold;
+        return product.Stock <= threshold ? "tile__stock--low" : "";
+    }
+
+    // ---------------------------------------------------------------- keranjang
+
+    private void AddToCart(Product product)
+    {
+        var line = _cart.FirstOrDefault(l => l.ProductId == product.Id);
+
+        if (line is null)
+        {
+            if (_settings.BlockSaleWhenOutOfStock && product.Stock < 1)
             {
-                existing.Quantity++;
-                existing.SubTotal = existing.Quantity * p.Price;
+                Snackbar.Add($"Stok {product.Name} habis.", Severity.Warning);
+                return;
+            }
+
+            _cart.Add(new CartLine
+            {
+                ProductId = product.Id,
+                ProductName = product.Name,
+                ImageUrl = product.ImageUrl,
+                Quantity = 1,
+                UnitPrice = product.Price,
+                UnitCost = product.Cost,
+                AvailableStock = product.Stock
+            });
+        }
+        else
+        {
+            ChangeQty(line, 1);
+            return;
+        }
+
+        Recalculate();
+    }
+
+    private void ChangeQty(CartLine line, int delta)
+    {
+        var next = line.Quantity + delta;
+
+        if (next <= 0)
+        {
+            _cart.Remove(line);
+            Recalculate();
+            return;
+        }
+
+        if (_settings.BlockSaleWhenOutOfStock && next > line.AvailableStock)
+        {
+            Snackbar.Add($"Stok {line.ProductName} tinggal {line.AvailableStock}.", Severity.Warning);
+            return;
+        }
+
+        line.Quantity = next;
+        Recalculate();
+    }
+
+    private void RemoveLine(CartLine line)
+    {
+        _cart.Remove(line);
+        Recalculate();
+    }
+
+    private void ClearCart()
+    {
+        _cart.Clear();
+        _discountAmount = 0;
+        _discountPercent = 0;
+        _paidAmount = 0;
+        Recalculate();
+    }
+
+    /// <summary>Total dihitung ulang lewat TaxCalculator yang sama dengan yang dipakai saat menyimpan.</summary>
+    private void Recalculate()
+    {
+        _totals = TaxCalculator.Compute(_cart, _settings, _discountAmount, _discountPercent);
+
+        // Untuk pembayaran non-tunai, nominal yang dibayar selalu persis sebesar tagihan.
+        if (_selectedGateway?.RequiresRedirect == true)
+            _paidAmount = _totals.Total;
+    }
+
+    private void OnDiscountAmountChanged(decimal value)
+    {
+        _discountAmount = Math.Max(0, value);
+        Recalculate();
+    }
+
+    private void OnDiscountPercentChanged(decimal value)
+    {
+        _discountPercent = Math.Clamp(value, 0, 100);
+        Recalculate();
+    }
+
+    private void OnCustomerChanged(int? value) => _customerId = value;
+
+    private void OnPaidChanged(decimal value) => _paidAmount = Math.Max(0, value);
+
+    private void SetPaid(decimal value) => _paidAmount = value;
+
+    private void SelectGateway(IPaymentGateway gateway)
+    {
+        _selectedGateway = gateway;
+        _providerName = gateway.Name;
+        Recalculate();
+    }
+
+    /// <summary>Pecahan uang yang wajar dipakai kasir, dibulatkan ke atas dari total.</summary>
+    private IEnumerable<decimal> CashSuggestions()
+    {
+        if (_totals.Total <= 0) yield break;
+
+        var steps = new[] { 1000m, 5000m, 10000m, 20000m, 50000m, 100000m };
+        var offered = new HashSet<decimal>();
+
+        foreach (var step in steps)
+        {
+            var value = Math.Ceiling(_totals.Total / step) * step;
+            if (value > _totals.Total && offered.Add(value))
+                yield return value;
+
+            if (offered.Count == 3) yield break;
+        }
+    }
+
+    // ---------------------------------------------------------------- pembayaran
+
+    private async Task ProcessPayment()
+    {
+        if (_busy || _cart.Count == 0 || _selectedGateway is null) return;
+
+        _busy = true;
+        try
+        {
+            var result = await Checkout.CheckoutAsync(new CheckoutRequest
+            {
+                Lines = _cart.ToList(),
+                CashierName = _cashierName,
+                PaymentProvider = _selectedGateway.Name,
+                PaymentMethod = _selectedGateway.DisplayName,
+                CustomerId = _customerId,
+                OrderDiscountAmount = _discountAmount,
+                OrderDiscountPercent = _discountPercent,
+                PaidAmount = _selectedGateway.RequiresRedirect ? _totals.Total : _paidAmount,
+                ReturnUrlBase = NavManager.BaseUri.TrimEnd('/')
+            });
+
+            if (!result.Success)
+            {
+                Snackbar.Add(result.Error ?? "Pembayaran gagal.", Severity.Error);
+                return;
+            }
+
+            _lastTransaction = await LoadTransactionAsync(result.Transaction!.Id);
+            _receiptOpen = true;
+
+            ClearCart();
+            _customerId = null;
+            await LoadCatalogAsync();
+
+            if (!string.IsNullOrEmpty(result.RedirectUrl))
+            {
+                await JS.InvokeVoidAsync("openInNewTab", result.RedirectUrl);
+                Snackbar.Add("Halaman pembayaran dibuka di tab baru.", Severity.Info);
             }
             else
             {
-                Snackbar.Add("Not enough stock!", Severity.Warning);
+                Snackbar.Add($"Transaksi {_lastTransaction?.InvoiceNumber} lunas.", Severity.Success);
             }
         }
-        else
+        catch (Exception ex)
         {
-            CartItems.Add(new TransactionDetail
-            {
-                ProductId = p.Id,
-                Product = p,
-                Quantity = 1,
-                UnitPrice = p.Price,
-                SubTotal = p.Price
-            });
+            Snackbar.Add($"Terjadi kesalahan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 
-    void IncreaseQty(TransactionDetail item)
+    private async Task<Transaction?> LoadTransactionAsync(int id)
     {
-        if (item.Quantity < item.Product.Stock)
-        {
-            item.Quantity++;
-            item.SubTotal = item.Quantity * item.UnitPrice;
-        }
+        using var db = await DbFactory.CreateDbContextAsync();
+        return await db.Transactions
+            .Include(t => t.Details)
+            .Include(t => t.Customer)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id);
     }
 
-    void DecreaseQty(TransactionDetail item)
+    private async Task RefreshPaymentStatus()
     {
-        if (item.Quantity > 1)
-        {
-            item.Quantity--;
-            item.SubTotal = item.Quantity * item.UnitPrice;
-        }
+        if (_lastTransaction is null) return;
+
+        var status = await Checkout.RefreshStatusAsync(_lastTransaction.Id);
+        _lastTransaction = await LoadTransactionAsync(_lastTransaction.Id);
+
+        Snackbar.Add($"Status: {ReceiptService.StatusLabel(status)}",
+            status == TransactionStatus.Paid ? Severity.Success : Severity.Info);
     }
 
-    void RemoveItem(TransactionDetail item)
+    private async Task OpenPaymentPage()
     {
-        CartItems.Remove(item);
+        if (!string.IsNullOrEmpty(_lastTransaction?.PaymentUrl))
+            await JS.InvokeVoidAsync("openInNewTab", _lastTransaction.PaymentUrl);
     }
 
-    async Task ProcessPayment()
+    private async Task PrintReceipt() => await JS.InvokeVoidAsync("printReceipt");
+
+    private async Task CloseReceipt()
     {
-        if (!CartItems.Any()) return;
-
-        using var db = DbFactory.CreateDbContext();
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-
-        var tx = new Transaction
-        {
-            Date = DateTime.Now,
-            TotalAmount = TotalAmount,
-            TaxAmount = TaxAmount,
-            DiscountAmount = 0,
-            PaymentMethod = PaymentMethod,
-            CashierName = user.Identity.IsAuthenticated ? user.Identity.Name : "Unknown"
-        };
-
-        foreach (var item in CartItems)
-        {
-            var p = await db.Products.FindAsync(item.ProductId);
-            if (p != null && p.Stock >= item.Quantity)
-            {
-                p.Stock -= item.Quantity; // deduct stock
-                tx.Details.Add(new TransactionDetail
-                {
-                    ProductId = item.ProductId,
-                    Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice,
-                    SubTotal = item.SubTotal
-                });
-            }
-        }
-
-        db.Transactions.Add(tx);
-        await db.SaveChangesAsync();
-
-        Snackbar.Add($"Payment Successful! Total: {TotalAmount.ToString("C0")}", Severity.Success);
-        CartItems.Clear();
-        await LoadData(); // Refresh stock
+        _receiptOpen = false;
+        await FocusSearchAsync();
     }
 }

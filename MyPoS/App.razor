@@ -2,16 +2,49 @@
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
+                <Authorizing>
+                    <div class="empty">
+                        <MudProgressCircular Indeterminate="true" />
+                        <div>Memeriksa sesi…</div>
+                    </div>
+                </Authorizing>
+                <NotAuthorized Context="authState">
+                    @* Belum masuk sama sekali diarahkan ke halaman login; sudah masuk tetapi
+                       perannya tidak mencukupi diberi penjelasan, bukan dilempar ke login
+                       yang membingungkan karena mereka merasa sudah masuk. *@
+                    @if (authState.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <div class="empty" style="min-height:60vh;">
+                            <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" />
+                            <h1 class="page-title">Akses ditolak</h1>
+                            <p class="page-subtitle">
+                                Peran <strong>@authState.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</strong>
+                                tidak memiliki izin untuk halaman ini.
+                            </p>
+                            <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">
+                                Kembali ke dasbor
+                            </MudButton>
+                        </div>
+                    }
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
         </Found>
         <NotFound>
-            <PageTitle>Not found</PageTitle>
+            <PageTitle>Halaman tidak ditemukan</PageTitle>
             <LayoutView Layout="@typeof(MainLayout)">
-                <p role="alert">Sorry, there's nothing at this address.</p>
+                <div class="empty" style="min-height:60vh;">
+                    <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Size="Size.Large" />
+                    <h1 class="page-title">Halaman tidak ditemukan</h1>
+                    <p class="page-subtitle">Alamat yang Anda buka tidak tersedia.</p>
+                    <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-3">
+                        Kembali ke dasbor
+                    </MudButton>
+                </div>
             </LayoutView>
         </NotFound>
     </Router>

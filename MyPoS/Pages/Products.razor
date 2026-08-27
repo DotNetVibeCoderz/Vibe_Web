@@ -1,260 +1,439 @@
+@page "/produk"
 @page "/products"
 @using Microsoft.EntityFrameworkCore
 @using MyPoS.Data
-@using Microsoft.AspNetCore.Components.Forms
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
-@inject IJSRuntime JSRuntime
-@inject MyPoS.Services.IStorageService StorageService
-@inject MyPoS.Services.ExportService ExportService
+@inject IJSRuntime JS
+@inject IStorageService Storage
+@inject ExportService ExportService
+@inject MoneyFormatter Money
+@inject SettingsService SettingsService
+@inject MyPoS.Services.Import.ProductImporter Importer
 @attribute [Authorize(Roles = "Admin,Manager")]
 
-<MudText Typo="Typo.h4" Class="mb-6">Products Management</MudText>
+<PageTitle>Produk — @_settings.StoreName</PageTitle>
 
-<MudCard Class="glass-container pa-4">
-    <MudTable Items="@ProductsList" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" 
-              Filter="new Func<Product,bool>(FilterFunc1)"
-              Style="background: transparent;">
-        <ToolBarContent>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewDialog">Add</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel" Class="ml-2">Excel</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
-            <MudSpacer />
-            <MudTextField @bind-Value="searchString1" Placeholder="Search..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Id)">ID</MudTableSortLabel></MudTh>
-            <MudTh>Image</MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Barcode)">Barcode</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Name)">Name</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Category.Name)">Category</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Price)">Price</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x=>x.Stock)">Stock</MudTableSortLabel></MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="ID">@context.Id</MudTd>
-            <MudTd DataLabel="Image">
-                @if(!string.IsNullOrEmpty(context.ImageUrl))
-                {
-                    <MudImage Src="@context.ImageUrl" Width="40" Height="40" ObjectFit="ObjectFit.Cover" Elevation="1" Class="rounded-lg"/>
-                }
-            </MudTd>
-            <MudTd DataLabel="Barcode">@context.Barcode</MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Category">@context.Category?.Name</MudTd>
-            <MudTd DataLabel="Price">@context.Price.ToString("C0")</MudTd>
-            <MudTd DataLabel="Stock">@context.Stock</MudTd>
-            <MudTd DataLabel="Actions">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => OpenEditDialog(context)" />
-                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteProduct(context)" />
-            </MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
-    </MudTable>
-</MudCard>
+<div class="d-flex flex-wrap align-end justify-space-between mb-6" style="gap:1rem;">
+    <div>
+        <div class="eyebrow">Data master</div>
+        <h1 class="page-title mt-1">Produk</h1>
+        <p class="page-subtitle">@_products.Count produk · @_products.Count(p => p.Stock <= LowStockLimit(p)) perlu diisi ulang</p>
+    </div>
 
-@if (isDialogOpen)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" AutoClose="false">
-        <MudCard Class="glass-container pa-6" Style="width:400px; max-width:90vw;">
-            <MudText Typo="Typo.h6" Class="mb-4">@(isEdit ? "Edit Product" : "New Product")</MudText>
-            
-            <div class="mb-2 text-center">
-                @if(!string.IsNullOrEmpty(editingProduct.ImageUrl))
+    <div class="d-flex" style="gap:.5rem;">
+        <MudButton Variant="Variant.Outlined" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.UploadFile" OnClick="() => _importDialog?.Open()">
+            Impor Excel
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNew">Tambah produk</MudButton>
+    </div>
+</div>
+
+<ImportDialog @ref="_importDialog" Importer="Importer" OnImported="LoadAsync" />
+
+<div class="panel panel--flush">
+    <div class="toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Cari nama, barcode, kategori…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Clearable="true" Style="min-width:260px;" Class="flex-grow-1" />
+
+        <MudSelect T="int" @bind-Value="_categoryFilter" Label="Kategori" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Style="max-width:200px;">
+            <MudSelectItem Value="0">Semua kategori</MudSelectItem>
+            @foreach (var category in _categories)
+            {
+                <MudSelectItem Value="@category.Id">@category.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSwitch T="bool" @bind-Value="_onlyLowStock" Color="Color.Warning">Stok menipis</MudSwitch>
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportExcel">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportCsv" Class="ml-2">CSV</MudButton>
+    </div>
+
+    @if (Filtered.Count == 0)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" />
+            <div>Tidak ada produk yang cocok.</div>
+        </div>
+    }
+    else
+    {
+        <MudTable Items="Filtered" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Dense="true" RowsPerPage="15">
+            <HeaderContent>
+                <MudTh style="width:44px;"></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x => x.Name)">Nama</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<Product, object>(x => x.Barcode ?? string.Empty)">Barcode</MudTableSortLabel></MudTh>
+                <MudTh>Kategori</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Product, object>(x => x.Price)">Harga jual</MudTableSortLabel></MudTh>
+                <MudTh Class="cell-num">Modal</MudTh>
+                <MudTh Class="cell-num">Margin</MudTh>
+                <MudTh Class="cell-num"><MudTableSortLabel SortBy="new Func<Product, object>(x => x.Stock)">Stok</MudTableSortLabel></MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    @if (!string.IsNullOrEmpty(context.ImageUrl))
+                    {
+                        <img src="@context.ImageUrl" alt="" width="36" height="36"
+                             style="object-fit:cover; border-radius:6px; border:1px solid var(--line); display:block;" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" Style="color:var(--ink-300);" />
+                    }
+                </MudTd>
+                <MudTd DataLabel="Nama">
+                    <div style="font-weight:600;">@context.Name</div>
+                    @if (!context.IsActive)
+                    {
+                        <span class="badge badge--muted">Nonaktif</span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Barcode"><span class="num" style="font-size:.78rem;">@context.Barcode</span></MudTd>
+                <MudTd DataLabel="Kategori">@context.Category?.Name</MudTd>
+                <MudTd DataLabel="Harga jual" Class="cell-num"><span class="num">@Money.Format(context.Price)</span></MudTd>
+                <MudTd DataLabel="Modal" Class="cell-num"><span class="num" style="color:var(--ink-500);">@Money.Format(context.Cost)</span></MudTd>
+                <MudTd DataLabel="Margin" Class="cell-num">
+                    <span class="num" style="@(MarginPercent(context) < 0 ? "color:var(--brand);" : "")">@MarginLabel(context)</span>
+                </MudTd>
+                <MudTd DataLabel="Stok" Class="cell-num">
+                    <span class="badge @StockBadge(context)"><span class="num">@context.Stock</span></span>
+                </MudTd>
+                <MudTd>
+                    <div class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => OpenEdit(context)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="() => Delete(context)" />
+                    </div>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="Baris per halaman" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+            </PagerContent>
+        </MudTable>
+    }
+</div>
+
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEdit ? "Ubah produk" : "Produk baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex align-center mb-4" style="gap:1rem;">
+            <div style="width:72px; height:72px; border-radius:8px; border:1px solid var(--line); background:var(--card-sunken); display:grid; place-items:center; overflow:hidden; flex:0 0 auto;">
+                @if (!string.IsNullOrEmpty(_editing.ImageUrl))
                 {
-                    <MudImage Src="@editingProduct.ImageUrl" Width="100" Height="100" ObjectFit="ObjectFit.Cover" Class="rounded-lg mb-2"/>
+                    <img src="@_editing.ImageUrl" alt="" style="width:100%; height:100%; object-fit:cover;" />
                 }
-                <InputFile id="fileInput" OnChange="UploadImage" hidden />
-                <MudButton HtmlTag="label" for="fileInput" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
-                    Upload Image
-                </MudButton>
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" Style="color:var(--ink-300);" />
+                }
             </div>
-
-            <MudTextField @bind-Value="editingProduct.Barcode" Label="Barcode" Class="mb-2" />
-            <MudTextField @bind-Value="editingProduct.Name" Label="Name" Required="true" Class="mb-2" />
-            <MudSelect T="int" @bind-Value="editingProduct.CategoryId" Label="Category" Class="mb-2">
-                @foreach (var cat in CategoriesList)
-                {
-                    <MudSelectItem Value="@cat.Id">@cat.Name</MudSelectItem>
-                }
-            </MudSelect>
-            <MudNumericField @bind-Value="editingProduct.Price" Label="Price" Class="mb-2" />
-            <MudNumericField @bind-Value="editingProduct.Stock" Label="Stock" Class="mb-2" />
-            <MudTextField @bind-Value="editingProduct.Description" Label="Description" Lines="3" Class="mb-4" />
-            
-            <div class="d-flex justify-end">
-                <MudButton OnClick="CloseDialog" Class="mr-2">Cancel</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveProduct">Save</MudButton>
+            <div>
+                <InputFile id="productImage" OnChange="PickImage" hidden />
+                <MudButton HtmlTag="label" for="productImage" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.CloudUpload">Pilih gambar</MudButton>
+                <div class="page-subtitle" style="font-size:.75rem;">
+                    @(_pendingImage?.Name ?? "Maksimal 10 MB. Diunggah saat disimpan.")
+                </div>
             </div>
-        </MudCard>
-    </MudOverlay>
-}
+        </div>
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_editing.Name" Label="Nama produk" Variant="Variant.Outlined" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_editing.Barcode" Label="Barcode" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="int" @bind-Value="_editing.CategoryId" Label="Kategori" Variant="Variant.Outlined">
+                    @foreach (var category in _categories)
+                    {
+                        <MudSelectItem Value="@category.Id">@category.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_editing.Price" Label="Harga jual" Variant="Variant.Outlined" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_editing.Cost" Label="Harga modal" Variant="Variant.Outlined" Min="0"
+                                 HelperText="Dipakai laporan margin." />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_editing.Stock" Label="Stok" Variant="Variant.Outlined" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_editing.MinStock" Label="Ambang stok menipis" Variant="Variant.Outlined" Min="0"
+                                 HelperText="@($"0 = pakai bawaan ({_settings.LowStockThreshold})")" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_editing.Description" Label="Keterangan" Variant="Variant.Outlined" Lines="2" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="_editing.IsActive" Color="Color.Primary">
+                    Aktif — tampil di halaman kasir
+                </MudSwitch>
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _dialogOpen = false">Batal</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="_busy">
+            @(_busy ? "Menyimpan…" : "Simpan")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
-    List<Product> ProductsList = new();
-    List<Category> CategoriesList = new();
-    string searchString1 = "";
+    private PosSettings _settings = new();
+    private List<Product> _products = new();
+    private List<Category> _categories = new();
 
-    bool isDialogOpen = false;
-    bool isEdit = false;
-    Product editingProduct = new Product();
-    IBrowserFile uploadedFile;
+    private string _search = "";
+    private int _categoryFilter;
+    private bool _onlyLowStock;
+
+    private Product _editing = new();
+    private IBrowserFile? _pendingImage;
+    private bool _dialogOpen;
+    private bool _isEdit;
+    private bool _busy;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+    private ImportDialog? _importDialog;
+
+    private List<Product> Filtered => _products
+        .Where(p => _categoryFilter == 0 || p.CategoryId == _categoryFilter)
+        .Where(p => !_onlyLowStock || p.Stock <= LowStockLimit(p))
+        .Where(p => string.IsNullOrWhiteSpace(_search)
+                    || p.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || (p.Barcode?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (p.Category?.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _settings = await SettingsService.GetAsync();
+        await LoadAsync();
     }
 
-    async Task LoadData()
+    private async Task LoadAsync()
     {
-        using var db = DbFactory.CreateDbContext();
-        ProductsList = await db.Products.Include(p => p.Category).ToListAsync();
-        CategoriesList = await db.Categories.ToListAsync();
+        using var db = await DbFactory.CreateDbContextAsync();
+        _products = await db.Products.Include(p => p.Category).OrderBy(p => p.Name).AsNoTracking().ToListAsync();
+        _categories = await db.Categories.OrderBy(c => c.Name).AsNoTracking().ToListAsync();
     }
 
-    private bool FilterFunc1(Product element) => FilterFunc(element, searchString1);
+    private int LowStockLimit(Product product) => product.MinStock > 0 ? product.MinStock : _settings.LowStockThreshold;
 
-    private bool FilterFunc(Product element, string searchString)
+    private string StockBadge(Product product)
     {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-        if (element.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.Barcode != null && element.Barcode.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.Category != null && element.Category.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
+        if (product.Stock <= 0) return "badge--brand";
+        return product.Stock <= LowStockLimit(product) ? "badge--turmeric" : "badge--leaf";
     }
 
-    async Task ExportExcel()
-    {
-        var data = ProductsList.Select(x => new { x.Id, x.Barcode, x.Name, Category = x.Category?.Name, x.Price, x.Stock }).ToList();
-        var bytes = ExportService.ExportToExcel(data, "Products");
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Products.xlsx", streamRef);
-    }
+    private static decimal MarginPercent(Product product)
+        => product.Price <= 0 || product.Cost <= 0 ? 0m : (product.Price - product.Cost) / product.Price * 100m;
 
-    async Task ExportCsv()
-    {
-        var data = ProductsList.Select(x => new { x.Id, x.Barcode, x.Name, Category = x.Category?.Name, x.Price, x.Stock }).ToList();
-        var bytes = ExportService.ExportToCsv(data);
-        var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-        await JSRuntime.InvokeVoidAsync("downloadFileFromStream", "Products.csv", streamRef);
-    }
+    private static string MarginLabel(Product product)
+        => product.Cost <= 0 ? "—" : $"{MarginPercent(product):0.#}%";
 
-    void OpenNewDialog()
+    private void OpenNew()
     {
-        editingProduct = new Product { CategoryId = CategoriesList.FirstOrDefault()?.Id ?? 0 };
-        isEdit = false;
-        isDialogOpen = true;
-    }
-
-    void OpenEditDialog(Product p)
-    {
-        editingProduct = new Product
+        _editing = new Product
         {
-            Id = p.Id,
-            Name = p.Name,
-            Barcode = p.Barcode,
-            Price = p.Price,
-            Stock = p.Stock,
-            CategoryId = p.CategoryId,
-            Description = p.Description,
-            ImageUrl = p.ImageUrl
+            CategoryId = _categories.FirstOrDefault()?.Id ?? 0,
+            IsActive = true
         };
-        isEdit = true;
-        isDialogOpen = true;
+        _pendingImage = null;
+        _isEdit = false;
+        _dialogOpen = true;
     }
 
-    void CloseDialog()
+    private void OpenEdit(Product product)
     {
-        isDialogOpen = false;
-        uploadedFile = null;
-    }
-
-    async Task UploadImage(InputFileChangeEventArgs e)
-    {
-        uploadedFile = e.File;
-        // Mock preview: generate object URL using JS? No, just show uploading message, wait for Save
-        Snackbar.Add("File selected. It will be uploaded when you save.", Severity.Info);
-    }
-
-    async Task SaveProduct()
-    {
-        if (string.IsNullOrWhiteSpace(editingProduct.Name))
+        // Salinan terpisah supaya baris di tabel tidak ikut berubah saat dialog dibatalkan.
+        _editing = new Product
         {
-            Snackbar.Add("Name is required", Severity.Warning);
+            Id = product.Id,
+            Name = product.Name,
+            Barcode = product.Barcode,
+            Price = product.Price,
+            Cost = product.Cost,
+            Stock = product.Stock,
+            MinStock = product.MinStock,
+            CategoryId = product.CategoryId,
+            Description = product.Description,
+            ImageUrl = product.ImageUrl,
+            IsActive = product.IsActive
+        };
+        _pendingImage = null;
+        _isEdit = true;
+        _dialogOpen = true;
+    }
+
+    private void PickImage(InputFileChangeEventArgs e) => _pendingImage = e.File;
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_editing.Name))
+        {
+            Snackbar.Add("Nama produk wajib diisi.", Severity.Warning);
             return;
         }
 
+        if (_editing.CategoryId == 0)
+        {
+            Snackbar.Add("Pilih kategori terlebih dahulu.", Severity.Warning);
+            return;
+        }
+
+        if (_editing.Price < 0 || _editing.Cost < 0)
+        {
+            Snackbar.Add("Harga tidak boleh negatif.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
         try
         {
-            if (uploadedFile != null)
+            using var db = await DbFactory.CreateDbContextAsync();
+
+            // Barcode dipakai kasir untuk mencocokkan produk secara persis, jadi tidak
+            // boleh dimiliki dua produk sekaligus.
+            if (!string.IsNullOrWhiteSpace(_editing.Barcode))
             {
-                var url = await StorageService.UploadFileAsync(uploadedFile, uploadedFile.Name);
-                if (isEdit && !string.IsNullOrEmpty(editingProduct.ImageUrl))
+                var clash = await db.Products.AnyAsync(p => p.Barcode == _editing.Barcode && p.Id != _editing.Id);
+                if (clash)
                 {
-                    // Optionally delete old file
-                    await StorageService.DeleteFileAsync(editingProduct.ImageUrl);
+                    Snackbar.Add($"Barcode {_editing.Barcode} sudah dipakai produk lain.", Severity.Warning);
+                    return;
                 }
-                editingProduct.ImageUrl = url;
             }
 
-            using var db = DbFactory.CreateDbContext();
-            if (isEdit)
+            var previousImage = _editing.ImageUrl;
+            if (_pendingImage is not null)
+                _editing.ImageUrl = await Storage.UploadFileAsync(_pendingImage, _pendingImage.Name);
+
+            if (_isEdit)
             {
-                var p = await db.Products.FindAsync(editingProduct.Id);
-                if (p != null)
+                var entity = await db.Products.FindAsync(_editing.Id);
+                if (entity is null)
                 {
-                    p.Name = editingProduct.Name;
-                    p.Barcode = editingProduct.Barcode;
-                    p.Price = editingProduct.Price;
-                    p.Stock = editingProduct.Stock;
-                    p.CategoryId = editingProduct.CategoryId;
-                    p.Description = editingProduct.Description;
-                    p.ImageUrl = editingProduct.ImageUrl;
-                    db.Products.Update(p);
+                    Snackbar.Add("Produk sudah tidak ada.", Severity.Error);
+                    return;
                 }
+
+                entity.Name = _editing.Name.Trim();
+                entity.Barcode = _editing.Barcode?.Trim();
+                entity.Price = _editing.Price;
+                entity.Cost = _editing.Cost;
+                entity.Stock = _editing.Stock;
+                entity.MinStock = _editing.MinStock;
+                entity.CategoryId = _editing.CategoryId;
+                entity.Description = _editing.Description;
+                entity.ImageUrl = _editing.ImageUrl;
+                entity.IsActive = _editing.IsActive;
             }
             else
             {
-                db.Products.Add(editingProduct);
+                _editing.Name = _editing.Name.Trim();
+                db.Products.Add(_editing);
             }
 
             await db.SaveChangesAsync();
-            Snackbar.Add("Product saved", Severity.Success);
-            isDialogOpen = false;
-            uploadedFile = null;
-            await LoadData();
+
+            // Gambar lama baru dihapus setelah penyimpanan berhasil, supaya kegagalan
+            // simpan tidak meninggalkan produk tanpa gambar.
+            if (_pendingImage is not null && !string.IsNullOrEmpty(previousImage))
+                await Storage.DeleteFileAsync(previousImage);
+
+            Snackbar.Add("Produk tersimpan.", Severity.Success);
+            _dialogOpen = false;
+            _pendingImage = null;
+            await LoadAsync();
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
-            Snackbar.Add($"Error saving: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Gagal menyimpan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 
-    async Task DeleteProduct(Product p)
+    private async Task Delete(Product product)
     {
-        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this product?");
-        if (confirmed)
-        {
-            using var db = DbFactory.CreateDbContext();
-            var item = await db.Products.FindAsync(p.Id);
-            if (item != null)
-            {
-                db.Products.Remove(item);
-                await db.SaveChangesAsync();
-                
-                if(!string.IsNullOrEmpty(item.ImageUrl))
-                    await StorageService.DeleteFileAsync(item.ImageUrl);
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Hapus produk \"{product.Name}\"?");
+        if (!confirmed) return;
 
-                Snackbar.Add("Product deleted", Severity.Info);
-                await LoadData();
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        // Produk yang pernah terjual tidak dihapus, hanya dinonaktifkan - menghapusnya
+        // akan merusak riwayat transaksi yang mengacu kepadanya.
+        var everSold = await db.TransactionDetails.AnyAsync(d => d.ProductId == product.Id);
+        if (everSold)
+        {
+            var entity = await db.Products.FindAsync(product.Id);
+            if (entity is not null)
+            {
+                entity.IsActive = false;
+                await db.SaveChangesAsync();
+                Snackbar.Add("Produk pernah terjual, jadi dinonaktifkan agar riwayat transaksi tetap utuh.", Severity.Info);
+                await LoadAsync();
             }
+            return;
         }
+
+        var target = await db.Products.FindAsync(product.Id);
+        if (target is null) return;
+
+        db.Products.Remove(target);
+        await db.SaveChangesAsync();
+
+        if (!string.IsNullOrEmpty(target.ImageUrl))
+            await Storage.DeleteFileAsync(target.ImageUrl);
+
+        Snackbar.Add("Produk dihapus.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private IEnumerable<object> ExportRows() => Filtered.Select(p => new
+    {
+        p.Id,
+        Barcode = p.Barcode ?? "",
+        Nama = p.Name,
+        Kategori = p.Category?.Name ?? "",
+        HargaJual = p.Price,
+        HargaModal = p.Cost,
+        MarginPersen = Math.Round(MarginPercent(p), 2),
+        Stok = p.Stock,
+        AmbangMinimum = LowStockLimit(p),
+        Aktif = p.IsActive ? "Ya" : "Tidak"
+    });
+
+    private async Task ExportExcel()
+    {
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Produk");
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Produk.xlsx", new DotNetStreamReference(stream));
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        using var stream = new MemoryStream(bytes);
+        await JS.InvokeVoidAsync("downloadFileFromStream", "Produk.csv", new DotNetStreamReference(stream));
     }
 }
